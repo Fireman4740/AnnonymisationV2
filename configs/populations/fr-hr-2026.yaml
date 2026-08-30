@@ -1,0 +1,91 @@
+# Population de référence — cadrage RH France
+# Spéc : documentation/specifications/SPEC-06-population-et-risque.md §4
+#
+# ÉTAT : squelette. Les fichiers `tables/` doivent être construits en lot L3.
+
+population_id: fr-hr-2026
+name: "Population active française — cadrage RH"
+size: 29500000                # ordre de grandeur, à sourcer précisément
+geography: FR
+year: 2026
+
+# exhaustive : chaque individu est énuméré -> k exact
+# sample     : échantillon représentatif
+# marginals  : seules les marginales et quelques jointes sont connues
+# synthetic  : population générée, énumérable
+kind: marginals
+
+attributes:
+
+  GEN_AGE:
+    normalization: range_years
+    generalization: [1, 5, 10, "large"]      # hiérarchie de généralisation
+    source: "INSEE — population active par âge"
+    file: "tables/fr/age.csv"
+
+  GEN_GENDER:
+    normalization: categorical
+    generalization: []
+    source: "INSEE"
+    file: "tables/fr/gender.csv"
+
+  GEN_GEO:
+    normalization: geo_hierarchy             # FR > FR-59 > FR-59350
+    generalization: ["commune", "departement", "region", "pays"]
+    source: "INSEE — COG 2026"
+    file: "tables/fr/geo.csv"
+
+  GEN_OCCUPATION:
+    normalization: pcs_ese                   # PCS-ESE 2020
+    generalization: [4, 3, 2, 1]             # niveaux de la nomenclature
+    source: "INSEE — emploi par CSP et département"
+    file: "tables/fr/pcs_by_dept.csv"
+
+  GEN_EDUCATION:
+    normalization: isced                     # CITE + discipline
+    generalization: ["discipline_fine", "domaine", "niveau"]
+    source: "INSEE — diplôme par âge et région"
+    file: "tables/fr/education.csv"
+
+  HR_EMPLOYER_SIZE:
+    normalization: size_band
+    generalization: ["fine", "large"]
+    source: "INSEE / DARES — effectifs des entreprises"
+    file: "tables/fr/employer_size.csv"
+
+  HR_CONTRACT:
+    normalization: categorical
+    generalization: []
+    source: "DARES — types de contrat"
+    file: "tables/fr/contract.csv"
+
+  HR_SENIORITY:
+    normalization: range_years
+    generalization: [1, 3, 5, "large"]
+    source: "DARES — ancienneté dans l'emploi"
+    file: "tables/fr/seniority.csv"
+
+# Marginales croisées effectivement disponibles. Tout ce qui n'est pas listé ici
+# doit être estimé par le modèle, pas supposé indépendant.
+joints:
+  - [GEN_AGE, GEN_GEO]
+  - [GEN_AGE, GEN_GENDER]
+  - [GEN_EDUCATION, GEN_AGE]
+  - [GEN_OCCUPATION, GEN_GEO]
+  - [GEN_OCCUPATION, GEN_EDUCATION]
+
+model:
+  kind: copula                              # Rocher et al. 2019
+  fitted: "artifacts/populations/fr-hr-2026.copula.pkl"
+  validation: "artifacts/populations/fr-hr-2026.validation.json"
+  # Le modèle DOIT produire un intervalle [k_low, k_high], pas une valeur
+  # ponctuelle (SPEC-06 §6). La décision d'anonymisation se prend sur la borne
+  # haute du risque.
+  uncertainty: interval
+  confidence_level: 0.95
+
+notes: >
+  Hypothèse d'indépendance interdite sur les paires non listées dans `joints`.
+  L'erreur du modèle copule doit être quantifiée en la validant contre le k
+  exact de support-parc-2026, la seule population du projet à être énumérable
+  exhaustivement (SPEC-06 §4.2).

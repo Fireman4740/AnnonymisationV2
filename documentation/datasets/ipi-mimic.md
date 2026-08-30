@@ -1,0 +1,198 @@
+# IPI — Indirect Personal Identifiers (sur MIMIC-III)
+
+| | |
+|---|---|
+| **Clé interne** | `ipi` |
+| **Priorité** | **P0** (comme source de taxonomie) · P2 (comme source de données) |
+| **Benchmark** | B2 (Indirect QI Detection) |
+| **Statut de la fiche** | Stable · v1.0 · 2026-08-30 |
+
+---
+
+## 1. Identité
+
+| Champ | Valeur |
+|-------|--------|
+| Nom | Indirect Personal Identifiers — schéma d'annotation et corpus |
+| Référence | [@baroud2025ipi] |
+| Année | 2025 |
+| Type | Texte réel (notes cliniques), annoté manuellement |
+| Langue | Anglais |
+| Domaine | Clinique — *discharge summaries* MIMIC-III |
+
+## 2. Rôle et priorité
+
+**C'est la source principale de la taxonomie des QI du projet.**
+
+Le travail ne se limite pas aux PII classiques : les auteurs proposent un schéma
+de **neuf catégories d'identifiants indirects**, construit **en tenant compte de
+plusieurs adversaires possibles** — ce qui est exactement la logique de
+[SPEC-08](../specifications/SPEC-08-attaquants.md).
+
+Priorité double :
+
+- **P0 pour le schéma** : les guidelines d'annotation sont exploitables
+  immédiatement, sans accès aux données.
+- **P2 pour les données** : les spans nécessitent un accès MIMIC-III, long à
+  obtenir et non redistribuable.
+
+## 3. Contenu et volumétrie
+
+| | |
+|---|---|
+| Documents annotés | **100 discharge summaries** MIMIC-III |
+| Annotations | **6 199** |
+| Catégories | **9 catégories d'identifiants indirects** |
+| Distribution | Guidelines + spans, référencés aux documents MIMIC-III correspondants |
+
+Les auteurs ne redistribuent pas les textes : ils publient les **guidelines** et
+les **spans** (offsets), rattachables aux documents MIMIC-III que l'utilisateur
+doit se procurer lui-même.
+
+## 4. Structure brute
+
+- **Guidelines d'annotation** : document décrivant les 9 catégories, leurs
+  frontières et les cas limites. C'est la pièce la plus précieuse.
+- **Fichier de spans** : `(document_id MIMIC, start, end, catégorie)` — format
+  exact à confirmer.
+
+## 5. Accès et acquisition
+
+### Guidelines (immédiat)
+
+| | |
+|---|---|
+| Source | Publication + matériel supplémentaire ACL Anthology |
+| Prérequis | Aucun |
+| Action | Lire, extraire les 9 catégories, les transposer dans [SPEC-01](../specifications/SPEC-01-taxonomie-qi.md) |
+
+### Données (long)
+
+| | |
+|---|---|
+| Source | PhysioNet — MIMIC-III |
+| Prérequis | Compte PhysioNet **+ formation CITI « Data or Specimens Only Research » + accord d'utilisation (DUA) signé** |
+| Délai typique | Plusieurs semaines |
+| Cache local | `data/raw/ipi/` (spans) et `data/external/mimic3/` (textes, **jamais versionné**) |
+
+> **Action recommandée** : lancer la demande d'accès PhysioNet **maintenant**,
+> en parallèle du reste du travail, car c'est le seul élément de la batterie dont
+> le délai est administratif et non technique.
+
+## 6. Licence et conformité
+
+| | |
+|---|---|
+| Guidelines | Licence de la publication (réutilisation du schéma : citer [@baroud2025ipi]) |
+| Spans | Licence des auteurs, à confirmer |
+| Textes MIMIC-III | **Restrictif — PhysioNet Credentialed Health Data License** |
+| Redistribution des textes | **INTERDITE** |
+| Versionnement dans ce dépôt | **INTERDIT** — voir `.gitignore` (`**/mimic*/`) |
+
+**Règle dure** : aucun test du dépôt ne doit exiger MIMIC-III pour passer. Les
+tests concernés portent le marqueur pytest `restricted_license` et sont skippés
+par défaut. Voir [SPEC-09](../specifications/SPEC-09-qualite-licences-ci.md).
+
+## 7. Couverture
+
+| Besoin | Couvert |
+|--------|:-------:|
+| Identifiants directs | ✅ |
+| **QI indirects, taxonomie explicite** | ✅ **(l'apport principal)** |
+| QI implicites | ◐ |
+| Combinaisons annotées | ◐ |
+| Modèle d'adversaire explicite | ✅ |
+| Population de référence | ❌ |
+| Multilingue | ❌ (anglais) |
+| Domaine RH/support/forum | ❌ |
+| Texte réel | ✅ |
+
+## 8. Apport pour le projet
+
+1. **La taxonomie.** Partir de **TAB + IPI + attributs de domaine** plutôt que
+   d'inventer un schéma. C'est l'économie méthodologique la plus rentable du
+   projet, et elle rend la taxonomie défendable en publication.
+2. **La logique multi-adversaires** : les catégories IPI sont définies par
+   rapport à ce qu'un adversaire donné peut exploiter, ce qui se transpose
+   directement dans les niveaux A/B/C de SPEC-08.
+3. **Un point d'ancrage clinique** pour vérifier que la taxonomie n'est pas
+   sur-ajustée au domaine RH.
+
+## 9. Limites et pièges
+
+| Limite | Conséquence |
+|--------|-------------|
+| 100 documents seulement | Trop petit pour entraîner ; utile pour évaluer et calibrer la taxonomie. |
+| Accès MIMIC bloquant | Prévoir un chemin de repli : la taxonomie sans les données. |
+| Domaine clinique | Les 9 catégories doivent être **étendues**, pas copiées : elles ne couvrent ni le produit/version support, ni l'ancienneté/hiérarchie RH. |
+| Anglais | Adaptation FR à valider. |
+
+## 10. Extension aux domaines du projet
+
+Les 9 catégories IPI servent de socle. Le projet ajoute deux blocs de domaine
+(détail : [SPEC-01](../specifications/SPEC-01-taxonomie-qi.md)) :
+
+### Bloc RH
+
+tranche d'âge · ancienneté · diplôme · fonction · niveau hiérarchique ·
+département · localisation · historique professionnel · type de contrat ·
+combinaison employeur × rôle × localisation · événements professionnels rares.
+
+### Bloc support
+
+produit · version · OS · type de terminal · localisation · fuseau horaire ·
+horaire d'incident · rôle utilisateur · environnement technique · combinaison
+produit × version × organisation × heure.
+
+Ces combinaisons doivent être traitées comme des **objets de risque uniques**,
+et non comme des entités indépendantes — c'est la justification de la métrique
+QICR.
+
+## 11. Mapping vers le schéma interne
+
+| Objet IPI | Objet interne | Notes |
+|-----------|---------------|-------|
+| catégorie IPI (1..9) | `Annotation.qi_category` | mapping 1:1 vers les codes SPEC-01 bloc « générique » |
+| span | `Annotation` | `identifier_type = "QUASI"` par construction |
+| document MIMIC | `Document` | `domain = "clinical"`, texte chargé depuis `data/external/mimic3/` |
+| modèle d'adversaire visé | `Annotation.meta.adversary` | conservé, utile au reporting par niveau d'attaquant |
+
+## 12. Splits et protocole
+
+- 100 documents → **aucun split d'entraînement**. Corpus d'évaluation
+  exclusivement.
+- Protocole : `diagnostic` par défaut ; `official` impossible tant que la
+  redistribution est interdite (résultats non reproductibles par un tiers sans
+  accès MIMIC).
+
+## 13. Plan d'implémentation
+
+| # | Étape | Dépend de MIMIC ? | Sortie |
+|---|-------|:-----------------:|--------|
+| 1 | Lire les guidelines, extraire les 9 catégories | Non | tableau dans SPEC-01 |
+| 2 | Définir le mapping IPI → SPEC-01 | Non | `configs/datasets/ipi.yaml` |
+| 3 | Lancer la demande PhysioNet + CITI | Non | accès en cours |
+| 4 | Écrire l'adaptateur avec chargement du texte externe | Non (code) | `src/anonymisation/datasets/ipi.py` |
+| 5 | Test unitaire sur un texte factice + spans factices | Non | test toujours vert |
+| 6 | Ingestion réelle | **Oui** | `data/processed/ipi/` |
+
+**L'étape 1 est la seule vraiment bloquante pour le reste du projet** : la
+taxonomie conditionne SPEC-01, donc SPEC-02, donc tous les adaptateurs.
+
+## 14. Critères d'acceptation
+
+- [ ] Les 9 catégories IPI figurent dans SPEC-01 avec leur définition et un
+      exemple.
+- [ ] Le mapping IPI → SPEC-01 est total (aucune catégorie orpheline).
+- [ ] L'adaptateur fonctionne sur un jeu factice sans MIMIC-III.
+- [ ] Les tests réels portent `@pytest.mark.restricted_license` et sont skippés
+      sans données.
+- [ ] Aucun fichier MIMIC n'apparaît dans `git status`.
+
+## 15. Questions ouvertes
+
+- Les spans sont-ils publiés séparément et sous quelle licence ?
+- Les 9 catégories sont-elles disjointes, ou un span peut-il en porter
+  plusieurs ? (impacte le modèle de données de SPEC-02 : mono- ou multi-label)
+- La demande PhysioNet est-elle réellement nécessaire au projet, ou la taxonomie
+  suffit-elle ? → décision à prendre en fin de lot L1.

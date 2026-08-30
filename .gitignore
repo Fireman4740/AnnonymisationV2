@@ -1,0 +1,50 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# --- Outils ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.uv-cache/
+
+# --- Secrets ---
+.env
+*.key
+*.pem
+
+# --- Données ---
+# Aucune donnée brute ou dérivée ne doit être versionnée : la traçabilité
+# passe par les manifestes (configs/datasets/*.yaml) et les checksums.
+data/raw/**
+data/interim/**
+data/processed/**
+data/external/**
+!data/**/.gitkeep
+!data/**/README.md
+
+# Corpus sous licence restrictive : interdiction absolue de commit.
+**/mimic*/
+**/*meddocan*/
+**/*.dcm
+
+# --- Sorties d'expériences ---
+runs/
+outputs/
+artifacts/
+*.log
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

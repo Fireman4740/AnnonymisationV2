@@ -1,0 +1,67 @@
+# Manifeste — SynthPAI
+# Fiche : documentation/datasets/synthpai.md
+
+key: synthpai
+name: "SynthPAI"
+description: "Commentaires de forum synthétiques, 300 profils latents, 8 attributs personnels"
+doc: "documentation/datasets/synthpai.md"
+aliases: []
+
+source:
+  kind: huggingface
+  repo: "RobinSta/SynthPAI"
+  revision: null
+  files: []
+  mirror: "https://github.com/eth-sri/SynthPAI"
+
+license:
+  spdx: "UNKNOWN"
+  redistribution: null
+  restricted: false
+  citation: "yukhymenko2024synthpai"
+  notes: "Données entièrement synthétiques — aucune contrainte RGPD sur les sujets."
+
+integrity:
+  sha256: null
+  expected_documents: 7823
+  expected_profiles: 300
+  expected_threads: 103
+
+structure:
+  domain: forum
+  languages: ["en"]
+  synthetic: true
+  has_profiles: true
+  has_combinations: false
+  has_organizations: false
+  has_tasks: false
+  # CRITIQUE : un split par document produirait une fuite massive, les messages
+  # d'un même auteur partageant le profil latent (SPEC-03 §4).
+  split_by: person_id
+  splits: ["train", "dev", "test"]
+
+label_map:
+  age:                 { identifier_type: QUASI, qi_categories: [GEN_AGE],        granularity: EXACT,  stability: STABLE }
+  sex:                 { identifier_type: QUASI, qi_categories: [GEN_GENDER],     granularity: COARSE, stability: STABLE }
+  income:              { identifier_type: QUASI, qi_categories: [GEN_SOCIOECON],  granularity: RANGE,  stability: VOLATILE }
+  city_country:        { identifier_type: QUASI, qi_categories: [GEN_GEO],        granularity: COARSE, stability: VOLATILE }
+  birth_city_country:  { identifier_type: QUASI, qi_categories: [GEN_GEO],        granularity: COARSE, stability: STABLE }
+  education:           { identifier_type: QUASI, qi_categories: [GEN_EDUCATION],  granularity: COARSE, stability: STABLE }
+  occupation:          { identifier_type: QUASI, qi_categories: [GEN_OCCUPATION], granularity: COARSE, stability: VOLATILE }
+  relationship_status: { identifier_type: QUASI, qi_categories: [GEN_FAMILY],     granularity: COARSE, stability: VOLATILE }
+
+evaluation:
+  protocol: "synthpai-v1"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "DIAGNOSTIC"
+  # Deux granularités obligatoires : l'écart mesure l'effet d'agrégation.
+  granularities: ["document", "author"]
+  report_by: ["expression_mode"]
+
+population:
+  population_id: null
+  k_computable: false
+  # ATTENTION (fiche §9) : calculer k sur les 300 profils reviendrait à un k
+  # prosecutor sur une population fermée de 300 personnes, sans rapport avec un
+  # risque réel. Tout k calculé ici est marqué DIAGNOSTIC.

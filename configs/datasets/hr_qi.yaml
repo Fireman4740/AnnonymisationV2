@@ -1,0 +1,87 @@
+# Manifeste — HR-QI-Bench (corpus interne généré)
+# Fiche : documentation/datasets/hr-qi-bench.md
+# Protocole de génération : documentation/specifications/SPEC-05-generation-corpus-synthetiques.md
+
+key: hr_qi
+name: "HR-QI-Bench"
+description: "Corpus RH francophone à profil latent, avec combinaisons de QI, k gold et tâches d'utilité"
+doc: "documentation/datasets/hr-qi-bench.md"
+aliases: ["hr-qi-bench"]
+
+source:
+  kind: generated
+  generator: "anonymisation.datasets.generation.hr"
+  seed: 42
+  # Reproductibilité : les LLM n'étant pas parfaitement déterministes, le corpus
+  # est une DONNÉE figée par checksum, pas une fonction à réexécuter (SPEC-05 §12).
+
+license:
+  spdx: "à décider"           # publication recommandée (fiche §14)
+  redistribution: null
+  restricted: false
+  citation: null
+
+integrity:
+  sha256: null
+  expected_documents: 3000
+  expected_profiles: 600
+
+structure:
+  domain: hr
+  languages: ["fr", "en"]
+  synthetic: true
+  has_profiles: true
+  has_combinations: true
+  has_organizations: false
+  has_tasks: true
+  split_by: person_id
+  splits: ["train", "calib", "test", "heldout_profiles"]
+  # `calib` est réservé à la calibration du score de risque (SPEC-06 §8) et
+  # DOIT rester distinct de `test`.
+
+generation:
+  population_id: "fr-hr-2026"
+  doc_type_mix:
+    hr_ticket: 0.40
+    manager_message: 0.25
+    cv_excerpt: 0.20
+    annual_review: 0.15
+  language_mix: { fr: 0.70, en: 0.30 }
+  expression_mode_mix: { EXPLICIT: 0.40, NON_STANDARD: 0.30, IMPLICIT: 0.30 }
+  # Stratification par k : sans elle, presque tous les profils auraient un k
+  # élevé et le benchmark ne contiendrait que des cas faciles (SPEC-05 §4).
+  k_strata:
+    "1":      0.10
+    "2-4":    0.20
+    "5-9":    0.20
+    "10-19":  0.20
+    "20+":    0.30
+  max_combination_size: 5
+  generators:
+    # Le modèle générateur NE DOIT PAS être un modèle évalué comme détecteur.
+    - { model: null, prompts: "configs/generation/hr/fr/*.txt" }
+  quality_controls: ["C1_completeness", "C2_localization", "C3_contamination"]
+  human_review_rate: 0.05
+
+tasks:
+  - { id: "hr_request_type", type: single,     description: "Type de demande RH" }
+  - { id: "skill_extraction", type: multi,     description: "Compétences mentionnées" }
+  - { id: "job_family",       type: single,    description: "Famille de métier" }
+  - { id: "urgency",          type: single,    description: "Niveau de criticité" }
+
+evaluation:
+  protocol: "hr-qi-v1"
+  protocol_version: "1"
+  official_eligible: true
+  default_metric_status: "OFFICIAL"
+  granularities: ["document", "author"]
+  report_by: ["language", "expression_mode", "k_stratum"]
+  # Les résultats DOIVENT être publiés bruts ET repondérés par les poids
+  # d'échantillonnage : un R_succ mesuré sur un corpus sur-représentant les k
+  # faibles n'est pas le risque en production (SPEC-05 §4).
+  reweighting: required
+
+population:
+  population_id: "fr-hr-2026"
+  k_computable: true
+  risk_model: "copula"        # population INSEE agrégée -> pas de k exact

@@ -1,0 +1,89 @@
+# Politiques d'anonymisation — points de fonctionnement P0..P4
+#
+# Spéc : documentation/specifications/SPEC-06-population-et-risque.md §9
+#        documentation/specifications/SPEC-07-metriques.md §7
+#
+# Ces seuils sont EXPÉRIMENTAUX, pas des standards juridiques. Ils définissent
+# les points de la courbe privacy-utility que le projet publie. Le livrable de
+# résultat est la COURBE, pas un point unique.
+
+defaults:
+  risk_model: "copula"          # prosecutor si la population est exhaustive
+  scope: "document"             # document | thread | author
+  use_upper_bound: true         # décider sur la borne haute du risque, pas sur
+                                # l'estimation ponctuelle (SPEC-06 §6)
+  k_seuil_at_risk: 10           # définit "combinaison à risque" pour QICR
+  sensitive_hardening: true     # durcit d'un cran si sensitivity != NONE
+  # Choix de l'action : maximiser Δrisk / Δutilité_perdue, c'est-à-dire chercher
+  # le minimum de dégâts atteignant le seuil.
+  action_selection: "max_risk_reduction_per_utility_loss"
+
+policies:
+
+  P0:
+    label: "Permissive — identifiants directs uniquement"
+    description: "Baseline PII classique. Sert de plancher de comparaison."
+    thresholds:
+      keep_below: 1.00          # aucun QI traité
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: KEEP
+      SENSITIVE_ONLY: KEEP
+
+  P1:
+    label: "Prudente"
+    thresholds:
+      keep_below: 0.20          # k >= 5
+      generalize_below: 0.50
+      suppress_above: 0.50
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: GENERALIZE
+      SENSITIVE_ONLY: KEEP
+
+  P2:
+    label: "Équilibrée — défaut recommandé"
+    thresholds:
+      keep_below: 0.10          # k >= 10
+      generalize_below: 0.20    # k >= 5
+      suppress_above: 0.20
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: GENERALIZE
+      SENSITIVE_ONLY: KEEP
+    max_generalization_steps: 2
+
+  P3:
+    label: "Stricte"
+    thresholds:
+      keep_below: 0.05          # k >= 20
+      generalize_below: 0.10
+      suppress_above: 0.10
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: GENERALIZE
+      SENSITIVE_ONLY: SUPPRESS
+    max_generalization_steps: 3
+    scope: "author"             # tient compte de l'historique
+
+  P4:
+    label: "Agressive — borne haute de protection"
+    description: "Sert à borner la courbe. Utilité volontairement sacrifiée."
+    thresholds:
+      keep_below: 0.02          # k >= 50
+      generalize_below: 0.05
+      suppress_above: 0.05
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: SUPPRESS
+      SENSITIVE_ONLY: SUPPRESS
+    scope: "author"
+
+# Table de correspondance k -> risque -> niveau (SPEC-06 §9), pour référence :
+#
+#   k >= 20   ->  <= 5 %    faible       KEEP
+#   k 10-19   ->  5-10 %    modéré       GENERALIZE
+#   k 5-9     ->  10-20 %   élevé        GENERALIZE puis SUPPRESS
+#   k 3-4     ->  25-33 %   très élevé   SUPPRESS
+#   k 2       ->  50 %      critique     SUPPRESS
+#   k 1       ->  100 %     critique     SUPPRESS

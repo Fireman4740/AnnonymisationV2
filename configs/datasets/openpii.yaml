@@ -1,0 +1,72 @@
+# Manifeste — OpenPII 500k (AI4Privacy)
+# Fiche : documentation/datasets/openpii-500k.md
+# Schéma : documentation/specifications/SPEC-03-registre-et-adaptateurs.md §4
+#
+# ÉTAT : squelette. Les champs `null` et `UNKNOWN` doivent être renseignés lors
+# de la première acquisition (`anonv2 datasets download openpii --pin`).
+
+key: openpii
+name: "OpenPII 500k — AI4Privacy"
+description: "PII multilingue synthétique, 20 classes, 8 langues dont le français"
+doc: "documentation/datasets/openpii-500k.md"
+aliases: ["ai4privacy", "open-pii-500k"]
+
+source:
+  kind: huggingface
+  repo: "ai4privacy/open-pii-masking-500k-ai4privacy"
+  revision: null              # OBLIGATOIRE avant tout run officiel
+  files: []
+
+license:
+  spdx: "UNKNOWN"             # à relever sur la carte HF de la révision retenue
+  redistribution: null
+  restricted: false
+  citation: "ai4privacy2024openpii"
+  notes: >
+    Les différentes versions publiées par AI4Privacy n'ont pas toutes la même
+    licence. Vérifier celle de la révision épinglée, pas celle du dépôt.
+
+integrity:
+  sha256: null
+  expected_documents: null    # ~500 000, à figer
+  expected_profiles: 0
+
+structure:
+  domain: generic
+  languages: ["fr", "en", "de", "es", "it", "nl", "pt"]   # à confirmer (8 langues)
+  synthetic: true
+  has_profiles: false
+  has_combinations: false
+  has_organizations: false
+  has_tasks: false
+  split_by: document          # pas de profil latent -> split document acceptable
+  splits: ["train", "validation", "test"]
+
+# label_map : OBLIGATOIREMENT total (SPEC-03 G4).
+# Décision non triviale (voir fiche §10) : plusieurs classes OpenPII ne sont PAS
+# des identifiants directs. Les classer mécaniquement en DIRECT fausserait le
+# DILR. Revue classe par classe requise avant la première mesure.
+label_map:
+  GIVENNAME:   { identifier_type: DIRECT, qi_categories: [DIR_NAME],    granularity: EXACT, stability: STABLE }
+  SURNAME:     { identifier_type: DIRECT, qi_categories: [DIR_NAME],    granularity: EXACT, stability: STABLE }
+  EMAIL:       { identifier_type: DIRECT, qi_categories: [DIR_EMAIL],   granularity: EXACT, stability: VOLATILE }
+  TELEPHONENUM:{ identifier_type: DIRECT, qi_categories: [DIR_PHONE],   granularity: EXACT, stability: VOLATILE }
+  STREET:      { identifier_type: DIRECT, qi_categories: [DIR_ADDRESS], granularity: EXACT, stability: VOLATILE }
+  BUILDINGNUM: { identifier_type: DIRECT, qi_categories: [DIR_ADDRESS], granularity: EXACT, stability: VOLATILE }
+  ZIPCODE:     { identifier_type: QUASI,  qi_categories: [GEN_GEO],     granularity: EXACT, stability: VOLATILE }
+  CITY:        { identifier_type: QUASI,  qi_categories: [GEN_GEO],     granularity: COARSE, stability: VOLATILE }
+  DATEOFBIRTH: { identifier_type: QUASI,  qi_categories: [GEN_AGE],     granularity: EXACT, stability: STABLE }
+  JOBTITLE:    { identifier_type: QUASI,  qi_categories: [GEN_OCCUPATION], granularity: COARSE, stability: VOLATILE }
+  # ... les 20 classes DOIVENT figurer ici. Toute classe absente = E-MAP-001.
+
+evaluation:
+  protocol: "openpii-v1"
+  protocol_version: "1"
+  official_eligible: false    # -> true quand licence + revision + sha256 sont fixés
+  default_metric_status: "SAMPLED"
+  granularities: ["document"]
+  report_by: ["language"]     # la moyenne toutes langues confondues est trompeuse
+
+population:
+  population_id: null
+  k_computable: false

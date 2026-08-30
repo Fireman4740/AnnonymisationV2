@@ -1,0 +1,69 @@
+# Manifeste — RAT-Bench
+# Fiche : documentation/datasets/rat-bench.md
+#
+# Dataset le plus proche de l'objectif du projet : texte -> QI -> risque
+# populationnel, avec attaquant intégré. Structure réelle à documenter dès le
+# premier téléchargement (fiche §4).
+
+key: ratbench
+name: "RAT-Bench"
+description: "Benchmark end-to-end de risque de ré-identification textuelle, avec attaquant et population de référence"
+doc: "documentation/datasets/rat-bench.md"
+aliases: ["rat-bench", "rat_bench"]
+
+source:
+  kind: manual                # dépôt à identifier (GitHub et/ou HF)
+  repo: null
+  revision: null
+  paper: "arXiv:2602.12806"   # [à revérifier]
+  v1_cache: "../Anonymisation/eval/datasets/RAT-Bench"
+  instructions: >
+    Identifier le dépôt officiel et sa licence avant tout usage publié.
+    Commencer par lire eval/core/loaders/ratbench.py de la V1 : il documente
+    de facto le format réel.
+
+license:
+  spdx: "UNKNOWN"
+  redistribution: false       # interdite tant que la licence n'est pas vérifiée
+  restricted: false
+  citation: "krco2026ratbench"
+  notes: "Bloquant pour publication tant que la licence n'est pas confirmée."
+
+integrity:
+  sha256: null
+  expected_documents: null
+  expected_profiles: null
+
+structure:
+  domain: generic
+  languages: []               # à confirmer, avec la volumétrie par langue
+  synthetic: true
+  has_profiles: true
+  has_combinations: true
+  has_organizations: false
+  has_tasks: false
+  split_by: person_id
+  splits: []                  # reprendre les splits officiels, ne pas resplitter
+
+label_map: {}                 # à établir : toute étiquette non mappée = E-MAP-001
+
+evaluation:
+  protocol: "ratbench-official"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "DIAGNOSTIC"
+  granularities: ["document"]
+  report_by: ["expression_mode", "difficulty", "language"]
+  # Test de non-régression (fiche §3.2) : reproduire l'ordre de grandeur de
+  # l'écart de risque entre régime standard et non standard (~44 % -> ~69 %).
+  # Un écart nul signale un bug de notre attaquant, pas une victoire.
+  sanity_checks:
+    - id: "S4"
+      description: "risque(NON_STANDARD) > risque(EXPLICIT)"
+
+population:
+  population_id: "ratbench-us"
+  k_computable: true
+  notes: >
+    Population US. Le k obtenu est un k américain : il ne transfère pas aux
+    corpus FR. Ne pas mélanger avec les k de fr-hr-2026.

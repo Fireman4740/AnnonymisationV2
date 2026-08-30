@@ -1,0 +1,72 @@
+# Manifeste — TAB (Text Anonymization Benchmark)
+# Fiche : documentation/datasets/tab.md
+
+key: tab
+name: "Text Anonymization Benchmark"
+description: "1268 arrêts CEDH annotés en identifiants directs, quasi-identifiants et coréférences"
+doc: "documentation/datasets/tab.md"
+aliases: ["text-anonymization-benchmark"]
+
+source:
+  kind: huggingface           # ou url — à confirmer à l'acquisition
+  repo: null
+  revision: null
+  files: []
+  v1_cache: "../Anonymisation/eval/datasets/TAB"   # réutilisable après vérif de checksum
+
+license:
+  spdx: "UNKNOWN"
+  redistribution: true        # sous conditions, citation obligatoire
+  restricted: false
+  citation: "pilan2022tab"
+  notes: >
+    Arrêts CEDH publics. Les personnes citées sont RÉELLES : aucune sortie
+    d'attaquant ne doit être publiée ni journalisée (SPEC-08 E2/E3).
+
+integrity:
+  sha256: null
+  expected_documents: 1268
+  expected_profiles: 0
+
+structure:
+  domain: legal
+  languages: ["en"]
+  synthetic: false            # -> l'attaquant C refuse de démarrer (SPEC-08 E1)
+  has_profiles: false
+  has_combinations: false
+  has_organizations: false
+  has_tasks: false
+  split_by: document
+  splits: ["train", "dev", "test"]
+
+# Règle d'agrégation multi-annotateurs — À FIGER AVANT LA PREMIÈRE MESURE.
+# Elle change les chiffres, et toute publication doit la préciser.
+#   union      : privacy-first, tout ce qu'un annotateur a jugé identifiant l'est
+#   majority   : consensus
+#   annotator:<id> : un annotateur de référence
+annotation:
+  aggregation: union          # défaut privacy-first
+  keep_coreference: true      # indispensable au rappel entity-level
+
+label_map:
+  # À compléter avec les types réels de TAB (voir eval/core/tab_official.py en V1).
+  PERSON:       { identifier_type: DIRECT, qi_categories: [DIR_NAME],       granularity: EXACT,  stability: STABLE }
+  CODE:         { identifier_type: DIRECT, qi_categories: [DIR_CASE_REF],   granularity: EXACT,  stability: STABLE }
+  LOC:          { identifier_type: QUASI,  qi_categories: [GEN_GEO],        granularity: COARSE, stability: VOLATILE }
+  ORG:          { identifier_type: QUASI,  qi_categories: [GEN_AFFILIATION],granularity: COARSE, stability: VOLATILE }
+  DEM:          { identifier_type: QUASI,  qi_categories: [GEN_ORIGIN_BELIEF], granularity: COARSE, stability: STABLE }
+  DATETIME:     { identifier_type: QUASI,  qi_categories: [GEN_DATE_EVENT], granularity: EXACT,  stability: STABLE }
+  QUANTITY:     { identifier_type: QUASI,  qi_categories: [OTHER_QI],       granularity: EXACT,  stability: VOLATILE }
+  MISC:         { identifier_type: QUASI,  qi_categories: [OTHER_QI],       granularity: COARSE, stability: VOLATILE }
+
+evaluation:
+  protocol: "tab-official"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "PROXY"   # OFFICIAL quand les métriques du papier sont portées
+  granularities: ["document", "entity"]
+  report_by: ["expression_mode"]
+
+population:
+  population_id: null
+  k_computable: false

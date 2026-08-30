@@ -1,0 +1,174 @@
+% ---------------------------------------------------------------------------
+% Bibliographie — AnnonymisationV2
+% Revue close le 2026-08-30.
+%
+% ATTENTION : les identifiants arXiv 2026 (RAT-Bench, InferLink, AURA) et
+% certaines volumétries proviennent de la revue de littérature du 30/08/2026.
+% Ils sont marqués `% [a-verifier]` et DOIVENT être reconfirmes a la source
+% avant toute soumission.
+% ---------------------------------------------------------------------------
+
+% ===================== Benchmarks / datasets ===============================
+
+@article{pilan2022tab,
+  title   = {The Text Anonymization Benchmark ({TAB}): A Dedicated Corpus and
+             Evaluation Framework for Text Anonymization},
+  author  = {Pil{\'a}n, Ildik{\'o} and Lison, Pierre and {\O}vrelid, Lilja and
+             Papadopoulou, Anthi and S{\'a}nchez, David and Batet, Montserrat},
+  journal = {Computational Linguistics},
+  volume  = {48},
+  number  = {4},
+  pages   = {1053--1101},
+  year    = {2022},
+  publisher = {MIT Press},
+  url     = {https://direct.mit.edu/coli/article/48/4/1053/112770/}
+}
+
+@inproceedings{baroud2025ipi,
+  title  = {Indirect Personal Identifiers ({IPI}): An Annotation Schema and
+            Corpus for Indirect Identifiers in Clinical Text},
+  author = {Baroud, Evan and Roller, Roland and others},
+  year   = {2025},
+  note   = {Annotations sur 100 discharge summaries MIMIC-III, 6199 annotations,
+            9 categories d'identifiants indirects},
+  url    = {https://aclanthology.org/}
+  % [a-verifier] reference exacte ACL Anthology
+}
+
+@inproceedings{yukhymenko2024synthpai,
+  title     = {A Synthetic Dataset for Personal Attribute Inference},
+  author    = {Yukhymenko, Hanna and Staab, Robin and Vero, Mark and Vechev, Martin},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS),
+               Datasets and Benchmarks Track},
+  year      = {2024},
+  note      = {SynthPAI : 7823 commentaires, 103 threads, 300 profils synthetiques},
+  url       = {https://github.com/eth-sri/SynthPAI}
+}
+
+@misc{ai4privacy2024openpii,
+  title        = {open-pii-masking-500k-ai4privacy},
+  author       = {{AI4Privacy}},
+  year         = {2024},
+  howpublished = {Hugging Face Datasets},
+  note         = {20 classes PII, 8 langues, >112k exemples en francais},
+  url          = {https://huggingface.co/datasets/ai4privacy/open-pii-masking-500k-ai4privacy}
+}
+
+@inproceedings{jensen2021jobstack,
+  title     = {De-identification of Privacy-related Entities in Job Postings},
+  author    = {Jensen, Kristian N{\o}rgaard and Zhang, Mike and Plank, Barbara},
+  booktitle = {NoDaLiDa},
+  year      = {2021},
+  eprint    = {2105.11223},
+  archivePrefix = {arXiv},
+  url       = {https://arxiv.org/abs/2105.11223}
+}
+
+@inproceedings{fetahu2023multiconer,
+  title     = {{SemEval}-2023 Task 2: Fine-grained Multilingual Named Entity
+               Recognition ({MultiCoNER} 2)},
+  author    = {Fetahu, Besnik and Kar, Sudipta and Chen, Zhiyu and
+               Rokhlenko, Oleg and Malmasi, Shervin},
+  booktitle = {Proceedings of SemEval-2023},
+  year      = {2023},
+  url       = {https://multiconer.github.io/dataset}
+}
+
+@misc{marimon2019meddocan,
+  title     = {{MEDDOCAN} corpus: gold standard annotations for Medical Document
+               Anonymization on Spanish clinical case reports},
+  author    = {Marimon, Montserrat and Gonzalez-Agirre, Aitor and
+               Intxaurrondo, Ander and Rodriguez, Heidy and
+               Lopez Martin, Jose Antonio and Villegas, Marta and
+               Krallinger, Martin},
+  year      = {2019},
+  publisher = {Zenodo},
+  url       = {https://zenodo.org/records/4279323}
+}
+
+@misc{krco2026ratbench,
+  title         = {{RAT-Bench}: A Comprehensive Benchmark for Text Anonymization},
+  author        = {Kr{\v{c}}o, Natasa and others},
+  year          = {2026},
+  eprint        = {2602.12806},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2602.12806}
+  % [a-verifier] identifiant arXiv et liste d'auteurs
+}
+
+% ===================== Attaquants / agents =================================
+
+@misc{ko2026inferlink,
+  title         = {From Weak Cues to Real Identities: Evaluating Inference-Driven
+                   De-Anonymization in {LLM} Agents},
+  author        = {Ko, Jihyun Jeong and others},
+  year          = {2026},
+  eprint        = {2603.18382},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2603.18382}
+  % [a-verifier]
+}
+
+@misc{li2026aura,
+  title         = {{AURA}: {LLM} Anonymization Against Agentic Re-Identification},
+  author        = {Li and others},
+  year          = {2026},
+  eprint        = {2605.30848},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2605.30848}
+  % [a-verifier]
+}
+
+% ===================== Anonymisation guidee par le risque ==================
+
+@article{manzanares2025petre,
+  title   = {Enhancing text anonymization via re-identification risk-based
+             explainability},
+  author  = {Manzanares-Salor, Benet and S{\'a}nchez, David},
+  journal = {Knowledge-Based Systems},
+  year    = {2025},
+  url     = {https://www.sciencedirect.com/science/article/pii/S095070512401579X},
+  note    = {Implementation : https://github.com/CRISES-research-group/PETRE}
+}
+
+@article{prasser2020arx,
+  title   = {Flexible data anonymization using {ARX} --- Current status and
+             challenges ahead},
+  author  = {Prasser, Fabian and Eicher, Johanna and Spengler, Helmut and
+             Bild, Raffael and Kuhn, Klaus A.},
+  journal = {Software: Practice and Experience},
+  volume  = {50},
+  number  = {7},
+  pages   = {1277--1304},
+  year    = {2020},
+  doi     = {10.1002/spe.2812},
+  url     = {https://arx.deidentifier.org/overview/privacy-criteria/}
+}
+
+@article{rocher2019estimating,
+  title   = {Estimating the success of re-identifications in incomplete datasets
+             using generative models},
+  author  = {Rocher, Luc and Hendrickx, Julien M. and de Montjoye, Yves-Alexandre},
+  journal = {Nature Communications},
+  volume  = {10},
+  number  = {3069},
+  year    = {2019},
+  url     = {https://pubmed.ncbi.nlm.nih.gov/31337762/}
+}
+
+@inproceedings{kim2025seal,
+  title     = {Self-Refining Language Model Anonymizers via Adversarial Distillation},
+  author    = {Kim and others},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2025},
+  url       = {https://proceedings.nips.cc/paper_files/paper/2025/hash/f1f0843df6f133309dd6d43d14f8a4e3-Abstract-Conference.html}
+}
+
+@inproceedings{loiseau2025taueval,
+  title     = {{Tau-Eval}: A Unified Evaluation Framework for Useful and Private
+               Text Anonymization},
+  author    = {Loiseau and others},
+  booktitle = {Proceedings of EMNLP 2025, System Demonstrations},
+  year      = {2025},
+  url       = {https://aclanthology.org/2025.emnlp-demos.16/}
+}
