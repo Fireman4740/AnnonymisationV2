@@ -7,17 +7,23 @@ requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Mathis Carlesso" }]
 
+# Noyau volontairement minimal : l'import du coeur ne doit dépendre ni d'un
+# fournisseur LLM, ni de CUDA, ni de GLiNER, ni de Streamlit (leçon de l'audit
+# v1, §12.9). La CLI utilise argparse (stdlib), pas typer.
 dependencies = [
   "pydantic>=2.7",
   "pyyaml>=6.0",
-  "typer>=0.12",
-  "rich>=13.7",
-  "numpy>=1.26",
-  "pandas>=2.2",
 ]
 
 [project.optional-dependencies]
+# Lecture des corpus locaux (parquet : SupportTicketsReal, PUMS de RAT-Bench).
 datasets = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "pyarrow>=15.0",
+]
+# Acquisition de sources distantes — inutile pour les corpus déjà en cache local.
+download = [
   "datasets>=2.19",
   "huggingface-hub>=0.23",
   "lxml>=5.2",
@@ -30,8 +36,12 @@ models = [
   "spacy>=3.7",
 ]
 metrics = [
-  "scikit-learn>=1.5",
+  "numpy>=1.26",
   "scipy>=1.13",
+]
+# Métriques d'utilité textuelle (secondaires — voir SPEC-07 §6.A).
+metrics_text = [
+  "scikit-learn>=1.5",
   "bert-score>=0.3.13",
 ]
 dev = [

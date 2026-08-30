@@ -1,0 +1,3 @@
+{"attributes":{"GEN_AGE":{"normalized":{"range":[18,29]},"value":28},"GEN_EDUCATION":{"normalized":{"isced":"8"},"value":"PhD"}},"dataset":"micro","meta":{},"org_id":null,"person_id":"micro:P1","population_id":"fr-hr-2026","pseudonym":null}
+{"attributes":{"GEN_OCCUPATION":{"normalized":{"pcs":"342a"},"value":"postdoc researcher"},"HR_EMPLOYER_SIZE":{"normalized":{"range":[0,49]},"value":"0-49"}},"dataset":"micro","meta":{},"org_id":null,"person_id":"micro:P2","population_id":"fr-hr-2026","pseudonym":null}
+{"attributes":{"GEN_EDUCATION":{"normalized":{"field":"physics","isced":"8"},"value":"PhD physics"},"HR_CONTRACT":{"normalized":null,"value":"CDD"}},"dataset":"micro","meta":{},"org_id":null,"person_id":"micro:P3","population_id":"fr-hr-2026","pseudonym":null}

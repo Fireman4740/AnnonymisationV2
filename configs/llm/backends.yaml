@@ -1,0 +1,66 @@
+# Backends LLM interchangeables — SPEC-10 §5
+#
+# La clé d'API n'est JAMAIS écrite ici : elle est lue à l'exécution via
+# `api_key_cmd` ou `api_key_env`.
+#
+# Le backend utilisé est enregistré dans PipelineTrace et dans tout rapport :
+# un résultat obtenu avec Sonnet n'est pas comparable à un résultat Qwen.
+
+default: qwen_local
+
+backends:
+
+  # --- Modèle local, défaut du projet ------------------------------------- #
+  # Serveur vLLM Qwen3.8-27B (W4A16), piloté par F:\IA\Qwen3.8\qwen.ps1
+  #   start | stop | status | logs | key | chat | restart
+  # Respecte la contrainte projet « modèles locaux < 30 B ».
+  qwen_local:
+    kind: openai_compatible
+    base_url: "http://127.0.0.1:18020/v1"
+    model: "qwen3.8-27b"
+    api_key_cmd: >-
+      wsl.exe -d Ubuntu -- bash -lc
+      "cd ~/qwen38-27b-rtx3090 && grep VLLM_API_KEY .env | cut -d= -f2"
+    timeout_s: 90
+    max_concurrency: 4          # borné par la VRAM du RTX 3090
+    temperature: 0.1            # détection : on cherche la précision
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+    health:
+      url: "http://127.0.0.1:18020/health"
+      # Message affiché si le serveur ne répond pas : actionnable, pas un
+      # timeout opaque (SPEC-10 §11).
+      hint: "Serveur local éteint. Démarrer : powershell -File F:\\IA\\Qwen3.8\\qwen.ps1 start (2-3 min au premier boot)"
+
+  # --- Borne supérieure de qualité / attaquant B -------------------------- #
+  sonnet:
+    kind: anthropic
+    model: "claude-sonnet-5"
+    api_key_env: "ANTHROPIC_API_KEY"
+    timeout_s: 60
+    max_concurrency: 8
+    temperature: 0.1
+
+  # --- Sans LLM : CI, tests, pipeline dégradé ----------------------------- #
+  # Permet de faire tourner le pipeline de bout en bout sans GPU (SPEC-10 §11).
+  null_backend:
+    kind: null
+    model: null
+
+# Rôles : un backend différent peut être affecté à chaque rôle.
+# Contrainte méthodologique (SPEC-05 §7) : le modèle GÉNÉRATEUR ne doit pas être
+# un modèle évalué comme détecteur, sinon le détecteur reconnaît son propre style.
+roles:
+  detection: qwen_local
+  generation: qwen_local        # à changer quand un second modèle local existe
+  attacker_a: qwen_local
+  attacker_b: sonnet
+  paraphrase: qwen_local
+
+cache:
+  enabled: true                 # OBLIGATOIRE (SPEC-10 §5.1)
+  dir: "data/interim/llm_cache"
+  # Clé = sha256(backend + model + prompt + params).
+  # Sans cache, chaque réévaluation recoûte des heures de GPU et les
+  # comparaisons entre politiques ne sont plus isolées du bruit du LLM.

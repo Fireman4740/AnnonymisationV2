@@ -1,0 +1,104 @@
+# Profil d'exécution « deterministic » — LE PROFIL PAR DÉFAUT
+#
+# Spéc : documentation/specifications/SPEC-10-pipeline-anonymisation.md §9
+#
+# Contrainte C1 (normative, issue de l'audit du dépôt v1) : ce profil DOIT
+# s'exécuter sans aucun appel LLM, sans GPU et sans réseau, et traiter 100 % des
+# documents de tous les corpus d'évaluation avec 0 % d'erreur.
+#
+# Rappel du contexte : la campagne v1 dépendante des LLM a produit 84 % d'erreurs
+# sur `anonymization`, 100 % sur DB-bio et 100 % sur TAB (timeouts, JSON vides,
+# réponses tronquées). Les chiffres publiés n'étaient pas une performance de
+# pipeline mais un taux d'échec déguisé en métrique. D'où l'ordre imposé :
+# le noyau déterministe atteint 0 % d'erreur AVANT tout appel LLM.
+
+profile: deterministic
+schema_version: "2.0"
+
+stages:
+  detect:
+    enabled: true
+    deterministic:
+      enabled: true
+      patterns: "configs/detection/patterns.yaml"
+      # Privacy-first (SPEC-07 §2) : le rappel prime sur la précision. Un seuil
+      # bas laisse passer des candidats faibles plutôt que de manquer une fuite.
+      min_confidence: 0.30
+    ner:
+      enabled: false          # nécessite GLiNER/spaCy — profil `ner`
+    llm_reviewer:
+      enabled: false          # profil `llm-audit` ou `full`
+
+  fuse:
+    enabled: true
+    strategy: priority_longest
+    # I-ANN-5 : deux annotations PEUVENT légitimement se chevaucher (multi-label
+    # imbriqué, ex. « infirmière au CHU de Lille » = occupation + affiliation +
+    # géo). La fusion ne réduit que les conflits de même catégorie.
+    keep_multilabel_overlap: true
+
+  assess:
+    enabled: true
+    # ATTENTION : tant que le moteur de risque de SPEC-06 n'est pas livré (lot
+    # L4), l'estimateur utilisé est `naive` et ses sorties sont marquées PROXY.
+    # SPEC-07 §9 interdit de présenter un PROXY à côté d'un chiffre officiel.
+    estimator: naive
+    risk_model: prosecutor
+    population_id: null
+    use_upper_bound: true
+
+  plan:
+    enabled: true
+    policy_set: "configs/policy/policies.yaml"
+    policy: P2                # équilibrée, défaut recommandé
+
+  transform:
+    enabled: true
+    pseudonymization:
+      # Le secret vient de l'environnement, jamais du fichier de configuration.
+      secret_env: "ANONV2_PSEUDO_SECRET"
+      scope: "default"        # l'isolation par scope empêche la linkability inter-corpus
+      length: 6
+    masking:
+      mode: full              # `partial` fuit de l'information : choix explicite seulement
+
+  validate:
+    enabled: true
+    check_placeholders: true
+    check_forbidden_patterns: true
+    # Contrôle de fuite : aucune valeur gold d'identifiant direct ne doit
+    # subsister dans le texte anonymisé (SPEC-10 §10).
+    check_gold_leakage: true
+    fail_on_leak: false       # journalise et marque le document, sans interrompre le run
+
+  audit:
+    enabled: false            # LLM — off par défaut (contrainte C2)
+
+  rewrite:
+    enabled: false            # LLM — off par défaut (contrainte C2)
+
+llm:
+  # Mode local par défaut. Tout envoi vers un fournisseur externe exige
+  # `allow_remote: true` explicite, et reste INTERDIT sur les corpus contenant
+  # des personnes réelles (TAB, DB-bio, SupportTicketsReal, CleanCoNLL) —
+  # garde E2 de SPEC-08, appliquée en code.
+  mode: local
+  allow_remote: false
+
+budgets:
+  # Un document qui dépasse son budget est marqué en erreur et EXCLU des
+  # métriques (contrainte C4) — jamais compté comme une prédiction vide, ce qui
+  # gonflerait la précision et effondrerait le rappel.
+  per_document_timeout_s: 30
+  max_document_chars: 200000
+
+determinism:
+  seed: 42
+  # Deux exécutions successives doivent produire des predictions.jsonl
+  # identiques bit à bit (SPEC-10 §10).
+  strict: true
+
+output:
+  root: "runs"
+  write_traces: true          # StageTrace : acquis de la v1 à conserver
+  write_decisions: true

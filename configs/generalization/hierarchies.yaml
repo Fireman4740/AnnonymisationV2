@@ -1,0 +1,86 @@
+# Hiérarchies de généralisation — SPEC-06 §5
+#
+# Une hiérarchie décrit, pour chaque catégorie de QI, la suite de niveaux que
+# l'action GENERALIZE peut parcourir. Le niveau 0 correspond à la valeur
+# EXACTE observée ; le dernier niveau listé est la généralisation la plus
+# grossière encore disponible (au-delà, seul SUPPRESS reste autorisé —
+# SPEC-01 §8, granularity=COARSE).
+#
+# Les tables géographiques et de nomenclature ne sont volontairement PAS
+# exhaustives : elles portent une amorce FR suffisante pour les tests et les
+# corpus synthétiques du lot L5. Étendre ces tables ne nécessite aucun
+# changement de code, seulement des entrées supplémentaires ici.
+
+GEN_AGE:
+  # Niveau 0 : âge exact (an). Niveau 1 : tranche de 5 ans. Niveau 2 : tranche
+  # de 10 ans. Niveau 3 : tranche large (dernier niveau).
+  bucket_sizes: [5, 10]
+  large_bands:
+    - {max_age: 17, label: "moins de 18 ans"}
+    - {max_age: 29, label: "18-29 ans"}
+    - {max_age: 49, label: "30-49 ans"}
+    - {max_age: 64, label: "50-64 ans"}
+    - {max_age: null, label: "65 ans et plus"}
+
+GEN_GEO:
+  # Amorce FR : commune (code INSEE-like "FR-XXXXX") -> département -> région
+  # -> pays. Le préfixe pays est toujours "FR-" dans cette amorce.
+  commune_to_departement:
+    "59350": "59"   # Lille
+    "75001": "75"   # Paris 1er
+    "69001": "69"   # Lyon 1er
+    "33000": "33"   # Bordeaux
+    "13001": "13"   # Marseille 1er
+  departement_label:
+    "59": "Nord"
+    "75": "Paris"
+    "69": "Rhône"
+    "33": "Gironde"
+    "13": "Bouches-du-Rhône"
+  departement_to_region:
+    "59": "Hauts-de-France"
+    "75": "Île-de-France"
+    "69": "Auvergne-Rhône-Alpes"
+    "33": "Nouvelle-Aquitaine"
+    "13": "Provence-Alpes-Côte d'Azur"
+  country_label: "France"
+
+GEN_OCCUPATION:
+  # Nomenclature à 4 niveaux (ex. PCS-ESE) : on tronque le code numérique
+  # niveau par niveau. Niveau 0 = code complet (4 chiffres), niveau 3 = 1er
+  # chiffre (grand groupe).
+  code_levels: 4
+
+GEN_EDUCATION:
+  # Niveau 0 : discipline fine. Niveau 1 : domaine. Niveau 2 : niveau d'étude
+  # seul (dernier niveau).
+  discipline_to_domain:
+    informatique: "sciences et technologies"
+    mathématiques: "sciences et technologies"
+    physique: "sciences et technologies"
+    droit: "droit, économie, gestion"
+    économie: "droit, économie, gestion"
+    médecine: "santé"
+    pharmacie: "santé"
+    lettres: "sciences humaines et sociales"
+    histoire: "sciences humaines et sociales"
+
+HR_EMPLOYER_SIZE:
+  # Niveau 0 : tranche fine. Niveau 1 : tranche large (dernier niveau).
+  fine_to_large:
+    "1-9": "moins de 50 salariés"
+    "10-49": "moins de 50 salariés"
+    "50-99": "50-249 salariés"
+    "100-249": "50-249 salariés"
+    "250-499": "250 salariés et plus"
+    "500-999": "250 salariés et plus"
+    "1000+": "250 salariés et plus"
+
+SUP_VERSION:
+  # Pure sémantique (semver) : patch -> mineure -> majeure. Pas de table.
+  {}
+
+SUP_INCIDENT_TIME:
+  # Pure logique horaire : heure -> demi-journée -> jour. Pas de table.
+  # Bascule matin/après-midi à midi (12:00).
+  midday_hour: 12

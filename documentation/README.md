@@ -19,6 +19,11 @@ Date de référence de l'état de l'art : **30 août 2026**.
 
 ## 2. Jeux de données
 
+> **Commencer par [`datasets/inventaire-local.md`](datasets/inventaire-local.md)** : tous les
+> corpus nécessaires sont déjà présents localement (TAB officiel avec son script
+> d'évaluation, population PUMS de 3,37 M d'individus, 61 765 tickets support réels).
+> Aucun téléchargement requis, et **l'accès PhysioNet / MIMIC-III est abandonné**.
+
 [`datasets/README.md`](datasets/README.md) — index, tableau de priorisation, matrice de
 couverture, tableau des licences.
 
@@ -29,7 +34,7 @@ plan d'implémentation, critères d'acceptation) :
 **Priorité P0**
 - [`rat-bench.md`](datasets/rat-bench.md) — benchmark end-to-end risque de ré-identification
 - [`tab.md`](datasets/tab.md) — annotation QI de référence + métriques privacy-oriented
-- [`ipi-mimic.md`](datasets/ipi-mimic.md) — taxonomie des identifiants indirects
+- [`inventaire-local.md`](datasets/inventaire-local.md) — **inventaire des corpus locaux**, priorisation effective, abandon de PhysioNet
 - [`synthpai.md`](datasets/synthpai.md) — inférence d'attributs personnels, domaine forums
 - [`openpii-500k.md`](datasets/openpii-500k.md) — PII multilingue (dont français)
 - [`hr-qi-bench.md`](datasets/hr-qi-bench.md) — corpus RH interne (à construire)
@@ -56,6 +61,7 @@ plan d'implémentation, critères d'acceptation) :
 | [SPEC-07](specifications/SPEC-07-metriques.md) | Les 5 niveaux de métriques et leurs formules | SPEC-06 |
 | [SPEC-08](specifications/SPEC-08-attaquants.md) | Modèles d'attaquants A / B / C et protocole d'attaque | SPEC-07 |
 | [SPEC-09](specifications/SPEC-09-qualite-licences-ci.md) | Qualité des données, conformité des licences, CI | toutes |
+| [SPEC-10](specifications/SPEC-10-pipeline-anonymisation.md) | **Pipeline d'anonymisation et protocole d'exécution** (8 étapes, predict/score/attack, place des LLM) | SPEC-01, 02, 06, 07 |
 
 ## 4. Roadmap
 

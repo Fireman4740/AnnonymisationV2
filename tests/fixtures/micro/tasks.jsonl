@@ -1,0 +1,5 @@
+{"doc_id":"micro:d1","label":"sick_leave","label_type":"single","meta":{},"task":"hr_intent"}
+{"doc_id":"micro:d2","label":"management_info","label_type":"single","meta":{},"task":"hr_intent"}
+{"doc_id":"micro:d3","label":"job_inquiry","label_type":"single","meta":{},"task":"hr_intent"}
+{"doc_id":"micro:d4","label":"career_history","label_type":"single","meta":{},"task":"hr_intent"}
+{"doc_id":"micro:d5","label":"sick_leave","label_type":"single","meta":{},"task":"hr_intent"}

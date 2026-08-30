@@ -13,21 +13,54 @@ européenne.
 
 ---
 
+## 0. Lire d'abord : l'inventaire local
+
+**[`inventaire-local.md`](inventaire-local.md)** — le dépôt v1 contient déjà tous
+les corpus nécessaires, y compris **TAB officiel avec son script d'évaluation**
+et la **population de référence PUMS (3,37 M individus)**. Aucun téléchargement
+n'est requis pour démarrer, et **l'accès PhysioNet est abandonné**.
+
+Cette page conserve les fiches détaillées ; la priorisation effective est celle
+de [`inventaire-local.md §7`](inventaire-local.md).
+
 ## 1. Index des fiches
+
+### Corpus disponibles localement (aucun téléchargement)
 
 | Dataset | Fiche | Rôle | Priorité |
 |---------|-------|------|---------:|
-| RAT-Bench | [`rat-bench.md`](rat-bench.md) | Risque + ré-identification end-to-end | **P0** |
-| TAB | [`tab.md`](tab.md) | Annotation QI + métriques privacy-oriented | **P0** |
-| IPI / MIMIC-III | [`ipi-mimic.md`](ipi-mimic.md) | Taxonomie des identifiants indirects | **P0** |
-| SynthPAI | [`synthpai.md`](synthpai.md) | Forums + inférence d'attributs | **P0** |
-| OpenPII 500k | [`openpii-500k.md`](openpii-500k.md) | PII multilingue (dont FR) | **P0** |
+| TAB (officiel) | [`tab.md`](tab.md) | Annotation QI + métriques privacy-oriented | **P0** |
+| RAT-Bench + PUMS | [`rat-bench.md`](rat-bench.md) | Risque + ré-identification, **seule source de `k` réel** | **P0** |
+| SupportTicketsReal | [`supporttickets.md`](supporttickets.md) | Domaine support réel + tâche de routage | **P0** |
+| Corpus QI français | [`quasifr.md`](quasifr.md) | **Seule source de QI annotés en français** | **P0** |
+| PersonalReddit | [`personalreddit.md`](personalreddit.md) | Forums + inférence d'attributs + difficulté | **P0** |
+| DB-bio | [`dbbio.md`](dbbio.md) | Utilité aval (classification d'occupation) | P1 |
+| CleanCoNLL / CoNLL-2003 | [`conll2003.md`](conll2003.md) | Contrôle NER | P1 |
+| BitextSupportSynthetic | [`supporttickets.md`](supporttickets.md) | Tâche d'utilité « intention » | P1 |
+
+### Corpus à générer (la contribution du projet)
+
+| Dataset | Fiche | Rôle | Priorité |
+|---------|-------|------|---------:|
 | HR-QI-Bench | [`hr-qi-bench.md`](hr-qi-bench.md) | Corpus RH à construire | **P0** |
 | Support-QI-Bench | [`support-qi-bench.md`](support-qi-bench.md) | Corpus support à construire | **P0** |
 | Forum-QI-Bench | [`forum-qi-bench.md`](forum-qi-bench.md) | Corpus forums FR à construire | **P0** |
-| JobStack | [`jobstack.md`](jobstack.md) | PII explicite RH | P1 |
+
+### Corpus nécessitant un téléchargement (différés)
+
+| Dataset | Fiche | Rôle | Priorité |
+|---------|-------|------|---------:|
+| OpenPII 500k | [`openpii-500k.md`](openpii-500k.md) | PII multilingue (dont FR), F1 par langue | P1 |
 | MultiCoNER II | [`multiconer2.md`](multiconer2.md) | Robustesse multilingue / bruit | P1 |
 | MEDDOCAN | [`meddocan.md`](meddocan.md) | Stress-test cross-domaine (ES) | P2 |
+| SynthPAI | [`synthpai.md`](synthpai.md) | Forums — **redondant avec PersonalReddit** à court terme | P2 |
+| JobStack | [`jobstack.md`](jobstack.md) | PII explicite RH — accès sur demande | P2 |
+
+### Non retenu
+
+| Dataset | Fiche | Motif |
+|---------|-------|-------|
+| IPI / MIMIC-III | [`ipi-mimic.md`](ipi-mimic.md) | ❌ Accès PhysioNet abandonné — voir [`inventaire-local.md §4`](inventaire-local.md) |
 
 Sens des priorités :
 
@@ -129,19 +162,21 @@ figées dans le manifeste (`expected_documents`, `sha256`).*
 
 ## 6. Ordre d'implémentation recommandé
 
-1. **OpenPII 500k** — le plus simple, valide la chaîne d'ingestion de bout en
-   bout sur un cas facile.
-2. **SynthPAI** — introduit la notion de profil latent, structure la plus proche
-   des corpus à construire.
-3. **TAB** — introduit l'annotation QI, les coréférences et les métriques
-   entity-level.
-4. **RAT-Bench** — introduit la population de référence et l'attaquant.
-5. **HR-QI-Bench** puis **Support-QI-Bench** puis **Forum-QI-Bench**.
-6. JobStack, MultiCoNER II, MEDDOCAN.
+Révisé après l'inventaire local — chaque étape introduit **une** difficulté
+nouvelle, ce qui évite d'affronter simultanément le format, la taxonomie, la
+coréférence et le risque :
 
-IPI est traité en parallèle du point 3, mais comme **source de taxonomie**
-(lecture des guidelines), la partie données étant conditionnée à l'accès
-MIMIC-III.
+1. **Corpus QI français** (`quasifr`) — le plus petit et le plus simple ; valide
+   la chaîne d'ingestion complète, et c'est du français annoté en QI.
+2. **PersonalReddit** — introduit le profil latent et le split par auteur.
+3. **TAB officiel** — introduit la coréférence, le multi-annotateurs et les
+   métriques entity-level.
+4. **SupportTicketsReal** — introduit le domaine support, le multilinguisme et
+   la tâche d'utilité (routage).
+5. **RAT-Bench + PUMS** — introduit la population de référence et le `k` réel.
+6. **DB-bio**, **CleanCoNLL**, **BitextSupportSynthetic**.
+7. **HR-QI-Bench**, **Support-QI-Bench**, **Forum-QI-Bench** (génération).
+8. Différés : OpenPII, MultiCoNER II, MEDDOCAN.
 
 ---
 

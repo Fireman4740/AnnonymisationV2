@@ -3,11 +3,18 @@
 | | |
 |---|---|
 | **Statut** | Stable |
-| **Version** | 1.0 |
+| **Version** | 2.0 |
 | **Date** | 2026-08-30 |
 
-Six lots. Chaque lot a un **critère de sortie** vérifiable ; on ne passe pas au
-suivant sans l'avoir atteint.
+**Révision 2.0** — deux changements majeurs par rapport à la v1.0 :
+
+1. **PhysioNet / MIMIC-III abandonné.** Tous les corpus nécessaires sont déjà
+   sur disque ([`datasets/inventaire-local.md`](datasets/inventaire-local.md)).
+   Plus aucun délai administratif sur le chemin critique.
+2. **Le pipeline d'anonymisation devient un livrable de premier rang**
+   ([SPEC-10](specifications/SPEC-10-pipeline-anonymisation.md)), avec une
+   contrainte dure issue de l'audit v1 : **noyau déterministe, hors ligne, LLM
+   désactivé par défaut**.
 
 ---
 
@@ -16,178 +23,192 @@ suivant sans l'avoir atteint.
 | Livrable | État |
 |----------|------|
 | Rapport : cadrage, état de l'art, lacunes | ✅ |
-| 11 fiches datasets | ✅ |
-| 9 spécifications techniques | ✅ |
-| Squelette de dépôt, manifestes d'exemple | ✅ |
-
-**Sortie** : la documentation permet à quelqu'un d'autre d'implémenter les
-adaptateurs sans poser de question de conception.
+| 16 fiches datasets + inventaire local | ✅ |
+| 10 spécifications techniques (SPEC-01 → SPEC-10) | ✅ |
+| Squelette de dépôt, manifestes, politiques P0..P4 | ✅ |
 
 ---
 
-## L1 — Schéma et taxonomie (code)
+## L1 — Noyau exécutable
 
-**Objectif** : rendre SPEC-01 et SPEC-02 exécutables.
+**Objectif** : rendre SPEC-01, SPEC-02 et le noyau déterministe de SPEC-10
+exécutables, sans aucune donnée réelle.
 
-| # | Tâche | Fichier |
-|---|-------|---------|
-| 1.1 | Enums de la taxonomie (identifier_type, expression_mode, sensitivity, granularity, stability, subject) | `schema/taxonomy.py` |
-| 1.2 | Codes de catégorie + validation | `schema/taxonomy.py` |
-| 1.3 | Modèles Pydantic des 6 tables | `schema/models.py` |
-| 1.4 | Lecture/écriture JSONL atomique | `schema/io.py` |
-| 1.5 | Validateurs d'invariants I-DOC / I-ANN / I-PRO / I-CMB | `schema/validation.py` |
-| 1.6 | Reprise `MetricValue`/`MetricStatus` de la V1 | `metrics/contracts.py` |
-| 1.7 | **Lire les guidelines IPI et remplir la table de réconciliation** SPEC-01 §9 | doc |
-| 1.8 | Micro-dataset de fixtures conforme SPEC-02 | `tests/fixtures/` |
+| # | Tâche | État |
+|---|-------|------|
+| 1.1 | Enums et codes de la taxonomie (`schema/taxonomy.py`) | ✅ |
+| 1.2 | Modèles Pydantic des 6 tables (`schema/models.py`) | ✅ |
+| 1.3 | Lecture/écriture JSONL atomique et déterministe (`schema/io.py`) | 🔄 |
+| 1.4 | Validateurs d'invariants `E-VAL-*` (`schema/validation.py`) | 🔄 |
+| 1.5 | Split déterministe par groupe (`datasets/_split.py`) | 🔄 |
+| 1.6 | Micro-dataset de fixtures | 🔄 |
+| 1.7 | Détection déterministe : motifs, validateurs, règles QI, fusion | 🔄 |
+| 1.8 | Transformation : masquage, pseudonymisation HMAC, généralisation | 🔄 |
+| 1.9 | Moteur de politique P0..P4 | 🔄 |
 
 **Critère de sortie**
 
-- [ ] `pytest tests/unit` passe, sans aucune donnée téléchargée.
-- [ ] Les fixtures valident tous les invariants.
-- [ ] Un invariant volontairement violé fait échouer la validation avec le bon
-      code d'erreur (test négatif).
-- [ ] SPEC-01 §9 est remplie → SPEC-01 peut passer en `Gelé`.
+- [ ] `python -m pytest tests/unit -q` passe sur un clone frais, **sans aucune
+      donnée téléchargée**.
+- [ ] Chaque invariant a un test positif **et** un test négatif.
+- [ ] La phrase canonique (« moins de 30 ans, doctorant, arrêt maladie ») est
+      détectée, planifiée et transformée de bout en bout.
+- [ ] Deux écritures des mêmes enregistrements produisent des fichiers
+      identiques bit à bit.
 
-> 1.7 est sur le chemin critique : la taxonomie conditionne tous les
-> `label_map`. Le faire tard signifierait réécrire tous les manifestes.
+> **Note sur la taxonomie** : la table de réconciliation SPEC-01 §9 reste
+> ouverte, mais elle ne dépend **plus** de MIMIC-III — les guidelines IPI se
+> lisent dans la publication. Elle n'est donc plus sur le chemin critique, mais
+> reste requise avant de figer SPEC-01.
 
 ---
 
-## L2 — Registre et adaptateurs P0
+## L2 — Ingestion et adaptateurs
 
-**Objectif** : les cinq datasets P0 publics sont ingérés et valides.
+**Objectif** : les corpus locaux sont normalisés au format SPEC-02 et validés.
 
-| # | Tâche | Difficulté nouvelle introduite |
-|---|-------|-------------------------------|
-| 2.1 | `DatasetAdapter` (ABC), registre, manifeste Pydantic | — |
-| 2.2 | Pipeline d'ingestion 5 étapes + CLI | — |
-| 2.3 | Utilitaires `_hf.py`, `_split.py` | — |
-| 2.4 | **Adaptateur OpenPII** | chaîne complète, cas facile |
-| 2.5 | **Adaptateur SynthPAI** | profils latents, split par auteur, annotation sans offset |
-| 2.6 | **Adaptateur TAB** | coréférence, multi-annotateurs, texte réel |
-| 2.7 | **Adaptateur RAT-Bench** | population de référence, combinaisons, `k_true` |
-| 2.8 | Adaptateur IPI (code seulement, données conditionnées à PhysioNet) | licence restrictive |
-| 2.9 | `audit-licenses`, hook pre-commit | — |
+| # | Tâche | Difficulté nouvelle introduite | État |
+|---|-------|-------------------------------|------|
+| 2.1 | Manifestes Pydantic, source `kind: local`, portabilité `ANONV2_V1_DATASETS` | — | 🔄 |
+| 2.2 | Pipeline d'ingestion 5 étapes + lock + rapport de validation | — | 🔄 |
+| 2.3 | CLI argparse (`list`, `describe`, `ingest`, `validate`, `stats`, `audit-licenses`) | — | 🔄 |
+| 2.4 | **Corpus QI français** (`quasifr`) | chaîne complète, cas simple, **français** | ⬜ |
+| 2.5 | **PersonalReddit** | profil latent, split par auteur, axe de difficulté | ⬜ |
+| 2.6 | **TAB officiel** | coréférence, multi-annotateurs, texte réel | ⬜ |
+| 2.7 | **SupportTicketsReal** | domaine support, multilingue, tâche d'utilité | ⬜ |
+| 2.8 | **RAT-Bench + PUMS** | population de référence, `k` réel | ⬜ |
+| 2.9 | DB-bio, CleanCoNLL, BitextSupportSynthetic | BIO → offsets caractères | ⬜ |
 
-**Critère de sortie** (= SPEC-04 §11)
+**Critère de sortie**
 
-- [ ] `anonv2 datasets list` affiche les 11 clés avec leur statut réel.
-- [ ] Les 4 datasets P0 publics sont ingérés, validés, sans avertissement.
-- [ ] Aucun `E-VAL-108` (fuite de split).
+- [ ] `anonv2 datasets list` affiche tous les corpus avec leur statut réel.
+- [ ] Les 5 corpus P0 locaux sont ingérés et valides, **sans avertissement**.
+- [ ] Aucun `E-VAL-108` (fuite de split) sur aucun corpus.
 - [ ] Réingestion déterministe (identique bit à bit).
-- [ ] `OTHER_QI` < 1 % partout.
-
-**En parallèle et dès maintenant** : lancer la demande d'accès PhysioNet (CITI +
-DUA) et la demande JobStack. Ce sont les seuls délais administratifs du projet.
+- [ ] Taux d'`OTHER_QI` < 1 % partout.
+- [ ] Le chemin des corpus est surchargeable par `ANONV2_V1_DATASETS` (le dépôt
+      ne doit pas dépendre d'une seule machine).
 
 ---
 
-## L3 — Populations et moteur de risque
+## L3 — Pipeline de bout en bout (profil `deterministic`)
 
-**Objectif** : rendre SPEC-06 exécutable, du $k$ exact au risque calibré.
+**Objectif** : la commande `predict` traite **100 % des documents de tous les
+corpus d'évaluation, avec 0 % d'erreur**. C'est la demande principale.
 
 | # | Tâche |
 |---|-------|
-| 3.1 | Format de population + chargeur |
-| 3.2 | Tables de normalisation (âge, géo, PCS-ESE, ISCED, semver) |
-| 3.3 | Hiérarchies de généralisation |
-| 3.4 | Calcul de $k$ exact (population énumérable) |
-| 3.5 | Modèles prosecutor / journalist / marketer |
-| 3.6 | Modèle copule pour populations incomplètes |
-| 3.7 | Intervalles d'incertitude sur $\hat{k}$ |
-| 3.8 | Calibration (isotonique / Platt) par domaine et langue |
-| 3.9 | Portées document / thread / auteur, état d'historique |
-| 3.10 | Construction de `fr-hr-2026`, `fr-general-2026`, `support-parc-2026` |
+| 3.1 | Orchestrateur des 8 étapes de SPEC-10, avec `StageTrace` |
+| 3.2 | Étape 6 VALIDATE : placeholders, motifs interdits, **fuite de valeurs gold** |
+| 3.3 | `anonv2 predict` → `predictions.jsonl` + `traces.jsonl` + lock |
+| 3.4 | `anonv2 score` → scorecard, **sans relancer aucun modèle** |
+| 3.5 | Métriques niveau 1 (span P/R/F1/F2, entity-level recall, par langue/domaine/mode) |
+| 3.6 | Gestion d'erreur conforme à C4 : document en erreur exclu des métriques, compté à part |
+
+**Critère de sortie** (= SPEC-10 §10)
+
+- [ ] `anonv2 predict --profile deterministic` : **0 % d'erreur** sur chaque corpus.
+- [ ] Deux exécutions produisent des prédictions identiques bit à bit.
+- [ ] Aucune valeur gold d'identifiant direct ne subsiste dans le texte anonymisé.
+- [ ] Aucun appel réseau en profil `deterministic` (test socket désactivé).
+- [ ] Tests de sanité S1–S3 de SPEC-07 §11.
+
+---
+
+## L4 — Populations et moteur de risque
+
+**Objectif** : remplacer l'estimateur provisoire par un vrai moteur de risque.
+
+| # | Tâche |
+|---|-------|
+| 4.1 | Chargeur de population + tables de normalisation (âge, géo, PCS/ISCED, semver) |
+| 4.2 | Hiérarchies de généralisation branchées sur le moteur |
+| 4.3 | **PUMS** comme population de référence — attention : `k` pondéré par `PWGTP`, pas un comptage de lignes |
+| 4.4 | Modèles prosecutor / journalist / marketer |
+| 4.5 | Modèle copule pour populations incomplètes (FR) |
+| 4.6 | Intervalles d'incertitude `[k_low, k_high]` ; décision sur la borne haute du risque |
+| 4.7 | Calibration (isotonique / Platt) par domaine et par langue |
+| 4.8 | Portées document / thread / auteur, état d'historique |
+| 4.9 | Populations `fr-hr-2026`, `fr-general-2026`, `support-parc-2026` |
 
 **Critère de sortie**
 
-- [ ] Le modèle copule est validé **contre le $k$ exact du parc support** ;
-      l'erreur est mesurée et documentée.
+- [ ] `k` calculé sur PUMS **en sommant les poids `PWGTP`** — ignorer ce point
+      sous-estimerait `k` d'environ deux ordres de grandeur.
+- [ ] Le modèle copule est validé contre un `k` exact ; l'erreur est publiée.
 - [ ] $k_{author} \leq k_{thread} \leq k_{document}$ vérifié par test.
-- [ ] ECE < 0.05 par domaine sur le split de calibration.
-- [ ] `contributing_qi` est actionnable (généraliser un QI listé baisse le
-      risque ; un QI non listé, non).
+- [ ] ECE < 0.05 par domaine.
+- [ ] L'estimateur provisoire `NaiveRiskEstimator` est **retiré** des chemins de
+      production, ou marqué `PROXY` de façon inamovible.
 
 ---
 
-## L4 — Corpus internes
+## L5 — Corpus internes générés
 
-**Objectif** : produire HR-QI, Support-QI et Forum-QI (SPEC-05).
+**Objectif** : produire HR-QI, Support-QI et Forum-QI (SPEC-05). C'est la
+contribution scientifique du projet.
 
 | # | Tâche |
 |---|-------|
-| 4.1 | Échantillonneur de profils stratifié par $k$ |
-| 4.2 | Énumérateur de combinaisons + $k$ exact |
-| 4.3 | Planificateur de documents (`qi_plan`, `forbidden_qi`, modes) |
-| 4.4 | Générateur LLM local multi-modèles, multi-prompts |
-| 4.5 | Contrôles C1 (complétude), C2 (localisation), **C3 (non-contamination)** |
-| 4.6 | Étiquettes d'utilité |
-| 4.7 | Campagne de contrôle humain 5 % |
-| 4.8 | Gel, checksums, manifestes |
+| 5.1 | Échantillonneur de profils stratifié par `k` |
+| 5.2 | Énumérateur de combinaisons + `k` exact |
+| 5.3 | Planificateur de documents (`qi_plan`, `forbidden_qi`, modes d'expression) |
+| 5.4 | Générateur LLM local multi-modèles, multi-prompts |
+| 5.5 | Contrôles C1 complétude, C2 localisation, **C3 non-contamination** |
+| 5.6 | Étiquettes d'utilité |
+| 5.7 | Contrôle humain sur 5 % |
 
-**Critère de sortie** (= SPEC-05 §13)
+**Critère de sortie** : stratification des `k` à ±3 points, modes d'expression à
+±5 points, rejet humain < 10 %, contamination résiduelle < 2 %.
 
-- [ ] Stratification des $k$ respectée à ±3 points.
-- [ ] Modes d'expression respectés à ±5 points.
-- [ ] Rejet humain < 10 %, contamination résiduelle < 2 %.
-- [ ] Classifieurs d'utilité au-dessus de leur F1 de référence
-      (routage support ≥ 0.85).
-
-> 4.5 est le point de vigilance du lot. Un corpus contaminé par des QI non
-> annotés donnerait un $k_{true}$ surestimé et fausserait toute la calibration
-> de L3. Ne pas sous-dimensionner cet effort.
+> 5.5 est le point de vigilance : un corpus contaminé par des QI non annotés
+> donnerait un `k_true` surestimé et fausserait toute la calibration de L4.
 
 ---
 
-## L5 — Attaquants, politique, boucle end-to-end
-
-**Objectif** : produire la première courbe privacy-utility complète.
+## L6 — Attaquants, LLM, boucle complète
 
 | # | Tâche |
 |---|-------|
-| 5.1 | Attaquant A (LLM local), prompts versionnés |
-| 5.2 | Attaquant B |
-| 5.3 | Attaquant C (agent web) **avec gardes E1/E2 en code** |
-| 5.4 | Moteur de politique (seuils → actions, critère Δrisk/Δutilité) |
-| 5.5 | Politiques P0…P4 |
-| 5.6 | Métriques niveaux 4 et 5, tâches d'utilité |
-| 5.7 | Baselines : Presidio, GLiNER/XLM-R, petits LLM |
-| 5.8 | Rapport de run au format SPEC-07 §10 |
-| 5.9 | Tests de sanité S1–S6 |
+| 6.1 | Passerelle LLM conforme à SPEC-10 §6 : schéma validé, timeout, retries, **réponse vide = erreur** |
+| 6.2 | Rôles séparés : reviewer / verifier / auditor / rewriter |
+| 6.3 | Attaquant A (LLM local) — baseline de comparaison : les champs `guess`/`guess_correctness` de PersonalReddit |
+| 6.4 | Attaquant B |
+| 6.5 | Attaquant C (agent web) **avec gardes E1/E2 en code** |
+| 6.6 | Boucle de réécriture unique, bornée, avec détection de non-progression |
+| 6.7 | Métriques niveaux 4 et 5, tâches d'utilité (routage `queue`, intention `intent`) |
+| 6.8 | Tableau Privacy-Utility Operating Point P0..P4 |
 
 **Critère de sortie**
 
-- [ ] Le tableau Privacy-Utility Operating Point P0…P4 est produit sur les trois
-      corpus internes.
-- [ ] S1–S6 passent tous.
-- [ ] La corrélation risque prédit / risque réalisé est calculée et publiée.
-- [ ] L'attaquant C refuse de démarrer sur TAB (test de la garde E2).
-- [ ] L'écart A → B → C est mesuré.
+- [ ] Le tableau P0..P4 est produit sur les corpus internes **et** sur
+      SupportTicketsReal.
+- [ ] S1–S6 de SPEC-07 §11 passent tous.
+- [ ] L'attaquant C **refuse de démarrer** sur TAB, DB-bio, SupportTicketsReal
+      et CleanCoNLL (test de la garde E2).
+- [ ] Corrélation risque prédit / risque réalisé calculée et publiée.
 
 ---
 
-## Chemin critique
+## Chemin critique révisé
 
 ```
-L1.7 (taxonomie IPI) ──→ L1 ──→ L2 ──→ L3 ──→ L4 ──→ L5
-       │                         │
-       │                         └──→ L3.10 (populations) est aussi prérequis de L4
-       │
-   demande PhysioNet (à lancer maintenant, hors chemin technique)
+L1 (noyau) ──→ L2 (ingestion) ──→ L3 (pipeline 0 % erreur) ──→ L4 (risque) ──→ L5 (corpus) ──→ L6 (attaque)
+                                                                     │
+                                                          PUMS déjà disponible
 ```
 
-Deux dépendances à ne pas manquer :
-
-1. **L1.7 avant tout `label_map`** — sinon réécriture de tous les manifestes.
-2. **L3.10 (populations) avant L4** — on ne peut pas échantillonner des profils
-   stratifiés par $k$ sans savoir calculer $k$.
+Plus aucune dépendance administrative. Les seules dépendances sont techniques,
+et la contrainte la plus forte reste : **L3 doit atteindre 0 % d'erreur avant
+d'introduire le moindre appel LLM** — c'est précisément l'inverse de l'ordre
+suivi par la v1, et la raison de son échec de campagne.
 
 ## Décisions à prendre en cours de route
 
 | Décision | Échéance | Défaut proposé |
 |----------|----------|----------------|
-| Publier ou non les corpus internes | fin L4 | Publier |
-| Poursuivre ou abandonner l'accès MIMIC-III | fin L1 | Poursuivre la demande, ne pas bloquer |
-| Modèle retenu pour l'attaquant B | début L5 | Le plus capable < 30 B disponible localement |
-| Traduire un sous-ensemble SynthPAI en FR | fin L2 | À évaluer, coût modéré, apport réel |
-| Campagne d'annotation humaine complète sur un sous-corpus | fin L4 | À arbitrer sur le coût |
+| Publier ou non les corpus internes | fin L5 | Publier |
+| Statut de PersonalReddit : données réelles ou synthétiques ? | **début L2** | Traiter comme réel (garde E2) tant que non établi |
+| Télécharger OpenPII pour le F1 par langue | fin L2 | Oui, c'est peu coûteux et c'est la seule couverture FR/multilingue de PII |
+| Modèle retenu pour l'attaquant B | début L6 | Le plus capable < 30 B disponible localement |
+| Campagne d'annotation humaine sur un sous-corpus | fin L5 | À arbitrer sur le coût |

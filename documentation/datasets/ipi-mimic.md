@@ -3,11 +3,31 @@
 | | |
 |---|---|
 | **Clé interne** | `ipi` |
-| **Priorité** | **P0** (comme source de taxonomie) · P2 (comme source de données) |
-| **Benchmark** | B2 (Indirect QI Detection) |
-| **Statut de la fiche** | Stable · v1.0 · 2026-08-30 |
+| **Priorité** | ❌ **NON RETENU** — décision du 2026-08-30 |
+| **Benchmark** | — |
+| **Statut de la fiche** | Archivée · v1.1 · 2026-08-30 |
 
 ---
+
+> ## ⚠️ Décision : ce dataset n'est pas retenu
+>
+> L'accès aux **données** IPI passe par MIMIC-III (PhysioNet : compte + formation
+> CITI + DUA signé, plusieurs semaines de délai administratif), et sa
+> redistribution est interdite — donc aucun résultat ne serait reproductible par
+> un tiers.
+>
+> **Remplacements** (voir [`inventaire-local.md §4`](inventaire-local.md)) :
+>
+> | Apport d'IPI | Remplacé par |
+> |---|---|
+> | Taxonomie des identifiants indirects | Les **guidelines** de la publication, lisibles sans aucun accès aux données. SPEC-01 s'en inspire déjà. |
+> | Annotation QI sur texte réel | **TAB officiel**, plus riche et disponible localement |
+> | Stress-test clinique cross-domaine | **MEDDOCAN** (licence ouverte, sans démarche) |
+> | QI indirects annotés | **Corpus QI français** (`data/hard_quasi_id_dataset.json`) |
+>
+> Aucune capacité du projet n'est perdue. Le reste de la fiche est conservé
+> **pour la taxonomie uniquement** : la section §10 (extension aux domaines RH et
+> support) reste la source du bloc `HR_*` / `SUP_*` de SPEC-01.
 
 ## 1. Identité
 
