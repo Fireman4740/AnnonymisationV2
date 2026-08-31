@@ -65,6 +65,10 @@ plan d'implémentation, critères d'acceptation) :
 
 ## 4. Roadmap
 
+[`tickets/README.md`](tickets/README.md) — **backlog de développement** : 30 tickets
+répartis en 6 épics pour obtenir un pipeline d'évaluation fiable, avec chemin
+critique, définition de « terminé » et critère de sortie.
+
 [`roadmap.md`](roadmap.md) — lots L0 → L5, critères de sortie de chaque lot.
 
 ## 5. Annexes
