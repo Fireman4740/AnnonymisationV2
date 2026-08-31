@@ -3,9 +3,10 @@
 | | |
 |---|---|
 | **Statut** | Stable |
-| **Version** | 1.0 |
+| **Version** | **2.0** |
 | **Date** | 2026-08-30 |
 | **Dépend de** | SPEC-02, SPEC-06 |
+| **Source** | [`04-datasets-et-metriques-2026.md`](../rapport/04-datasets-et-metriques-2026.md) |
 
 ---
 
@@ -15,15 +16,29 @@
 
 Hiérarchie normative :
 
-| Rang | Métrique | Direction | Rôle |
-|-----:|----------|:---------:|------|
-| 1 | **Residual Re-Identification Risk** ($R_{succ}$) | ↓ | Métrique principale |
-| 2 | **Utility Retention** | ↑ | Second axe du compromis |
-| 3 | **QI Combination Recall** (QICR) | ↑ | Diagnostic central |
-| 4 | Calibration (ECE, Brier, MAE-k) | ↓ | Condition de validité de la politique |
-| 5 | P / R / F1 par span | — | Diagnostic bas niveau |
+| Rang | Métrique | Direction | Axe | Rôle |
+|-----:|----------|:---------:|:---:|------|
+| 1 | **CPR / IPR** — protection multi-sujets | ↑ | D | **Métriques principales** |
+| 2 | **TRIR** — risque de ré-identification | ↓ | B | Métrique de risque de référence |
+| 3 | **Mean Utility** + performance downstream | ↑ | C | Second axe du compromis |
+| 4 | **QI Combination Recall** (QICR) | ↑ | A | Diagnostic central du projet |
+| 5 | Calibration (ECE, Brier, MALE-k) | ↓ | B | Condition de validité de la politique |
+| 6 | **ER_di / ER_qi** — rappel entité | ↑ | A | Validation avant déploiement |
+| 7 | Partial-match F1 par catégorie | — | A | Diagnostic de développement |
 
 Aucun rapport ne DOIT présenter un F1 comme résultat principal.
+
+### La preuve empirique qui impose cette hiérarchie
+
+Sur SPIA [@oh2026spia], un masqueur NER atteint **ER_di = 0,997** et pourtant
+**CPR = 0,330** : 99,7 % des identifiants directs masqués, et deux tiers des
+informations personnelles toujours inférables par un LLM adversaire.
+
+> **Un F1 de détection, même excellent, ne prédit pas la protection réelle.**
+
+C'est la raison pour laquelle les axes A (détection) et B/D (risque, robustesse)
+ont des datasets et des métriques distincts, et ne doivent jamais être agrégés
+en un score unique.
 
 ---
 
@@ -81,10 +96,40 @@ Les dénominateurs proviennent de `.validation.json`
 | Mode | Règle | Usage |
 |------|-------|-------|
 | `exact` | Offsets identiques | Rapport strict |
-| `overlap` | Intersection non vide | **Défaut** — un masquage partiellement décalé protège quand même |
-| `entity` | Au moins une mention par entité | Rapport privacy |
+| `partial` | Chevauchement + label correct (SemEval-2013 task 9.1, paquet `nervaluate`) | **Défaut** |
+| `entity` | Toutes les mentions de l'entité masquées | Rapport privacy — voir ER_di/ER_qi |
 
 Le mode utilisé DOIT être déclaré avec tout score.
+
+**Justification du défaut `partial`** — argument des auteurs d'IPI : la
+difficulté est de *trouver* l'information et de la retirer ; masquer un span un
+peu trop long ne nuit pas à la personne. Sur-masquer légèrement n'est pas grave,
+rater un span l'est.
+
+### ER_di et ER_qi — le rappel qui compte
+
+Le rappel se calcule au niveau de l'**entité**, pas de la mention. Si un nom
+apparaît 4 fois et que 3 occurrences sont masquées, l'entité **n'est pas
+protégée** : la 4ᵉ mention suffit à divulguer l'identité.
+
+- **ER_di** : proportion d'identifiants **directs** entièrement masqués.
+- **ER_qi** : idem pour les **quasi-identifiants**.
+
+Précision et rappel se calculent en **micro-moyenne sur les annotateurs** : un
+document admet plusieurs anonymisations valides, il n'y a pas de gold standard
+unique. C'est ce qui justifie la règle d'agrégation paramétrable de l'adaptateur
+TAB.
+
+### Trois limites du F1, à ne pas reproduire
+
+| Limite | Preuve chiffrée |
+|--------|-----------------|
+| Déséquilibre sur les catégories rares | IPI : macro-F1 **0,55** vs micro-F1 **0,85** ; `CIRCUMSTANCES` F1 = 0,20, `DETAILS` F1 = 0,21 |
+| Optimisme du synthétique | **< 0,14–0,47** sur corpus réels difficiles vs **~0,96** sur ai4privacy synthétique |
+| Ne prédit pas le risque | SPIA : ER_di 0,997 / CPR 0,330 |
+
+> Le F1 n'est fiable que **relativement à son corpus de test**, jamais en
+> absolu. Publier un F1 sans nommer son corpus n'a aucun sens.
 
 ---
 
@@ -204,17 +249,69 @@ bloquant.
 
 ## 5. Niveau 4 — Résistance à la ré-identification
 
-### Métrique principale
+### Les métriques principales : CPR et IPR
+
+Soit $N$ sujets dans un document, $O_i$ le nombre de PII vérité-terrain du sujet
+$i$, et $A_i$ le nombre de PII **encore inférables** après anonymisation :
+
+$$
+CPR = 1 - \frac{\sum_i A_i}{\sum_i O_i}
+\qquad\qquad
+IPR = \frac{1}{N}\sum_i \left(1 - \frac{A_i}{O_i}\right)
+$$
+
+- **CPR** (*Collective Protection Rate*) pondère par la **quantité de PII par sujet**.
+- **IPR** (*Individual Protection Rate*) pondère **chaque sujet également**.
+
+**Les deux DOIVENT être publiés ensemble** : leur écart révèle une protection
+inégale entre sujets.
+
+#### Pourquoi le multi-sujets est obligatoire ici
+
+L'**AAC** (*Adversarial Accuracy*, [@staab2024beyond]) — notation 1,0 exact /
+0,5 partiel / 0,0 faux, top-1 jusqu'à 85 % et top-3 jusqu'à 95,8 % sur
+PersonalReddit — ne mesure que la protection du **sujet cible**.
+
+Or SPIA [@oh2026spia] documente jusqu'à **11 points d'écart** entre 1−AAC et CPR
+sur TAB : protéger un sujet peut laisser les autres nettement moins protégés.
+
+C'est rédhibitoire ici : un ticket support mentionne presque toujours un client,
+un agent et souvent un tiers ; un document RH mentionne un candidat et un
+référent. **Une métrique mono-sujet y serait systématiquement optimiste.**
+
+#### Un LLM local suffit comme adversaire
+
+SPIA rapporte une corrélation de Spearman **ρ > 0,98** entre CPR/IPR calculés
+avec différents LLM adversaires. Le choix du modèle adversaire a donc **peu
+d'impact sur le classement des méthodes**.
+
+> Conséquence directe pour la contrainte « modèles locaux < 30 B » : un modèle
+> local peut servir d'adversaire d'évaluation **sans perdre en validité de
+> comparaison**. C'est ce qui rend l'axe D mesurable en continu, et non
+> seulement lors de campagnes coûteuses.
+
+### TRIR — le risque de ré-identification de référence
+
+**TRIA** (*Text Re-Identification Attack*) : un modèle entraîné à ré-identifier
+un document anonymisé parmi un ensemble candidat. **TRIR** (*Text
+Re-Identification Risk*) : la métrique de risque dérivée de l'accuracy de TRIA
+[@manzanares2024tria].
+
+⚠️ **Distinction à ne pas manquer** : TRIA/TRIR (DMKD 2024) et PETRE (KBS 2025)
+sont deux travaux distincts de la même équipe. **TRIR est la métrique de risque,
+PETRE est la méthode d'anonymisation** pilotée par ce risque.
+
+### $R_{succ}$ — conservé comme métrique dérivée
 
 $$
 R_{succ} = \frac{\#\text{documents ré-identifiés}}{\#\text{documents}}
 \qquad\text{(↓ meilleur)}
 $$
 
-C'est la logique de RAT-Bench [@krco2026ratbench] : un attaquant tente d'inférer
-les identifiants, le benchmark estime ensuite le risque dans la population.
-
-**Toute publication du projet DOIT présenter $R_{succ}$ en résultat principal.**
+Logique de RAT-Bench [@krco2026ratbench]. $R_{succ}$ reste utile pour comparer
+au corpus RAT-Bench, mais **CPR/IPR le remplacent comme métriques principales** :
+$R_{succ}$ est binaire par document, là où CPR/IPR mesurent une protection
+graduée et multi-sujets.
 
 ### Compléments
 
@@ -246,10 +343,24 @@ préciser : niveau d'attaquant (A/B/C), modèle, population de référence, port
 
 ## 6. Niveau 5 — Utilité
 
-### A. Utilité textuelle (secondaire)
+### A. Mean Utility (méthodologie Staab / SPIA)
 
-BERTScore, BLEU, ROUGE, similarité d'embeddings — utilisées par Tau-Eval
-[@loiseau2025taueval]. **Ne DOIVENT PAS** être la métrique d'utilité
+$$
+\text{Mean Utility} = \text{moyenne}\big(\text{Readability},\ \text{Meaning},\ \text{ROUGE-L}\big)
+$$
+
+*Readability* et *Meaning* sont jugés par un **LLM juge**, qui DOIT être
+documenté avec le score. C'est la métrique la plus directement réutilisable et
+la moins coûteuse à mettre en place avec un modèle local.
+
+> ⚠️ **Piège des métriques de surface** : BLEU et ROUGE **pénalisent les
+> reformulations légitimes**. Généraliser « 28 ans » en « fin de vingtaine » est
+> une bonne anonymisation qu'une métrique lexicale sanctionne. C'est pourquoi
+> ROUGE-L n'entre qu'en tiers dans la moyenne, et pourquoi l'utilité métier du
+> §B reste la référence.
+
+BERTScore, BLEU et la similarité d'embeddings [@loiseau2025taueval] restent
+disponibles en diagnostic, mais **ne DOIVENT PAS** être la métrique d'utilité
 principale : un texte peut rester lexicalement proche et devenir inutilisable
 pour la tâche.
 
@@ -402,3 +513,4 @@ Un pipeline qui échoue S3 ou S5 a un bug, quelles que soient ses autres valeurs
 | Version | Date | Changement |
 |---------|------|-----------|
 | 1.0 | 2026-08-30 | Création. Cinq niveaux, QICR/RCR@k, garde-fou de circularité, format de rapport, six tests de sanité. |
+| **2.0** | 2026-08-30 | Intégration de la revue d'avril 2026 ([04-datasets-et-metriques](../rapport/04-datasets-et-metriques-2026.md)). Hiérarchie à 7 rangs adossée aux 4 axes. **CPR/IPR deviennent les métriques principales** ; $R_{succ}$ devient dérivée. Ajout de TRIA/TRIR, de l'AAC et de sa limite mono-sujet, du partial-match `nervaluate` par défaut, d'ER_di/ER_qi, des trois limites chiffrées du F1, et de Mean Utility. |

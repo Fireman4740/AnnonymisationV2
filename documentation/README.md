@@ -15,6 +15,7 @@ Date de référence de l'état de l'art : **30 août 2026**.
 | [`rapport/01-cadrage-et-problematique.md`](rapport/01-cadrage-et-problematique.md) | Définition formelle du problème, périmètre, contraintes, modèle de menace, vocabulaire |
 | [`rapport/02-etat-de-l-art.md`](rapport/02-etat-de-l-art.md) | État de l'art complet : datasets, métriques, systèmes existants (TAB, IPI, SynthPAI, RAT-Bench, PETRE, ARX, Tau-Eval, SEAL, AURA, InferLink) |
 | [`rapport/03-lacunes-et-contribution.md`](rapport/03-lacunes-et-contribution.md) | Ce qui existe / ce qui manque, positionnement de la contribution, protocole expérimental en 3 contributions mesurables |
+| [`rapport/04-datasets-et-metriques-2026.md`](rapport/04-datasets-et-metriques-2026.md) | **Révision d'avril 2026** : les 4 axes d'évaluation, SPIA/PANORAMA, CPR/IPR, TRIA/TRIR, AAC, Mean Utility. Preuve empirique ER_di 0,997 / CPR 0,330 |
 | [`rapport/references.bib`](rapport/references.bib) | Bibliographie BibTeX |
 
 ## 2. Jeux de données
