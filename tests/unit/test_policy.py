@@ -69,6 +69,21 @@ def _sensitive(annotation_id="a-sens", start=44, end=64):
     )
 
 
+def _quasi_seniority(annotation_id="a-sen", start=44, end=64):
+    return FakeAnnotation(
+        annotation_id=annotation_id, start=start, end=end,
+        identifier_type="QUASI", qi_categories=("HR_SENIORITY",), granularity="EXACT",
+    )
+
+
+def _quasi_age_malformed(annotation_id="a-age-bad", start=14, end=16):
+    return FakeAnnotation(
+        annotation_id=annotation_id, start=start, end=end,
+        identifier_type="QUASI", qi_categories=("GEN_AGE",), granularity="EXACT",
+        value_normalized={"level": 0},
+    )
+
+
 # --------------------------------------------------------------------------- #
 # models.py — chargement et validation
 # --------------------------------------------------------------------------- #
@@ -225,3 +240,55 @@ def test_custom_risk_fn_is_used_instead_of_naive(policy_set):
     assert calls  # le risk_fn injecté a bien été appelé
     assert decisions[0].action is Action.KEEP
     assert "risk_status" not in decisions[0].meta
+
+
+# --------------------------------------------------------------------------- #
+# Repli SUPPRESS (SPEC-06 §9) : hiérarchie absente ou état inutilisable
+# --------------------------------------------------------------------------- #
+def _seniority_drives_risk(states):
+    """Risque piloté par le QI SANS hiérarchie : seule sa suppression le
+    ramène sous le seuil — le repli SUPPRESS est la seule issue jouable."""
+    return 0.6 if any(s.qi_category == "HR_SENIORITY" for s in states) else 0.01
+
+
+def _malformed_age_drives_risk(states):
+    """Risque piloté par le QI dont ``value_normalized`` est inutilisable."""
+    return 0.6 if any(s.qi_category == "GEN_AGE" for s in states) else 0.01
+
+
+def test_qi_without_hierarchy_falls_back_to_suppress(policy_set):
+    """Un QI sans hiérarchie de généralisation (HR_SENIORITY) ne doit pas
+    faire planter le moteur : le repli SPEC-06 §9 (SUPPRESS) s'applique dès
+    que le seuil de risque n'est pas atteint, sans toucher les autres QI."""
+    engine = PolicyEngine(policy_set.get("P2"), risk_fn=_seniority_drives_risk)
+    decisions = engine.plan([_quasi_age(), _quasi_seniority()], text=TEXT)
+
+    by_cat = {d.qi_category: d for d in decisions}
+    assert set(by_cat) == {"GEN_AGE", "HR_SENIORITY"}
+    suppressed = by_cat["HR_SENIORITY"]
+    assert suppressed.action is Action.SUPPRESS
+    assert suppressed.replacement == "[HR_SENIORITY_SUPPRIME]"
+    assert suppressed.risk_before == pytest.approx(0.6)
+    assert suppressed.risk_after == pytest.approx(0.01)
+    assert "hiérarchie" in suppressed.reason
+    # Le QI doté d'une hiérarchie reste intact : le seuil est atteint sans lui.
+    assert by_cat["GEN_AGE"].action is Action.KEEP
+
+
+def test_malformed_value_normalized_falls_back_to_suppress(policy_set):
+    """``value_normalized`` hors du format de la hiérarchie (GEN_AGE sans
+    ``range``) : le QI est réputé épuisé au niveau 0 — le repli SUPPRESS
+    s'applique au lieu d'une erreur d'exécution."""
+    engine = PolicyEngine(policy_set.get("P2"), risk_fn=_malformed_age_drives_risk)
+    decisions = engine.plan([_quasi_age_malformed(), _quasi_seniority()], text=TEXT)
+
+    by_cat = {d.qi_category: d for d in decisions}
+    malformed = by_cat["GEN_AGE"]
+    assert malformed.action is Action.SUPPRESS
+    assert malformed.replacement == "[GEN_AGE_SUPPRIME]"
+    assert malformed.risk_before == pytest.approx(0.6)
+    assert malformed.risk_after == pytest.approx(0.01)
+    assert "hiérarchie" in malformed.reason
+    # Le QI sans hiérarchie survit ici : la suppression du QI malformé
+    # ramène déjà le risque sous le seuil.
+    assert by_cat["HR_SENIORITY"].action is Action.KEEP

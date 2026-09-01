@@ -8,10 +8,17 @@ Ordre imposé : chaque ticket n'introduit **qu'une** difficulté nouvelle.
 Commencer par TAB ou RAT-Bench ferait affronter simultanément le format, la
 taxonomie, la coréférence et le risque.
 
-**Règle commune à tous les tickets de cet épic** : l'adaptateur s'auto-enregistre
-via `@register` dans son propre module et **ne modifie pas** `__init__.py`.
-Il ne filtre ni ne corrige silencieusement : une donnée source aberrante remonte
-telle quelle et est rejetée par la validation, avec son `doc_id`.
+**Règle commune aux tickets B-1 à B-6** : chaque adaptateur s’auto-enregistre
+via `@register` dans son propre module et ne modifie pas `__init__.py`. Il ne
+filtre ni ne corrige silencieusement : une donnée source aberrante remonte telle
+quelle et est rejetée par la validation, avec son `doc_id`.
+
+> **Exception OpenPII** : l’adaptateur `openpii` (AI4Privacy, fiche
+> [`openpii-500k.md`](../datasets/openpii-500k.md)) a été livré **en premier**
+> sur demande utilisateur explicite, conformément à l’ordre SPEC-04 §10. Il ne
+> figure pas dans B-1…B-6 : ses cases vivent dans la fiche. Son import explicite
+> dans `datasets/__init__.py` est le mécanisme A-5 existant et ne constitue pas
+> un précédent pour les tickets B-1 à B-6.
 
 ---
 

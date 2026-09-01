@@ -152,6 +152,10 @@ class StructureSpec(BaseModel):
     avec ``split_by: document`` est une **fuite massive** — les messages d'un
     même auteur partagent le profil latent, donc les QI, et finissent à la
     fois en train et en test. Refusée au chargement (SPEC-03 §4).
+
+    ``per_language_counts`` est optionnelle : quand l'acquisition a compté les
+    exemples par langue, la figer dans le manifeste permet de contrôler la
+    volumétrie linguistique sans re-taper le brut (ex. openpii, EPIC B).
     """
 
     model_config = _BASE
@@ -165,6 +169,7 @@ class StructureSpec(BaseModel):
     has_tasks: bool
     split_by: str
     splits: list[str]
+    per_language_counts: dict[str, int] | None = None
 
     @model_validator(mode="after")
     def _check_split_by(self) -> StructureSpec:

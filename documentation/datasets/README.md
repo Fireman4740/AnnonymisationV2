@@ -46,11 +46,11 @@ de [`inventaire-local.md §7`](inventaire-local.md).
 | Support-QI-Bench | [`support-qi-bench.md`](support-qi-bench.md) | Corpus support à construire | **P0** |
 | Forum-QI-Bench | [`forum-qi-bench.md`](forum-qi-bench.md) | Corpus forums FR à construire | **P0** |
 
-### Corpus nécessitant un téléchargement (différés)
+### Corpus nécessitant un téléchargement
 
 | Dataset | Fiche | Rôle | Priorité |
 |---------|-------|------|---------:|
-| OpenPII 500k | [`openpii-500k.md`](openpii-500k.md) | PII multilingue (dont FR), F1 par langue | P1 |
+| OpenPII 500k | [`openpii-500k.md`](openpii-500k.md) | PII multilingue (dont FR), F1 par langue | **P0** |
 | MultiCoNER II | [`multiconer2.md`](multiconer2.md) | Robustesse multilingue / bruit | P1 |
 | MEDDOCAN | [`meddocan.md`](meddocan.md) | Stress-test cross-domaine (ES) | P2 |
 | SynthPAI | [`synthpai.md`](synthpai.md) | Forums — **redondant avec PersonalReddit** à court terme | P2 |

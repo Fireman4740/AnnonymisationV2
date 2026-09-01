@@ -43,9 +43,11 @@ class DatasetAdapter(ABC):
     Règles d'implémentation (SPEC-03 §6) :
 
     1. Les ``iter_*`` DOIVENT être des générateurs paresseux — OpenPII et
-       MultiCoNER ne tiennent pas confortablement en mémoire.
+       MultiCoNER ne tiennent pas confortablement en mémoire ; le pipeline
+       peut activer sa voie d'ingestion en flux via ``streaming = True``.
     2. ``download()`` DOIT être idempotent : relancé, il ne retélécharge pas si
        le checksum correspond.
+
     3. Un adaptateur NE DOIT PAS écrire dans ``data/processed/`` — c'est le rôle
        du pipeline d'ingestion (SPEC-04). Il produit des objets, pas des fichiers.
     4. Un adaptateur NE DOIT PAS filtrer ni corriger silencieusement. Une donnée
@@ -54,6 +56,7 @@ class DatasetAdapter(ABC):
     """
 
     key: ClassVar[str]
+    streaming: ClassVar[bool] = False
 
     def __init__(self, manifest: Any, raw_dir: Path) -> None:
         self.manifest = manifest

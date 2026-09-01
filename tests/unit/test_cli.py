@@ -102,6 +102,18 @@ class _TstAdapter(DatasetAdapter):
         return iter(())
 
 
+class _DownloadAdapter(_TstAdapter):
+    def download(self, *, force: bool = False) -> AcquisitionReport:
+        return AcquisitionReport(
+            dataset=self.key,
+            path=self.raw_dir,
+            sha256="a" * 64,
+            bytes_downloaded=0,
+            from_cache=True,
+            revision="test-revision",
+        )
+
+
 # --- version ----------------------------------------------------------------- #
 
 
@@ -178,6 +190,39 @@ def test_ingest_conflicting_args_exit2(repo: Path) -> None:
     with pytest.raises(SystemExit) as excinfo:
         cli.main(["datasets", "ingest", "tst", "--all", "--split", "train"])
     assert excinfo.value.code == 2
+
+
+def test_download_parser_accepts_force_and_pin() -> None:
+    args = cli.build_parser().parse_args(["datasets", "download", "tst", "--force", "--pin"])
+    assert args.datasets_command == "download"
+    assert args.key == "tst"
+    assert args.force is True
+    assert args.pin is True
+
+
+def test_pin_manifest_checksum_preserves_yaml(tmp_path: Path) -> None:
+    path = tmp_path / "dataset.yaml"
+    path.write_text(
+        "integrity:\n  sha256: null # commentaire\nstructure:\n  domain: generic\n",
+        encoding="utf-8",
+    )
+    cli._pin_manifest_checksum(path, "a" * 64)
+    content = path.read_text(encoding="utf-8")
+    assert 'sha256: "' + "a" * 64 + '" # commentaire' in content
+
+
+def test_download_success(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_manifest(repo)
+    monkeypatch.setattr(cli, "REGISTRY", {"tst": _DownloadAdapter})
+    assert cli.main(["datasets", "download", "tst", "--pin"]) == 0
+    out = capsys.readouterr().out
+    assert "Acquisition de tst terminée" in out
+    assert "test-revision" in out
+    assert (repo / "data" / "raw" / "tst" / ".acquisition.json").is_file()
+    manifest_text = (repo / "configs" / "datasets" / "tst.yaml").read_text(encoding="utf-8")
+    assert 'sha256: "' + "a" * 64 + '"' in manifest_text
 
 
 # --- describe ---------------------------------------------------------------- #

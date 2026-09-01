@@ -1,72 +1,206 @@
-# Manifeste — OpenPII 500k (AI4Privacy)
-# Fiche : documentation/datasets/openpii-500k.md
-# Schéma : documentation/specifications/SPEC-03-registre-et-adaptateurs.md §4
-#
-# ÉTAT : squelette. Les champs `null` et `UNKNOWN` doivent être renseignés lors
-# de la première acquisition (`anonv2 datasets download openpii --pin`).
-
 key: openpii
-name: "OpenPII 500k — AI4Privacy"
-description: "PII multilingue synthétique, 20 classes, 8 langues dont le français"
-doc: "documentation/datasets/openpii-500k.md"
+name: "OpenPII 500k (AI4Privacy)"
+description: >
+  580 227 textes anonymisés couvrant 8 langues (en, fr, de, it, es, nl, hi, te),
+  générés avec Llama-3.1-8B-Instruct à partir du labelset OpenPII (20 classes PII).
+  Le labelset est plus riche que les corpus v1 : il inclut TIME, DATE,
+  CREDITCARDNUMBER, les numéros d'identité (passport, driver's licence, tax,
+  social security) et les titres. Licence : Llama Community License (3.1 et 3.3)
+  — redistribuable sous conditions, sans identifiant SPDX : le statut OFFICIAL
+  est exclu (L2/G3), usage diagnostique.
+doc: documentation/datasets/openpii-500k.md
 aliases: ["ai4privacy", "open-pii-500k"]
 
 source:
   kind: huggingface
   repo: "ai4privacy/open-pii-masking-500k-ai4privacy"
-  revision: null              # OBLIGATOIRE avant tout run officiel
+  # Épinglé à l'acquisition (2026-09-01) : branche `main` au commit ci-dessus.
+  # Les commits HuggingFace sont immuables : c'est le pin déterministe du
+  # téléchargement (l'adaptateur télécharge la révision épinglée, jamais HEAD).
+  revision: "506996d625ed970a0063432daf6007cf4a3a48e3"
+  # Layout du cache local data/raw/openpii/ ↔ dépôt HF (figé par l'adaptateur) :
+  #   train.jsonl        = data/train/train.jsonl          (464 150 lignes)
+  #   validation.jsonl   = data/validation/test.jsonl      (116 077 lignes)
+  # La release ne contient que ces deux splits (pas de « test »).
   files: []
 
 license:
-  spdx: "UNKNOWN"             # à relever sur la carte HF de la révision retenue
-  redistribution: null
+  # La carte du dépôt (révision épinglée) soumet explicitement le dataset à la
+  # Llama Community License (3.1 et 3.3) — fichiers llama-3.1-community-license.txt
+  # et llama-3.3-community-license.txt à la racine du dépôt. La mention
+  # `license_name: cc-by-4.0` du frontmatter est un vestige de gabarit contredit
+  # par le corps de la carte ; ce dernier fait foi.
+  # La Llama Community License n'a pas d'identifiant SPDX → UNKNOWN (L2) :
+  # le statut OFFICIAL est exclu et le lock ne pourra porter que `diagnostic`.
+  spdx: "UNKNOWN"
+  # Llama Community License : reproduction/distribution permises sous conditions
+  # (attribution, usage conforme) → redistribuable, mais non libre.
+  redistribution: true
+  # Pas d'agrément d'accès type DUA (téléchargement libre, aucun formulaire) →
+  # non « restreint » au sens de L3 (qui vise MIMIC-III, JobStack, …).
   restricted: false
   citation: "ai4privacy2024openpii"
   notes: >
-    Les différentes versions publiées par AI4Privacy n'ont pas toutes la même
-    licence. Vérifier celle de la révision épinglée, pas celle du dépôt.
+    Llama 3.1/3.3 Community License — le corpus est 100 % synthétique
+    (généré par Llama-3.1-8B-Instruct) : pas de données personnelles réelles,
+    L5 (corpus interne) ne s'applique pas. À clarifier avec AI4Privacy avant
+    toute publication officielle.
 
 integrity:
-  sha256: null
-  expected_documents: null    # ~500 000, à figer
+  # sha256 de train.jsonl + validation.jsonl **concaténés** (ordre du cache
+  # local, figé par l'adaptateur), à la révision épinglée ci-dessus.
+  # Par fichier, pour traçabilité :
+  #   train.jsonl      aaee2a8c233db400e3cf1c8812ebb9f28cb6d90b7e66a5e9804aeacbf1c11c95
+  #   validation.jsonl 4e908e60d8d88f90015301e1ab4a8b7899ec713f1fc903860e1d9e0b91677ebf
+  sha256: "b2be30549173d572a9a879b6a44ded51f653b6e7a8cafed43653ae750df656f6"
+  expected_documents: 580227
   expected_profiles: 0
+  expected_threads: null
 
 structure:
   domain: generic
-  languages: ["fr", "en", "de", "es", "it", "nl", "pt"]   # à confirmer (8 langues)
+  # 8 langues du labelset, relevées ligne à ligne à l'acquisition ; hi et te
+  # sont présentes malgré la documentation anglophone de la carte.
+  languages: ["de", "en", "es", "fr", "hi", "it", "nl", "te"]
   synthetic: true
   has_profiles: false
   has_combinations: false
   has_organizations: false
   has_tasks: false
-  split_by: document          # pas de profil latent -> split document acceptable
-  splits: ["train", "validation", "test"]
+  split_by: document
+  # Deux splits seulement dans cette release ; le champ `split` de chaque ligne
+  # est la source de vérité du split de l'exemple.
+  splits: ["train", "validation"]
+  # Volumétrie par langue relevée à l'acquisition (somme = 580 227) :
+  per_language_counts:
+    de: 82384
+    en: 150693
+    es: 78013
+    fr: 112136
+    hi: 33963
+    it: 68824
+    nl: 26628
+    te: 27586
 
-# label_map : OBLIGATOIREMENT total (SPEC-03 G4).
-# Décision non triviale (voir fiche §10) : plusieurs classes OpenPII ne sont PAS
-# des identifiants directs. Les classer mécaniquement en DIRECT fausserait le
-# DILR. Revue classe par classe requise avant la première mesure.
 label_map:
-  GIVENNAME:   { identifier_type: DIRECT, qi_categories: [DIR_NAME],    granularity: EXACT, stability: STABLE }
-  SURNAME:     { identifier_type: DIRECT, qi_categories: [DIR_NAME],    granularity: EXACT, stability: STABLE }
-  EMAIL:       { identifier_type: DIRECT, qi_categories: [DIR_EMAIL],   granularity: EXACT, stability: VOLATILE }
-  TELEPHONENUM: { identifier_type: DIRECT, qi_categories: [DIR_PHONE],   granularity: EXACT, stability: VOLATILE }
-  STREET:      { identifier_type: DIRECT, qi_categories: [DIR_ADDRESS], granularity: EXACT, stability: VOLATILE }
-  BUILDINGNUM: { identifier_type: DIRECT, qi_categories: [DIR_ADDRESS], granularity: EXACT, stability: VOLATILE }
-  ZIPCODE:     { identifier_type: QUASI,  qi_categories: [GEN_GEO],     granularity: EXACT, stability: VOLATILE }
-  CITY:        { identifier_type: QUASI,  qi_categories: [GEN_GEO],     granularity: COARSE, stability: VOLATILE }
-  DATEOFBIRTH: { identifier_type: QUASI,  qi_categories: [GEN_AGE],     granularity: EXACT, stability: STABLE }
-  JOBTITLE:    { identifier_type: QUASI,  qi_categories: [GEN_OCCUPATION], granularity: COARSE, stability: VOLATILE }
-  # ... les 20 classes DOIVENT figurer ici. Toute classe absente = E-MAP-001.
+  # Les 20 classes du labelset OpenPII, totales (G4) : toute classe présente
+  # dans la release est mappée, sans approximation silencieuse.
+  GIVENNAME:
+    identifier_type: DIRECT
+    qi_categories: [DIR_NAME]
+    granularity: EXACT
+    stability: STABLE
+  SURNAME:
+    identifier_type: DIRECT
+    qi_categories: [DIR_NAME]
+    granularity: EXACT
+    stability: STABLE
+  EMAIL:
+    identifier_type: DIRECT
+    qi_categories: [DIR_EMAIL]
+    granularity: EXACT
+    stability: VOLATILE
+  TELEPHONENUM:
+    identifier_type: DIRECT
+    qi_categories: [DIR_PHONE]
+    granularity: EXACT
+    stability: VOLATILE
+  STREET:
+    identifier_type: DIRECT
+    qi_categories: [DIR_ADDRESS]
+    granularity: EXACT
+    stability: VOLATILE
+  BUILDINGNUM:
+    identifier_type: DIRECT
+    qi_categories: [DIR_ADDRESS]
+    granularity: EXACT
+    stability: VOLATILE
+  CREDITCARDNUMBER:
+    identifier_type: DIRECT
+    qi_categories: [DIR_ACCOUNT]
+    granularity: EXACT
+    stability: VOLATILE
+  DRIVERLICENSENUM:
+    identifier_type: DIRECT
+    qi_categories: [DIR_ID_NUMBER]
+    granularity: EXACT
+    stability: STABLE
+  IDCARDNUM:
+    identifier_type: DIRECT
+    qi_categories: [DIR_ID_NUMBER]
+    granularity: EXACT
+    stability: STABLE
+  PASSPORTNUM:
+    identifier_type: DIRECT
+    qi_categories: [DIR_ID_NUMBER]
+    granularity: EXACT
+    stability: STABLE
+  SOCIALNUM:
+    identifier_type: DIRECT
+    qi_categories: [DIR_ID_NUMBER]
+    granularity: EXACT
+    stability: STABLE
+  TAXNUM:
+    identifier_type: DIRECT
+    qi_categories: [DIR_ID_NUMBER]
+    granularity: EXACT
+    stability: STABLE
+  AGE:
+    identifier_type: QUASI
+    qi_categories: [GEN_AGE]
+    granularity: EXACT
+    stability: STABLE
+  GENDER:
+    identifier_type: QUASI
+    qi_categories: [GEN_GENDER]
+    granularity: COARSE
+    stability: STABLE
+  SEX:
+    identifier_type: QUASI
+    qi_categories: [GEN_GENDER]
+    granularity: COARSE
+    stability: STABLE
+  CITY:
+    identifier_type: QUASI
+    qi_categories: [GEN_GEO]
+    granularity: COARSE
+    stability: VOLATILE
+  ZIPCODE:
+    identifier_type: QUASI
+    qi_categories: [GEN_GEO]
+    granularity: EXACT
+    stability: VOLATILE
+  DATE:
+    identifier_type: QUASI
+    qi_categories: [GEN_DATE_EVENT]
+    granularity: EXACT
+    stability: STABLE
+  TIME:
+    identifier_type: QUASI
+    qi_categories: [GEN_DATE_EVENT]
+    granularity: EXACT
+    stability: STABLE
+  # Civilités (Dr, Hr, श्रिमानी, …) et titres professionnels. Les codes SPEC-01
+  # les plus proches sont GEN_OCCUPATION ; une civilité seule n'est pas un
+  # identifiant au sens strict → la classe reste QUASI, pas DIRECT.
+  TITLE:
+    identifier_type: QUASI
+    qi_categories: [GEN_OCCUPATION]
+    granularity: EXACT
+    stability: STABLE
 
 evaluation:
   protocol: "openpii-v1"
   protocol_version: "1"
-  official_eligible: false    # -> true quand licence + revision + sha256 sont fixés
-  default_metric_status: "SAMPLED"
+  # L2/G3 : spdx UNKNOWN exclut le statut OFFICIAL — le lock ne portera que
+  # `diagnostic`, quelle que soit la volumétrie.
+  official_eligible: false
+  # Uniquement au niveau document : pas de niveaux plus fins dans cette release.
   granularities: ["document"]
-  report_by: ["language"]     # la moyenne toutes langues confondues est trompeuse
+  report_by: ["language"]
+  default_metric_status: DIAGNOSTIC
 
 population:
   population_id: null
   k_computable: false
+  notes: "k non calculable : pas de population de référence déclarée pour ce labelset."

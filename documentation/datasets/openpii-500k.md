@@ -5,7 +5,7 @@
 | **Clé interne** | `openpii` |
 | **Priorité** | **P0** |
 | **Benchmark** | B1 (PII Detection) |
-| **Statut de la fiche** | Stable · v1.0 · 2026-08-30 |
+| **Statut de la fiche** | Stable · v1.1 · 2026-09-01 — adaptateur livré (ÉPIC B) |
 
 ---
 
@@ -16,9 +16,9 @@
 | Nom | `ai4privacy/open-pii-masking-500k-ai4privacy` |
 | Référence | [@ai4privacy2024openpii] |
 | Type | **Synthétique** |
-| Langues | **8**, dont le **français** (> 112 000 exemples FR annoncés dans cette version) |
+| Langues | **8**, dont le **français** (112 136 exemples FR mesurés) |
 | Classes | **20 classes PII** |
-| Volume | ~500 000 exemples |
+| Volume | **580 227** exemples (464 150 train + 116 077 validation) |
 | Domaine | Généraliste |
 
 ## 2. Rôle et priorité
@@ -36,45 +36,84 @@ RAT-Bench.
 
 | | |
 |---|---|
-| Exemples | ~500 000 |
+| Exemples | **580 227** (464 150 train + 116 077 validation) |
 | Langues | 8 |
-| Français | > 112 000 exemples |
+| Français | **112 136** exemples (19,3 % du corpus) |
 | Classes PII | 20 |
-| Taille disque | ~1–3 Go |
+| Taille disque brut | 676 Mo (565 790 080 B train + 141 836 910 B validation) |
 
-Volumétrie exacte par langue à relever à l'ingestion et à figer dans le
-manifeste (`metadata.per_language_counts`), car elle conditionne toute mesure
-« F1 par langue ».
+Volumétrie par langue, **figée** dans le manifeste
+(`structure.per_language_counts`) après comptage ligne à ligne de la release
+épinglée :
+
+| Langue | Exemples |
+|--------|---------:|
+| en | 150 693 |
+| fr | 112 136 |
+| de | 82 384 |
+| es | 78 013 |
+| it | 68 824 |
+| hi | 33 963 |
+| te | 27 586 |
+| nl | 26 628 |
 
 ## 4. Structure brute
 
-Format Hugging Face, avec pour chaque exemple : le texte source, le texte
-masqué, la liste des entités PII avec leurs offsets et leur classe, et des
-métadonnées de langue / locale.
+Format Hugging Face JSONL, une ligne = un exemple, à la révision épinglée.
+**Schéma exact** :
 
-Structure exacte à figer au premier chargement. Points à vérifier :
+| Champ | Type | Rôle |
+|-------|------|------|
+| `source_text` | str | texte source |
+| `masked_text` | str | texte masqué, spans → `[LABEL_index]` |
+| `privacy_mask` | list | `[{label, start, end, value, label_index}]` — offsets **caractères de `source_text`** |
+| `split` | str | « train » / « validation » — source de vérité du split |
+| `uid` | int | unique sur tout le corpus → `doc_id = "openpii:{uid}"` |
+| `language` | str | ISO 639-1 minimal |
+| `region` | str | 2 lettres |
+| `script` | str | ISO 15924 (parfois inexact pour te/hi, carte HF) |
+| `mbert_tokens` / `mbert_token_classes` | lists | artefacts de tokenisation — ignorés |
 
-1. Les offsets portent-ils sur le texte source ou sur une version tokenisée ?
-2. Le texte masqué est-il aligné caractère à caractère avec le source ?
-3. Les 20 classes sont-elles identiques dans toutes les langues ?
+Résolution des trois points à vérifier :
+
+1. **Offsets** : caractères du `source_text` — `text[start:end] == value`
+   vérifié sur 100 % des 1 374 912 entités (validateur, E-VAL-101 : 0 faute).
+2. **Alignement du texte masqué** : non caractéristique (les placeholders
+   `[LABEL_index]` n'ont pas la longueur des spans), mais **reconstructible**
+   depuis `source_text` + `privacy_mask` (0 divergence). Décision :
+   `masked_text` **n'est pas dupliqué** dans le pivot — voir §10.
+3. **Classes entre langues** : les **20 classes sont présentes dans les 8
+   langues** (20/20 chacune) — labelset homogène, macro-F1 par langue
+   possible sans classe absente.
 
 ## 5. Accès et acquisition
 
 | | |
 |---|---|
 | Source | `huggingface.co/datasets/ai4privacy/open-pii-masking-500k-ai4privacy` |
-| Méthode | `datasets.load_dataset(...)` via `scripts/download_openpii.py` |
-| Prérequis | Aucun a priori (vérifier un éventuel gating) |
-| Cache local | `data/raw/openpii/` |
+| Méthode | `anonv2 datasets download openpii` → `OpenpiiAdapter.download()` — `urllib` stdlib sur le `resolve/<révision>/…` du dépôt (sans librairie HF) ; écriture tmp + rename atomique ; contrôle sha256 ; rapport `.acquisition.json` |
+| Révision épinglée | `506996d625ed970a0063432daf6007cf4a3a48e3` (branche `main` au téléchargement du 2026-09-01) |
+| Prérequis | Aucun : dépôt non gated, stockage XET, téléchargement direct (~51 s) |
+| Cache local | `data/raw/openpii/{train,validation}.jsonl` — sha256 agrégat figé dans le manifeste (`integrity.sha256`) |
 
 ## 6. Licence et conformité
 
-- Données **synthétiques** → aucune contrainte RGPD sur les personnes.
-- Licence AI4Privacy : à relever précisément sur la carte du dataset (les
-  différentes versions publiées par AI4Privacy n'ont pas toutes la même
-  licence — **vérifier la version exacte utilisée**).
-- Le champ `version` du manifeste doit épingler la révision HF (commit hash),
-  pas seulement le nom du dataset.
+- Données **synthétiques** (Llama-3.1-8B-Instruct) → aucune contrainte RGPD
+  sur des personnes réelles ; L5 (corpus interne) ne s'applique pas.
+- **Licence relevée sur la carte de la révision épinglée** : *Llama Community
+  License (3.1 et 3.3)* (fichiers `llama-3.1-community-license.txt` et
+  `llama-3.3-community-license.txt` dans le dépôt). La mention `license_name:
+  cc-by-4.0` du frontmatter est un vestige de gabarit **contredit par le corps
+  de la carte**, qui fait foi.
+- La Llama Community License **n'a pas d'identifiant SPDX** →
+  `license.spdx = UNKNOWN` ; redistribuable sous conditions (attribution) →
+  `redistribution = true` ; pas d'agrément type DUA (téléchargement libre) →
+  `restricted = false`.
+- Conséquence (L2/G3) : le statut **OFFICIAL est exclu** ; l'ingestion porte
+  le statut **`diagnostic`** (cf. lock). À clarifier avec AI4Privacy avant
+  toute publication officielle.
+- La révision HF est épinglée par **commit hash** dans le manifeste
+  (`source.revision`), jamais par nom de dataset.
 
 ## 7. Couverture
 
@@ -130,53 +169,70 @@ basse.
 
 | Objet OpenPII | Objet interne | Notes |
 |---------------|---------------|-------|
-| exemple | `Document` | `domain = "generic"`, `language` depuis la métadonnée |
-| entité PII | `Annotation` | `identifier_type = "DIRECT"` pour les classes identifiantes ; certaines classes (ex. `JOBTITLE`, `CITY`) doivent être mappées en `QUASI` |
-| classe PII (20) | `Annotation.qi_category` | via `label_map` vers SPEC-01 |
-| texte masqué | `Document.meta.masked_text` | conservé, utile comme référence de transformation |
+| exemple | `Document` | `doc_id = "openpii:{uid}"`, `domain = GENERIC`, `language` de la ligne, `meta = {uid, region, script}` |
+| entité PII | `Annotation` | `annotation_id = "openpii:{uid}:a{i}"` (i = position dans la ligne) ; offsets **tels quels** — la cohérence est contrôlée par le validateur, jamais corrigée |
+| classe PII (20) | `Annotation.qi_categories` | via `label_map` vers SPEC-01 : 12 `DIRECT` (noms, email, téléphone, adresse, carte bancaire, n° d'identité) + 8 `QUASI` (AGE, GENDER, SEX, CITY, ZIPCODE, DATE, TIME, TITLE) |
+| texte masqué | — | **non stocké** : reconstructible depuis `source_text` + `privacy_mask` (0 divergence) — pas de duplication dans le pivot |
+| `mbert_*` | — | ignorés (artefacts de tokenisation) |
 
-> **Décision de mapping non triviale** : plusieurs des 20 classes OpenPII ne sont
-> pas des identifiants directs (profession, ville, date de naissance…). Les
-> classer mécaniquement en `DIRECT` fausserait le DILR
-> ([SPEC-07 §4](../specifications/SPEC-07-metriques.md)). Le `label_map` doit
-> être établi classe par classe, revu, et documenté dans
-> `configs/datasets/openpii.yaml`.
+> **Décision de mapping non triviale** : 8 des 20 classes OpenPII ne sont pas
+> des identifiants directs (âge, genre/sex, ville, code postal, date, heure,
+> civilités/titres). Les classer mécaniquement en `DIRECT` fausserait le DILR
+> ([SPEC-07 §4](../specifications/SPEC-07-metriques.md)) — le `label_map`
+> figé dans `configs/datasets/openpii.yaml` les mape en `QUASI`. `TITLE`
+> couvre les civilités (Dr, Hr, श्रिमानी) **et** les titres professionnels ;
+> les classes v1 `DATEOFBIRTH` / `JOBTITLE` n'existent pas dans cette release.
 
 ## 11. Splits et protocole
 
-- Reprendre les splits HF officiels.
+- Deux splits HF reprenus tels quels : **train** (464 150) et **validation**
+  (116 077) — la release n'a pas de « test ».
 - Toute métrique doit être produite **par langue** ; la moyenne toutes langues
-  confondues est trompeuse (déséquilibre des volumes).
-- Protocole `official` si volumétrie + révision HF + licence sont figées.
+  confondues est trompeuse (déséquilibre des volumes) — `datasets stats`
+  reporte déjà `by_language`.
+- Protocole `openpii-v1` (volumétrie + révision épinglées) ; le statut
+  **OFFICIAL reste exclu** par la licence (spdx UNKNOWN) → statut de lock
+  `diagnostic` (SPEC-09 L2/G3).
 
 ## 12. Plan d'implémentation de l'adaptateur
 
 | # | Étape | Sortie |
 |---|-------|--------|
-| 1 | Charger, inspecter le schéma, compter par langue | note §4 + `per_language_counts` |
-| 2 | Épingler la révision HF | `configs/datasets/openpii.yaml` |
-| 3 | Établir le `label_map` classe par classe (revue manuelle des 20 classes) | mapping documenté |
-| 4 | Implémenter `OpenPiiAdapter` | `src/anonymisation/datasets/openpii.py` |
-| 5 | Vérifier l'alignement des offsets sur le texte source | test automatique |
-| 6 | Produire les métriques B1 par langue | rapport |
-| 7 | Comparer à la baseline Presidio | rapport |
+| 1 | ✅ Charger, inspecter le schéma, compter par langue | note §4 + `structure.per_language_counts` |
+| 2 | ✅ Épingler la révision HF (commit `506996d…`) | `configs/datasets/openpii.yaml` |
+| 3 | ✅ Établir le `label_map` classe par classe (20 classes) | mapping documenté dans le YAML |
+| 4 | ✅ Implémenter `OpenpiiAdapter` | `src/anonymisation/datasets/openpii.py` |
+| 5 | ✅ Vérifier l'alignement des offsets sur le texte source | `tests/unit/test_openpii.py` + `datasets validate openpii` PASS (1 374 912 entités, 0 faute) |
+| 6 | ⏳ Produire les métriques B1 par langue | rapport (travail d'évaluation, hors adaptateur) |
+| 7 | ⏳ Comparer à la baseline Presidio | rapport (idem) |
 
 **Cet adaptateur est le premier à écrire.** Il sert de patron aux autres et
 valide `DatasetAdapter`, le registre, le manifeste et la validation.
 
 ## 13. Critères d'acceptation
 
-- [ ] Chargement complet sans erreur, volumétrie conforme au manifeste.
-- [ ] `text[start:end] == span_text` pour 100 % des annotations, toutes langues.
-- [ ] Les 20 classes sont mappées explicitement ; aucune classe par défaut.
-- [ ] Le comptage par langue est produit et stocké dans le manifeste.
-- [ ] Le français représente bien > 100 000 exemples (contrôle de l'annonce).
+- [x] Chargement complet sans erreur, volumétrie conforme au manifeste.
+  (ingestion du 2026-09-01 : 580 227 documents, 1 374 912 annotations ;
+  `by_language` de `datasets stats` = `per_language_counts` du manifeste)
+- [x] `text[start:end] == span_text` pour 100 % des annotations, toutes
+  langues. (`datasets validate openpii` : PASS, 0 faute E-VAL-101 sur
+  1 374 912 entités)
+- [x] Les 20 classes sont mappées explicitement ; aucune classe par défaut.
+  (`label_map` du manifeste : 20/20, G4)
+- [x] Le comptage par langue est produit et stocké dans le manifeste.
+  (`structure.per_language_counts`)
+- [x] Le français représente bien > 100 000 exemples (contrôle de l'annonce).
+  (112 136 FR mesurés)
 - [ ] Une baseline Presidio tourne de bout en bout sur ce dataset.
+  (reste à faire — travail d'évaluation B1, pas de l'adaptateur)
 
 ## 14. Questions ouvertes
 
-- Quelle licence exacte pour la révision retenue ?
-- Les 20 classes sont-elles homogènes entre langues, ou certaines sont-elles
-  absentes de certaines langues ? (impacte le macro-F1 par langue)
-- Quelle proportion des classes doit basculer en `QUASI` ? Décision à trancher
-  et à figer avant toute mesure de DILR.
+- **Licence exacte de la révision retenue** : Llama Community License
+  (3.1 et 3.3) — voir §6. Conséquence : spdx UNKNOWN, statut `diagnostic`.
+- **Homogénéité des classes entre langues** : les 20 classes sont présentes
+  dans les **8 langues** (20/20 chacune, relevé ligne à ligne) — aucune classe
+  absente, pas d'impact sur le macro-F1 par langue.
+- **Proportion de classes `QUASI`** : tranchée — **8 des 20** (AGE, GENDER,
+  SEX, CITY, ZIPCODE, DATE, TIME, TITLE) mappées `QUASI`, 12 `DIRECT` ;
+  figé dans le manifeste.

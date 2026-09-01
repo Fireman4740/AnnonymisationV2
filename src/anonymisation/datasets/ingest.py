@@ -21,7 +21,12 @@ uniquement dans le lock ; la réingestion produit des fichiers identiques bit
 from __future__ import annotations
 
 import json
+import shutil
+import sqlite3
+import tempfile
+from collections import Counter
 from collections.abc import Sequence
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import date
 from itertools import islice
@@ -37,7 +42,7 @@ from anonymisation.datasets._local import (
 )
 from anonymisation.datasets.base import DatasetAdapter
 from anonymisation.datasets.manifest import DatasetManifest
-from anonymisation.schema.io import sha256_file, write_json, write_jsonl
+from anonymisation.schema.io import read_jsonl, sha256_file, write_json, write_jsonl
 from anonymisation.schema.models import (
     SCHEMA_VERSION,
     Annotation,
@@ -48,7 +53,7 @@ from anonymisation.schema.models import (
     TaskLabel,
 )
 from anonymisation.schema.taxonomy import TAXONOMY_VERSION
-from anonymisation.schema.validation import validate_dataset
+from anonymisation.schema.validation import ValidationIssue, ValidationReport, validate_dataset
 
 __all__ = [
     "LOCK_NAME",
@@ -61,6 +66,7 @@ __all__ = [
     "LockIncompatibleError",
     "check_lock_compatibility",
     "ingest",
+    "validate_streaming_output",
 ]
 
 
@@ -139,6 +145,314 @@ def _collect_split(
     }
 
 
+def _ingest_streaming(
+    adapter: DatasetAdapter,
+    manifest: DatasetManifest,
+    *,
+    target_splits: Sequence[str],
+    requested_split: str,
+    limit: int | None,
+    output_root: Path,
+    resolution: SourceResolution | None,
+) -> IngestionResult:
+    """Ingère un adaptateur sans conserver ses objets normalisés en mémoire.
+
+    Cette voie est réservée aux datasets sans tables relationnelles auxiliaires.
+    Les JSONL sont écrits dans un staging, puis validés en flux avec un index
+    SQLite temporaire avant publication.
+    """
+
+    structure = manifest.structure
+    if any(
+        (
+            structure.has_profiles,
+            structure.has_combinations,
+            structure.has_organizations,
+            structure.has_tasks,
+        )
+    ):
+        raise IngestionError(
+            f"{manifest.key} : streaming incompatible avec les tables auxiliaires "
+            "déclarées par le manifeste"
+        )
+    if limit is not None and limit < 0:
+        raise IngestionError(f"limit négatif : {limit!r} (0 ou un entier positif)")
+
+    output_root = Path(output_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+    base = output_root / manifest.key
+
+    with tempfile.TemporaryDirectory(prefix=f".{manifest.key}-", dir=output_root) as tmp:
+        staging = Path(tmp) / manifest.key
+        for current_split in target_splits:
+            document_path = staging / current_split / "documents.jsonl"
+            written_documents = write_jsonl(
+                document_path,
+                islice(adapter.iter_documents(current_split), limit),
+            )
+            if written_documents == 0:
+                document_path.unlink()
+
+            annotation_path = staging / current_split / "annotations.jsonl"
+            written_annotations = write_jsonl(
+                annotation_path,
+                islice(adapter.iter_annotations(current_split), limit),
+            )
+            if written_annotations == 0:
+                annotation_path.unlink()
+
+        files: dict[str, str] = {
+            path.relative_to(staging).as_posix(): sha256_file(path)
+            for path in sorted(staging.rglob("*.jsonl"))
+        }
+        report = validate_streaming_output(
+            manifest.key,
+            staging,
+            files,
+            expected_documents=manifest.integrity.expected_documents,
+            expected_profiles=manifest.integrity.expected_profiles,
+            expected_threads=manifest.integrity.expected_threads,
+        )
+        expected_documents = manifest.integrity.expected_documents
+        volumetry = (
+            expected_documents is not None
+            and report.counts["documents"] == expected_documents
+            and manifest.integrity.expected_threads is None
+            and manifest.integrity.expected_profiles in (None, 0)
+        )
+        status = _determine_status(manifest, volumetry=volumetry, limit=limit)
+
+        validation_payload = report.to_dict()
+        write_json(staging / VALIDATION_NAME, validation_payload)
+        lock = {
+            "manifest": manifest.model_dump(mode="json"),
+            "schema_version": SCHEMA_VERSION,
+            "taxonomy_version": TAXONOMY_VERSION,
+            "source": (
+                {
+                    "kind": "local",
+                    "directory": str(resolution.directory),
+                    "files": [str(path) for path in resolution.files],
+                    "fingerprint": resolution.fingerprint,
+                }
+                if resolution is not None
+                else {"kind": manifest.source.kind, "fingerprint": None}
+            ),
+            "files": files,
+            "date": date.today().isoformat(),
+            "status": status,
+        }
+        write_json(staging / LOCK_NAME, lock)
+
+        if base.exists():
+            if base.is_dir():
+                shutil.rmtree(base)
+            else:
+                base.unlink()
+        shutil.move(str(staging), str(base))
+
+    return IngestionResult(
+        dataset=manifest.key,
+        split=requested_split,
+        status=status,
+        counts=report.counts,
+        files=files,
+        lock_path=base / LOCK_NAME,
+        validation=validation_payload,
+    )
+
+
+def validate_streaming_output(
+    dataset: str,
+    base: Path,
+    files: dict[str, str],
+    *,
+    expected_documents: int | None,
+    expected_profiles: int | None,
+    expected_threads: int | None,
+) -> ValidationReport:
+    """Revalide des JSONL streaming sans matérialiser les tables en mémoire."""
+
+    document_paths = sorted(
+        base / relative
+        for relative in files
+        if relative.endswith("/documents.jsonl") or relative == "documents.jsonl"
+    )
+    annotation_paths = sorted(
+        base / relative
+        for relative in files
+        if relative.endswith("/annotations.jsonl") or relative == "annotations.jsonl"
+    )
+    other_paths = [
+        relative
+        for relative in files
+        if not (
+            relative.endswith("/documents.jsonl")
+            or relative == "documents.jsonl"
+            or relative.endswith("/annotations.jsonl")
+            or relative == "annotations.jsonl"
+        )
+    ]
+    if other_paths:
+        raise IngestionError(
+            f"{dataset} : validation streaming impossible pour les tables "
+            f"{', '.join(sorted(other_paths))}"
+        )
+
+    document_count = 0
+    annotation_count = 0
+    other_qi_count = 0
+    by_language: Counter[str] = Counter()
+    by_domain: Counter[str] = Counter()
+    by_expression_mode: Counter[str] = Counter()
+    by_identifier_type: Counter[str] = Counter()
+    by_qi_category: Counter[str] = Counter()
+
+    with tempfile.TemporaryDirectory(prefix=f".{dataset}-validate-") as tmp:
+        with closing(sqlite3.connect(Path(tmp) / "index.sqlite3")) as db:
+            db.execute(
+                "CREATE TABLE documents ("
+                "doc_id TEXT PRIMARY KEY, text TEXT NOT NULL, split TEXT NOT NULL, "
+                "thread_id TEXT)"
+            )
+            db.execute("CREATE TABLE annotations (annotation_id TEXT PRIMARY KEY)")
+            for path in document_paths:
+                for document in read_jsonl(path, Document):
+                    try:
+                        db.execute(
+                            "INSERT INTO documents(doc_id, text, split, thread_id) "
+                            "VALUES (?, ?, ?, ?)",
+                            (
+                                document.doc_id,
+                                document.text,
+                                document.split,
+                                document.thread_id,
+                            ),
+                        )
+                    except sqlite3.IntegrityError as exc:
+                        raise IngestionError(
+                            f"{dataset} : E-VAL-111 — doc_id dupliqué "
+                            f"{document.doc_id!r}"
+                        ) from exc
+                    document_count += 1
+                    by_language[document.language] += 1
+                    by_domain[document.domain.value] += 1
+            db.commit()
+
+            for path in annotation_paths:
+                for annotation in read_jsonl(path, Annotation):
+                    document_row = db.execute(
+                        "SELECT text FROM documents WHERE doc_id = ?",
+                        (annotation.doc_id,),
+                    ).fetchone()
+                    if document_row is None:
+                        raise IngestionError(
+                            f"{dataset} : E-VAL-104 — annotation "
+                            f"{annotation.annotation_id!r} référence le doc_id "
+                            f"orphelin {annotation.doc_id!r}"
+                        )
+                    try:
+                        annotation.check_against_text(document_row[0])
+                    except ValueError as exc:
+                        raise IngestionError(
+                            f"{dataset} : E-VAL-101 — {exc} ({annotation.doc_id})"
+                        ) from exc
+                    try:
+                        db.execute(
+                            "INSERT INTO annotations(annotation_id) VALUES (?)",
+                            (annotation.annotation_id,),
+                        )
+                    except sqlite3.IntegrityError as exc:
+                        raise IngestionError(
+                            f"{dataset} : E-VAL-111 — annotation_id dupliqué "
+                            f"{annotation.annotation_id!r}"
+                        ) from exc
+                    annotation_count += 1
+                    by_expression_mode[annotation.expression_mode.value] += 1
+                    by_identifier_type[annotation.identifier_type.value] += 1
+                    by_qi_category.update(annotation.qi_categories)
+                    if "OTHER_QI" in annotation.qi_categories:
+                        other_qi_count += 1
+
+            thread_row = db.execute(
+                "SELECT COUNT(DISTINCT thread_id) FROM documents "
+                "WHERE thread_id IS NOT NULL"
+            ).fetchone()
+            if thread_row is None:
+                raise IngestionError(f"{dataset} : index streaming incomplet")
+            thread_count = int(thread_row[0])
+
+    issues: list[ValidationIssue] = []
+    if expected_documents is not None and document_count != expected_documents:
+        issues.append(
+            ValidationIssue(
+                code="E-VAL-109",
+                severity="warning",
+                message=(
+                    f"Volumétrie observée ({document_count}) != expected_documents "
+                    f"({expected_documents})"
+                ),
+            )
+        )
+    if annotation_count and other_qi_count / annotation_count > 0.01:
+        issues.append(
+            ValidationIssue(
+                code="E-VAL-110",
+                severity="warning",
+                message=(
+                    f"Taux d'OTHER_QI={other_qi_count}/{annotation_count} "
+                    f"({other_qi_count / annotation_count:.2%}) > 1 % — "
+                    "taxonomie incomplète"
+                ),
+            )
+        )
+    counts: dict[str, Any] = {
+        "documents": document_count,
+        "annotations": annotation_count,
+        "profiles": 0,
+        "organizations": 0,
+        "combinations": 0,
+        "tasks": 0,
+        "by_language": dict(sorted(by_language.items())),
+        "by_domain": dict(sorted(by_domain.items())),
+        "by_expression_mode": dict(sorted(by_expression_mode.items())),
+        "by_identifier_type": dict(sorted(by_identifier_type.items())),
+        "by_qi_category": dict(sorted(by_qi_category.items())),
+        "warnings": {"E-VAL-107": 0, "E-VAL-110": other_qi_count},
+    }
+    report = ValidationReport(
+        dataset=dataset,
+        status="WARN" if issues else "PASS",
+        counts=counts,
+        issues=tuple(issues),
+    )
+    if expected_profiles not in (None, 0):
+        raise IngestionError(
+            f"{dataset} : validation streaming impossible : expected_profiles="
+            f"{expected_profiles} mais aucune table profiles.jsonl"
+        )
+    if expected_threads is not None and thread_count != expected_threads:
+        report = ValidationReport(
+            dataset=dataset,
+            status="WARN",
+            counts=counts,
+            issues=tuple(
+                [
+                    *issues,
+                    ValidationIssue(
+                        code="E-VAL-109",
+                        severity="warning",
+                        message=(
+                            f"Volumétrie observée ({thread_count}) != expected_threads "
+                            f"({expected_threads})"
+                        ),
+                    ),
+                ]
+            ),
+        )
+    return report
+
+
 def _target_splits(
     adapter: DatasetAdapter, manifest: DatasetManifest, split: str
 ) -> list[str]:
@@ -211,22 +525,6 @@ def _determine_status(
     return "sampled"
 
 
-def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
-    """Écrit un JSON de manière atomique et reproductible (SPEC-04 §6)."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        with tmp.open("w", encoding="utf-8", newline="\n") as fh:
-            json.dump(payload, fh, ensure_ascii=False, sort_keys=True, indent=2)
-            fh.write("\n")
-    except BaseException:
-        if tmp.exists():
-            tmp.unlink()
-        raise
-    os.replace(tmp, path)
-
-
 def ingest(
     adapter: DatasetAdapter,
     manifest: DatasetManifest,
@@ -265,6 +563,16 @@ def ingest(
 
     # --- Étape 2+3 : PARSE + NORMALIZE, par split ------------------------ #
     target_splits = _target_splits(adapter, manifest, split)
+    if adapter.streaming:
+        return _ingest_streaming(
+            adapter,
+            manifest,
+            target_splits=target_splits,
+            requested_split=split,
+            limit=limit,
+            output_root=Path(output_root),
+            resolution=resolution,
+        )
     per_split: dict[str, dict[str, list[Any]]] = {
         s: _collect_split(adapter, s, limit) for s in target_splits
     }

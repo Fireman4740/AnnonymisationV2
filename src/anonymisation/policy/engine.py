@@ -44,7 +44,12 @@ from anonymisation.transform.decisions import (
     AnonymizationDecision,
     check_action_allowed,
 )
-from anonymisation.transform.generalize import generalize, levels_available
+from anonymisation.transform.generalize import (
+    MalformedValueNormalizedError,
+    UnknownGeneralizationCategoryError,
+    generalize,
+    levels_available,
+)
 
 #: Coût d'utilité perdue par action, utilisé comme dénominateur du ratio
 #: Δrisque / Δutilité. Valeurs de départ raisonnables (non calibrées), voir
@@ -434,13 +439,27 @@ class PolicyEngine:
                 ann = by_id[aid]
                 category = self._category_of(ann)
                 current_level = state[aid].get("level", 0)
-                available = levels_available(state[aid], category)
+                try:
+                    available = levels_available(state[aid], category)
+                except (MalformedValueNormalizedError, UnknownGeneralizationCategoryError):
+                    # Pas de hiérarchie de généralisation pour cette catégorie
+                    # (table non exhaustive : HR_*, GEN_GENDER, GEN_DATE_EVENT…)
+                    # ou état non utilisable : le QI est réputé épuisé au niveau
+                    # 0 — le repli prévu par l'algorithme SPEC-06 §9 (SUPPRESS)
+                    # s'applique au lieu d'une erreur d'exécution.
+                    available = 0
                 under_cap = max_steps is None or current_level < max_steps
                 granularity_key = str(getattr(self._granularity_of(ann), "value", self._granularity_of(ann)))
                 is_coarse = granularity_key == "COARSE"
 
                 if available > 0 and under_cap and not is_coarse:
-                    result = generalize(state[aid], category, steps=1)
+                    try:
+                        result = generalize(state[aid], category, steps=1)
+                    except (MalformedValueNormalizedError, UnknownGeneralizationCategoryError):
+                        # ``value_normalized`` ne porte pas la forme attendue
+                        # par la hiérarchie : seule la voie de suppression reste
+                        # jouable pour ce QI.
+                        result = None
                     if result is not None:
                         _, new_value = result
                         trial_active = active

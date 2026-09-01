@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Statut** | Stable |
-| **Version** | 1.0 |
-| **Date** | 2026-08-30 |
+| **Version** | 1.1 |
+| **Date** | 2026-09-01 |
 | **Dépend de** | SPEC-02 |
 | **Utilisée par** | SPEC-04, SPEC-07 |
 
@@ -161,6 +161,8 @@ class DatasetAdapter(ABC):
     """
 
     key: ClassVar[str]
+    streaming: ClassVar[bool] = False  # ingestion par flux pour les gros corpus
+
 
     def __init__(self, manifest: DatasetManifest, raw_dir: Path) -> None: ...
 
@@ -206,6 +208,8 @@ class DatasetAdapter(ABC):
 
 1. Les méthodes `iter_*` DOIVENT être des **générateurs paresseux** — certains
    datasets (OpenPII, MultiCoNER) ne tiennent pas confortablement en mémoire.
+   Le pipeline utilise une voie de validation par flux quand l'adaptateur porte
+   `streaming = True` ; cette voie est réservée aux datasets sans tables auxiliaires.
 2. `download()` DOIT être **idempotent** : relancé, il ne retélécharge pas si le
    checksum correspond.
 3. Un adaptateur NE DOIT PAS écrire dans `data/processed/` : c'est le rôle du
@@ -303,3 +307,4 @@ plus cher à corriger.
 | Version | Date | Changement |
 |---------|------|-----------|
 | 1.0 | 2026-08-30 | Création. Manifeste YAML, ABC `DatasetAdapter`, cinq garanties du registre, décisions de reprise V1. |
+| 1.1 | 2026-09-01 | Ajout du mode `streaming` et de la validation par flux pour les gros corpus sans tables auxiliaires. |

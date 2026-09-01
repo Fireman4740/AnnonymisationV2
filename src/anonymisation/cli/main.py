@@ -18,9 +18,11 @@ import json
 import re
 import sys
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 from anonymisation import __version__
+from anonymisation.cli.predict import PredictError, cmd_predict
 from anonymisation.datasets.ingest import (
     LOCK_NAME,
     TABLE_MODELS,
@@ -29,6 +31,7 @@ from anonymisation.datasets.ingest import (
     IngestionError,
     LocalSourceError,
     ingest,
+    validate_streaming_output,
 )
 from anonymisation.datasets.manifest import (
     DatasetManifest,
@@ -40,9 +43,13 @@ from anonymisation.datasets.registry import (
     ALIASES,
     REGISTRY,
     UnknownDatasetError,
+    UnmappedLabelError,
     list_keys,
 )
-from anonymisation.schema.io import read_jsonl
+from anonymisation.pipeline.orchestrator import PipelineCapabilityError
+from anonymisation.pipeline.profiles import ProfileError
+from anonymisation.policy.models import PolicyConfigError
+from anonymisation.schema.io import JsonlError, atomic_write, read_jsonl, sha256_file, write_json
 from anonymisation.schema.validation import validate_dataset
 
 # Ancrage du dépôt : ``src/anonymisation/cli/main.py`` → racine 3 niveaux plus haut.
@@ -92,6 +99,22 @@ def _read_lock(key: str) -> dict | None:
 
 def _manifest_path(key: str) -> Path:
     return CONFIG_DIR / f"{key}.yaml"
+
+
+_SHA256_LINE = re.compile(
+    r"(?m)^([ \t]+sha256:[ \t]*)(?:null|['\"][^'\"]*['\"])([ \t]*(?:#.*)?)$"
+)
+
+
+def _pin_manifest_checksum(path: Path, digest: str) -> None:
+    """Remplace uniquement ``integrity.sha256`` sans réécrire le YAML."""
+
+    text = path.read_text(encoding="utf-8")
+    updated, count = _SHA256_LINE.subn(r'\1"' + digest + r'"\2', text, count=1)
+    if count != 1:
+        raise ManifestError(f"{path} : impossible de localiser `integrity.sha256` pour le pin")
+    with atomic_write(path) as handle:
+        handle.write(updated)
 
 
 def _known_keys() -> tuple[str, ...]:
@@ -182,6 +205,61 @@ def cmd_datasets_describe(key: str) -> int:
     return 0
 
 
+def cmd_datasets_download(key: str, force: bool, pin: bool = False) -> int:
+    """Acquiert une source et écrit son rapport reproductible."""
+
+    canonical = _resolve_key(key)
+    if canonical not in REGISTRY:
+        print(
+            f"Adaptateur non implémenté pour {canonical!r} : "
+            f"classe d'adaptateur absente du registre ({list_keys() or 'vide'}).",
+            file=sys.stderr,
+        )
+        return 2
+    path = _manifest_path(canonical)
+    if not path.is_file():
+        print(f"Manifeste introuvable : {path}", file=sys.stderr)
+        return 1
+    try:
+        loaded = load_manifest(path)
+        adapter = REGISTRY[canonical](loaded.manifest, RAW_ROOT / canonical)
+        report = adapter.download(force=force)
+        acquisition_path = report.path / ".acquisition.json"
+        if not acquisition_path.is_file():
+            write_json(
+                acquisition_path,
+                {
+                    "dataset": canonical,
+                    "source": loaded.manifest.source.model_dump(mode="json"),
+                    "sha256": report.sha256,
+                    "bytes_downloaded": report.bytes_downloaded,
+                    "from_cache": report.from_cache,
+                    "revision": report.revision,
+                    "date": date.today().isoformat(),
+                },
+            )
+        if pin:
+            expected_digest = loaded.manifest.integrity.sha256
+            if expected_digest is not None and expected_digest != report.sha256:
+                raise IngestionError(
+                    f"{canonical} : checksum téléchargé {report.sha256} "
+                    f"différent du checksum manifeste {expected_digest}"
+                )
+            if expected_digest is None:
+                _pin_manifest_checksum(path, report.sha256)
+    except (IngestionError, LocalSourceError, ManifestError, UnmappedLabelError, OSError) as exc:
+        print(f"Échec de l'acquisition de {canonical} : {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        f"Acquisition de {canonical} terminée : sha256={report.sha256} "
+        f"octets={report.bytes_downloaded} "
+        f"cache={'oui' if report.from_cache else 'non'} "
+        f"révision={report.revision or 'n/a'} rapport={report.path / '.acquisition.json'}"
+    )
+    return 0
+
+
 # --- datasets ingest --------------------------------------------------------- #
 
 
@@ -211,7 +289,7 @@ def cmd_datasets_ingest(key: str, split: str, limit: int | None, all_splits: boo
             output_root=PROCESSED_ROOT,
             resolution=loaded.resolution,
         )
-    except (IngestionError, LocalSourceError, ManifestError) as exc:
+    except (IngestionError, LocalSourceError, ManifestError, UnmappedLabelError) as exc:
         print(f"Échec de l'ingestion de {canonical} : {exc}", file=sys.stderr)
         return 1
     counts = result.counts
@@ -237,22 +315,47 @@ def cmd_datasets_validate(key: str) -> int:
         )
         return 1
     base = _dataset_dir(canonical)
-    loaded: dict[str, list] = {}
-    for rel in lock["files"]:
-        table = rel.split("/")[-1].rsplit(".", 1)[0]
-        model = TABLE_MODELS.get(table)
-        if model is None:
-            continue
-        loaded[table] = list(read_jsonl(base / rel, model))
-    report = validate_dataset(
-        canonical,
-        loaded.get("documents", []),
-        loaded.get("annotations", []),
-        loaded.get("profiles", []),
-        loaded.get("organizations", []),
-        loaded.get("combinations", []),
-        loaded.get("tasks", []),
-    )
+    if canonical in REGISTRY and REGISTRY[canonical].streaming:
+        try:
+            manifest = load_manifest(_manifest_path(canonical)).manifest
+            for relative, expected_digest in lock["files"].items():
+                path = base / relative
+                if not path.is_file():
+                    raise IngestionError(f"{canonical} : fichier publié manquant : {path}")
+                actual_digest = sha256_file(path)
+                if actual_digest != expected_digest:
+                    raise IngestionError(
+                        f"{canonical} : checksum publié invalide pour {relative!r} : "
+                        f"{actual_digest} != {expected_digest}"
+                    )
+            report = validate_streaming_output(
+                canonical,
+                base,
+                lock["files"],
+                expected_documents=manifest.integrity.expected_documents,
+                expected_profiles=manifest.integrity.expected_profiles,
+                expected_threads=manifest.integrity.expected_threads,
+            )
+        except (IngestionError, JsonlError, ManifestError, OSError) as exc:
+            print(f"Échec de la validation de {canonical} : {exc}", file=sys.stderr)
+            return 1
+    else:
+        loaded: dict[str, list] = {}
+        for rel in lock["files"]:
+            table = rel.split("/")[-1].rsplit(".", 1)[0]
+            model = TABLE_MODELS.get(table)
+            if model is None:
+                continue
+            loaded[table] = list(read_jsonl(base / rel, model))
+        report = validate_dataset(
+            canonical,
+            loaded.get("documents", []),
+            loaded.get("annotations", []),
+            loaded.get("profiles", []),
+            loaded.get("organizations", []),
+            loaded.get("combinations", []),
+            loaded.get("tasks", []),
+        )
     print(f"Validation de {canonical} : {report.status}")
     for issue in report.issues:
         print(f"  [{issue.severity.upper()}] {issue.code} — {issue.message}")
@@ -349,6 +452,36 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("version", help="Affiche la version.")
 
+    predict_p = sub.add_parser(
+        "predict",
+        help="Anonymise un corpus ingéré et fige le lock de reproductibilité.",
+    )
+    predict_p.add_argument(
+        "--dataset", required=True, help="Clé ou alias du dataset ingéré."
+    )
+    predict_p.add_argument(
+        "--split", required=True, help="Split du pivot (ex. train, validation)."
+    )
+    predict_p.add_argument(
+        "--policy", required=True, help="Identifiant de politique (P0-P4)."
+    )
+    predict_p.add_argument(
+        "--profile",
+        default="deterministic",
+        help="Profil runtime (défaut : deterministic).",
+    )
+    predict_p.add_argument(
+        "--out",
+        default=None,
+        help="Répertoire de sortie (défaut : runs/predict-<...>).",
+    )
+    predict_p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Nombre de documents (le lock passe au statut « sampled »).",
+    )
+
     datasets_p = sub.add_parser(
         "datasets",
         help="Acquisition, ingestion et validation des jeux de données.",
@@ -359,6 +492,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     describe_p = dsub.add_parser("describe", help="Manifeste résolu + couverture.")
     describe_p.add_argument("key")
+
+    download_p = dsub.add_parser(
+        "download", help="Acquiert la source et vérifie son checksum."
+    )
+    download_p.add_argument("key")
+    download_p.add_argument("--force", action="store_true", help="Ignore le cache existant.")
+    download_p.add_argument(
+        "--pin", action="store_true", help="Fige le checksum s'il est absent du manifeste."
+    )
 
     ingest_p = dsub.add_parser("ingest", help="Normalise vers le format pivot (SPEC-04).")
     ingest_p.add_argument("key")
@@ -388,6 +530,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "version":
         return cmd_version()
+    if args.command == "predict":
+        try:
+            return cmd_predict(
+                args.dataset,
+                args.split,
+                args.policy,
+                args.profile,
+                args.out,
+                args.limit,
+            )
+        except (
+            PredictError,
+            UnknownDatasetError,
+            ProfileError,
+            PolicyConfigError,
+            PipelineCapabilityError,
+            JsonlError,
+        ) as exc:
+            print(f"Erreur d'usage : {exc}", file=sys.stderr)
+            return 2
     if args.command != "datasets":
         parser.print_help()
         return 2
@@ -396,6 +558,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_datasets_list()
         if args.datasets_command == "describe":
             return cmd_datasets_describe(args.key)
+        if args.datasets_command == "download":
+            return cmd_datasets_download(args.key, args.force, args.pin)
         if args.datasets_command == "ingest":
             if args.all_splits and args.split != "all":
                 parser.error("--all est conflictuel avec --split distinct de 'all'")
