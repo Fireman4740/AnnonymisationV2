@@ -12,9 +12,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TypeVar
+from typing import IO, Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -61,49 +62,67 @@ def _default(value: object) -> object:
     raise JsonlError(f"Type non sérialisable en JSON : {type(value)!r} ({value!r})")
 
 
-def write_jsonl(path: Path, records: Iterable[BaseModel]) -> int:
-    """Écrit ``records`` dans ``path`` de façon atomique et reproductible.
+@contextmanager
+def atomic_write(path: Path) -> Iterator[IO[str]]:
+    """Ouvre ``<path>.tmp`` en écriture puis bascule atomiquement vers ``path``.
 
-    Garanties (SPEC-04 §6 et §9) :
+    Garanties communes à toutes les écritures du format pivot (SPEC-04 §6) :
 
-    - Écriture dans ``<path>.tmp`` puis ``os.replace()`` vers ``path`` : un
-      lecteur concurrent ne voit jamais un fichier à moitié écrit.
-    - UTF-8, séparateur ``\\n``, pas de BOM, ``ensure_ascii=False``.
-    - ``sort_keys=True`` : deux écritures des mêmes enregistrements produisent
-      des fichiers identiques bit à bit, condition nécessaire au test de
-      déterminisme de SPEC-04 §11.
-
-    Retourne le nombre d'enregistrements écrits.
+    - écriture dans un fichier temporaire voisin puis ``os.replace()`` : un
+      lecteur concurrent ne voit jamais un fichier à moitié écrit ;
+    - UTF-8, séparateur ``\n``, pas de BOM ;
+    - en cas d'échec en cours d'écriture, le temporaire est supprimé : jamais
+      de résidu qui pourrait être confondu avec une sortie valide.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(path.name + ".tmp")
-
-    count = 0
     try:
         with tmp_path.open("w", encoding="utf-8", newline="\n") as fh:
-            for record in records:
-                data = record.model_dump(mode="json")
-                line = json.dumps(
-                    data,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    default=_default,
-                )
-                fh.write(line)
-                fh.write("\n")
-                count += 1
+            yield fh
     except BaseException:
-        # Nettoyage du fichier temporaire en cas d'échec en cours d'écriture :
-        # ne jamais laisser de résidu qui pourrait être confondu avec une
-        # sortie valide.
         if tmp_path.exists():
             tmp_path.unlink()
         raise
-
     os.replace(tmp_path, path)
+
+
+def write_jsonl(path: Path, records: Iterable[BaseModel]) -> int:
+    """Écrit ``records`` dans ``path`` de façon atomique et reproductible.
+
+    Atomicité et encodage : voir :func:`atomic_write`. ``sort_keys=True``
+    garantit en outre que deux écritures des mêmes enregistrements produisent
+    des fichiers identiques bit à bit, condition nécessaire au test de
+    déterminisme de SPEC-04 §11.
+
+    Retourne le nombre d'enregistrements écrits.
+    """
+    count = 0
+    with atomic_write(path) as fh:
+        for record in records:
+            data = record.model_dump(mode="json")
+            line = json.dumps(
+                data,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=_default,
+            )
+            fh.write(line)
+            fh.write("\n")
+            count += 1
     return count
+
+
+def write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    """Écrit un document JSON indenté de façon atomique et reproductible.
+
+    Même contrat que :func:`write_jsonl` (SPEC-04 §6/§9) pour les fichiers
+    annexes du format pivot : ``.validation.json``, ``.manifest.lock.json``.
+    """
+    with atomic_write(path) as fh:
+        json.dump(payload, fh, ensure_ascii=False, sort_keys=True, indent=2)
+        fh.write("\n")
 
 
 def sha256_bytes(data: bytes) -> str:

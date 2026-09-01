@@ -41,7 +41,7 @@ def assign_split(group_key: str, seed: int, ratios: Mapping[str, float]) -> str:
         if ratio < 0:
             raise ValueError(f"Ratio négatif pour le split {name!r} : {ratio!r}")
 
-    digest = hashlib.blake2b(f"{seed}:{group_key}".encode("utf-8"), digest_size=8).digest()
+    digest = hashlib.blake2b(f"{seed}:{group_key}".encode(), digest_size=8).digest()
     x = int.from_bytes(digest, "big") / 2**64
 
     cumulative = 0.0

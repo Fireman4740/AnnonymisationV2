@@ -23,7 +23,7 @@ faire, et il doit être fait seul : tout le reste en dépend.
 
 Les corpus étant déjà sur disque
 ([`inventaire-local.md`](../datasets/inventaire-local.md)), il faut un `kind`
-de source nouveau, absent de SPEC-03 : `local`.
+de source nouveau, absent de SPEC-03 : `local`. 
 
 ### Périmètre
 
@@ -60,13 +60,13 @@ de source nouveau, absent de SPEC-03 : `local`.
 
 ### Critères d'acceptation
 
-- [ ] Manifeste avec `has_profiles: true` + `split_by: document` → erreur.
-- [ ] `label_map` avec un code inconnu → erreur nommant le code.
-- [ ] `license.spdx: UNKNOWN` → `official_eligible` forcé à `False`.
-- [ ] `ANONV2_V1_DATASETS` pointée vers un répertoire temporaire est bien prise
+- [x] Manifeste avec `has_profiles: true` + `split_by: document` → erreur.
+- [x] `label_map` avec un code inconnu → erreur nommant le code.
+- [x] `license.spdx: UNKNOWN` → `official_eligible` forcé à `False`.
+- [x] `ANONV2_V1_DATASETS` pointée vers un répertoire temporaire est bien prise
       en compte (**le dépôt ne doit pas dépendre d'une seule machine**).
-- [ ] Source absente → message indiquant la variable à définir.
-- [ ] `fingerprint` est stable quel que soit l'ordre des chemins fournis.
+- [x] Source absente → message indiquant la variable à définir.
+- [x] `fingerprint` est stable quel que soit l'ordre des chemins fournis.
 
 ### Piège connu
 
@@ -116,13 +116,13 @@ def ingest(adapter, manifest, *, split="all", limit=None,
 
 ### Critères d'acceptation
 
-- [ ] Deux ingestions successives produisent des fichiers **identiques bit à
+- [x] Deux ingestions successives produisent des fichiers **identiques bit à
       bit** (test explicite).
-- [ ] Une violation d'invariant fait échouer l'ingestion, elle n'est jamais
+- [x] Une violation d'invariant fait échouer l'ingestion, elle n'est jamais
       journalisée en avertissement.
-- [ ] Le lock contient les 7 éléments de reproductibilité de SPEC-09 §5.
-- [ ] `taxonomy_version` divergent → refus explicite.
-- [ ] Les tests utilisent un **adaptateur factice en mémoire** et ne dépendent
+- [x] Le lock contient les 7 éléments de reproductibilité de SPEC-09 §5.
+- [x] `taxonomy_version` divergent → refus explicite.
+- [x] Les tests utilisent un **adaptateur factice en mémoire** et ne dépendent
       d'aucun corpus réel.
 
 ### Piège connu
@@ -170,12 +170,12 @@ Codes de sortie : `0` succès, `1` échec de validation, `2` erreur d'usage.
 
 ### Critères d'acceptation
 
-- [ ] `import anonymisation.cli.main` fonctionne (il échoue aujourd'hui).
-- [ ] `datasets list` fonctionne **même si aucun adaptateur n'est enregistré** :
+- [x] `import anonymisation.cli.main` fonctionne (il échoue aujourd'hui).
+- [x] `datasets list` fonctionne **même si aucun adaptateur n'est enregistré** :
       liste les manifestes trouvés avec la mention « adaptateur non implémenté ».
-- [ ] `stats` sur un dataset non ingéré affiche un message clair sans planter.
-- [ ] `audit-licenses` sort en code ≠ 0 si un manifeste est incomplet.
-- [ ] Sortie tabulaire en texte simple, aucune dépendance à `rich`.
+- [x] `stats` sur un dataset non ingéré affiche un message clair sans planter.
+- [x] `audit-licenses` sort en code ≠ 0 si un manifeste est incomplet.
+- [x] Sortie tabulaire en texte simple, aucune dépendance à `rich`.
 
 ---
 
@@ -217,9 +217,9 @@ entités en fin de séquence, la ponctuation collée.
 
 ### Critères d'acceptation
 
-- [ ] `text[start:end] == span_text` sur 100 % des spans produits, sur au moins
+- [x] `text[start:end] == span_text` sur 100 % des spans produits, sur au moins
       5 cas dont un `I-` orphelin et une entité en fin de séquence.
-- [ ] Une séquence `tokens`/`tags` de longueurs différentes → erreur explicite.
+- [x] Une séquence `tokens`/`tags` de longueurs différentes → erreur explicite.
 
 ---
 
@@ -255,7 +255,7 @@ de conflits quand plusieurs personnes travaillent en parallèle).
 
 ### Critères d'acceptation
 
-- [ ] `from anonymisation.datasets import REGISTRY` expose tous les adaptateurs
+- [x] `from anonymisation.datasets import REGISTRY` expose tous les adaptateurs
       livrés.
-- [ ] Une clé enregistrée deux fois lève une erreur.
-- [ ] Un alias déjà utilisé lève une erreur.
+- [x] Une clé enregistrée deux fois lève une erreur.
+- [x] Un alias déjà utilisé lève une erreur.

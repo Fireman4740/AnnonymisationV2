@@ -1,93 +1,421 @@
 """CLI ``anonv2``.
 
-Commandes de datasets spécifiées en SPEC-03 §9. Squelette : les commandes
-lèvent ``NotImplementedError`` tant que le lot L2 n'est pas fait, plutôt que de
-retourner un résultat vide qui donnerait l'illusion de fonctionner.
+Commandes de datasets spécifiées en SPEC-03 §9 et en EPIC-A (ticket A-3).
+Implémentation en ``argparse`` (stdlib) uniquement : le noyau ne dépend
+d'aucune bibliothèque lourde (audit v1 §12.9) — la version précédente
+importait ``typer``/``rich``, absents de l'environnement, et le module
+était cassé à l'import.
+
+Codes de sortie : ``0`` succès, ``1`` échec (validation, ingestion,
+audit de licences), ``2`` erreur d'usage (clé inconnue, arguments
+conflictuels — ``argparse`` renvoie 2 nativement).
 """
 
 from __future__ import annotations
 
-import typer
-from rich.console import Console
-from rich.table import Table
+import argparse
+import json
+import re
+import sys
+from collections.abc import Sequence
+from pathlib import Path
 
 from anonymisation import __version__
-from anonymisation.datasets import list_keys, resolve
+from anonymisation.datasets.ingest import (
+    LOCK_NAME,
+    TABLE_MODELS,
+    TABLES,
+    VALIDATION_NAME,
+    IngestionError,
+    LocalSourceError,
+    ingest,
+)
+from anonymisation.datasets.manifest import (
+    DatasetManifest,
+    ManifestError,
+    load_all_manifests,
+    load_manifest,
+)
+from anonymisation.datasets.registry import (
+    ALIASES,
+    REGISTRY,
+    UnknownDatasetError,
+    list_keys,
+)
+from anonymisation.schema.io import read_jsonl
+from anonymisation.schema.validation import validate_dataset
 
-app = typer.Typer(add_completion=False, help="Anonymisation pilotée par le risque de ré-identification")
-datasets_app = typer.Typer(help="Acquisition, ingestion et validation des jeux de données")
-app.add_typer(datasets_app, name="datasets")
+# Ancrage du dépôt : ``src/anonymisation/cli/main.py`` → racine 3 niveaux plus haut.
+REPO_ROOT: Path = Path(__file__).resolve().parents[3]
+CONFIG_DIR: Path = REPO_ROOT / "configs" / "datasets"
+PROCESSED_ROOT: Path = REPO_ROOT / "data" / "processed"
+RAW_ROOT: Path = REPO_ROOT / "data" / "raw"
 
-console = Console()
+# Identifiant SPDX officiel (SPEC-09 §2.3) : lettre/chiffre, puis ``. + - /``.
+# Tout ce qui ne matche pas (« à decidir », « on-request », etc.) est traité
+# comme licence incomplète.
+_SPDX_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+\-/]*\Z")
 
 
-@app.command()
-def version() -> None:
-    """Affiche la version."""
-    console.print(f"anonymisation-v2 {__version__}")
+def _print_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
+    """Tableau texte brut, largeurs calculées à la main (jamais ``rich``).
+
+    Tolère des lignes plus longues que l'en-tête (ex. marqueur « ← bloquant »
+    du tableau SPEC-09 §2.3).
+    """
+    cols = max([len(headers)] + [len(r) for r in rows])
+    data = [[str(h) for h in headers] + [""] * (cols - len(headers))]
+    data += [[str(c) for c in row] + [""] * (cols - len(row)) for row in rows]
+    widths = [max(len(row[i]) for row in data) for i in range(cols)]
+    for i, row in enumerate(data):
+        line = "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip()
+        if i == 1:
+            print("  ".join("-" * w for w in widths))
+        print(line)
 
 
-@datasets_app.command("list")
-def datasets_list() -> None:
-    """Liste les datasets enregistrés, avec leur statut."""
-    table = Table(title="Datasets enregistrés")
-    table.add_column("clé")
-    table.add_column("licence")
-    table.add_column("documents")
-    table.add_column("statut")
+def _dataset_dir(key: str) -> Path:
+    """Répertoire publié par l'ingestion pour ``key`` (SPEC-04 §6)."""
+    return PROCESSED_ROOT / key
 
-    keys = list_keys()
-    if not keys:
-        console.print(
-            "[yellow]Aucun adaptateur enregistré.[/yellow] "
-            "Décommenter les imports dans src/anonymisation/datasets/__init__.py "
-            "au fur et à mesure du lot L2 (voir documentation/roadmap.md)."
+
+def _lock_path(key: str) -> Path:
+    return _dataset_dir(key) / LOCK_NAME
+
+
+def _read_lock(key: str) -> dict | None:
+    path = _lock_path(key)
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _manifest_path(key: str) -> Path:
+    return CONFIG_DIR / f"{key}.yaml"
+
+
+def _known_keys() -> tuple[str, ...]:
+    return tuple(sorted(set(list_keys()) | {p.stem for p in CONFIG_DIR.glob("*.yaml")}))
+
+
+def _resolve_key(key: str) -> str:
+    """Résout clé ou alias vers la clé canonique ; lève ``UnknownDatasetError``."""
+    if key in ALIASES:
+        return ALIASES[key]
+    if key in REGISTRY or _manifest_path(key).is_file():
+        return key
+    known = ", ".join(_known_keys()) or "aucun"
+    raise UnknownDatasetError(f"Dataset inconnu : {key!r}. Clés connues : {known}")
+
+
+# --- version ----------------------------------------------------------------- #
+
+
+def cmd_version() -> int:
+    print(f"anonymisation-v2 {__version__}")
+    return 0
+
+
+# --- datasets list ----------------------------------------------------------- #
+
+
+def cmd_datasets_list() -> int:
+    """Liste les manifestes trouvés, que ou non un adaptateur est enregistré."""
+    if not CONFIG_DIR.is_dir():
+        print(f"Répertoire de manifestes introuvable : {CONFIG_DIR}", file=sys.stderr)
+        return 1
+    loaded = load_all_manifests(CONFIG_DIR)
+    if not loaded:
+        print(f"Aucun manifeste trouvé dans {CONFIG_DIR}.")
+        return 0
+
+    rows: list[list[str]] = []
+    for key in sorted(loaded):
+        m = loaded[key].manifest
+        lock = _read_lock(key)
+        status = lock["status"] if lock else "non ingéré"
+        expected = m.integrity.expected_documents
+        rows.append(
+            [
+                key,
+                m.license.spdx if m.license.spdx else "<absent>",
+                m.source.kind,
+                status,
+                str(expected) if expected is not None else "—",
+                "implémenté" if key in REGISTRY else "non implémenté",
+            ]
         )
-        return
-
-    for key in keys:
-        adapter = resolve(key)
-        table.add_row(key, "?", "?", "non ingéré")
-    console.print(table)
-
-
-@datasets_app.command("download")
-def datasets_download(key: str, force: bool = False, pin: bool = False) -> None:
-    """Acquiert la source (SPEC-04 §3).
-
-    ``--pin`` calcule ET écrit le checksum dans le manifeste. Sans lui, le
-    checksum est seulement affiché : figer une version est une décision, pas un
-    effet de bord.
-    """
-    raise NotImplementedError("Lot L2 — voir SPEC-04 §3")
+    _print_table(
+        ("CLÉ", "LICENCE", "SOURCE", "STATUT", "DOCUMENTS", "ADAPTATEUR"),
+        rows,
+    )
+    return 0
 
 
-@datasets_app.command("ingest")
-def datasets_ingest(key: str, split: str = "all", limit: int | None = None) -> None:
-    """Normalise vers le format pivot (SPEC-04 §4)."""
-    raise NotImplementedError("Lot L2 — voir SPEC-04 §4")
+# --- datasets describe ------------------------------------------------------- #
 
 
-@datasets_app.command("validate")
-def datasets_validate(key: str) -> None:
-    """Vérifie tous les invariants de SPEC-02 (SPEC-04 §5)."""
-    raise NotImplementedError("Lot L2 — voir SPEC-04 §5")
+def cmd_datasets_describe(key: str) -> int:
+    """Manifeste résolu + couverture d'ingestion si un lock existe."""
+    canonical = _resolve_key(key)
+    path = _manifest_path(canonical)
+    if not path.is_file():
+        print(f"Manifeste introuvable : {path}", file=sys.stderr)
+        return 1
+    loaded = load_manifest(path)
+    print(f"# {canonical}")
+    print(
+        json.dumps(
+            loaded.manifest.model_dump(mode="json"), ensure_ascii=False, indent=2,
+            sort_keys=True,
+        )
+    )
+    lock = _read_lock(canonical)
+    if lock:
+        print(
+            "# Couverture : "
+            f"statut={lock['status']} date={lock['date']} "
+            f"fichiers={len(lock['files'])} fingerprint={lock['source']['fingerprint']}"
+        )
+    else:
+        print("# Couverture : non ingéré")
+    return 0
 
 
-@datasets_app.command("stats")
-def datasets_stats(key: str) -> None:
-    """Comptes par langue, domaine, catégorie et mode d'expression.
-
-    Ce n'est pas un confort : ces comptes sont les dénominateurs des métriques
-    déclinées de SPEC-07.
-    """
-    raise NotImplementedError("Lot L2 — voir SPEC-04 §5")
+# --- datasets ingest --------------------------------------------------------- #
 
 
-@datasets_app.command("audit-licenses")
-def datasets_audit_licenses() -> None:
-    """Vérifie la conformité des licences (SPEC-09 §2). Échoue si incomplet."""
-    raise NotImplementedError("Lot L2 — voir SPEC-09 §2")
+def cmd_datasets_ingest(key: str, split: str, limit: int | None, all_splits: bool) -> int:
+    """Normalise vers le format pivot (SPEC-04) et publie dans ``data/processed``."""
+    canonical = _resolve_key(key)
+    if canonical not in REGISTRY:
+        print(
+            f"Adaptateur non implémenté pour {canonical!r} : "
+            f"classe d'adaptateur absente du registre ({list_keys() or 'vide'}). "
+            "Implémentez-la (SPEC-03 §10) puis réessayez.",
+            file=sys.stderr,
+        )
+        return 2
+    path = _manifest_path(canonical)
+    if not path.is_file():
+        print(f"Manifeste introuvable : {path}", file=sys.stderr)
+        return 1
+    try:
+        loaded = load_manifest(path)
+        adapter = REGISTRY[canonical](loaded.manifest, RAW_ROOT / canonical)
+        result = ingest(
+            adapter,
+            loaded.manifest,
+            split=split,
+            limit=limit,
+            output_root=PROCESSED_ROOT,
+            resolution=loaded.resolution,
+        )
+    except (IngestionError, LocalSourceError, ManifestError) as exc:
+        print(f"Échec de l'ingestion de {canonical} : {exc}", file=sys.stderr)
+        return 1
+    counts = result.counts
+    print(
+        f"Ingestion de {canonical} terminée : statut={result.status} "
+        f"documents={counts.get('documents', 0)} "
+        f"annotations={counts.get('annotations', 0)} lock={result.lock_path}"
+    )
+    return 0
+
+
+# --- datasets validate ------------------------------------------------------- #
+
+
+def cmd_datasets_validate(key: str) -> int:
+    """Vérifie tous les invariants SPEC-02 sur les tables ingérées."""
+    canonical = _resolve_key(key)
+    lock = _read_lock(canonical)
+    if lock is None:
+        print(
+            f"{canonical} non ingéré — exécutez : anonv2 datasets ingest {canonical}",
+            file=sys.stderr,
+        )
+        return 1
+    base = _dataset_dir(canonical)
+    loaded: dict[str, list] = {}
+    for rel in lock["files"]:
+        table = rel.split("/")[-1].rsplit(".", 1)[0]
+        model = TABLE_MODELS.get(table)
+        if model is None:
+            continue
+        loaded[table] = list(read_jsonl(base / rel, model))
+    report = validate_dataset(
+        canonical,
+        loaded.get("documents", []),
+        loaded.get("annotations", []),
+        loaded.get("profiles", []),
+        loaded.get("organizations", []),
+        loaded.get("combinations", []),
+        loaded.get("tasks", []),
+    )
+    print(f"Validation de {canonical} : {report.status}")
+    for issue in report.issues:
+        print(f"  [{issue.severity.upper()}] {issue.code} — {issue.message}")
+    if not report.issues:
+        print("  aucun problème détecté")
+    return 1 if report.errors() else 0
+
+
+# --- datasets stats ---------------------------------------------------------- #
+
+
+def cmd_datasets_stats(key: str) -> int:
+    """Comptes par langue, domaine, QI et mode d'expression (SPEC-07)."""
+    canonical = _resolve_key(key)
+    path = _dataset_dir(canonical) / VALIDATION_NAME
+    if not path.is_file():
+        print(
+            f"{canonical} non ingéré — exécutez : anonv2 datasets ingest {canonical}",
+            file=sys.stderr,
+        )
+        return 1
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    counts = payload["counts"]
+    print(f"Stats de {canonical} (statut validation : {payload['status']})")
+    for name in TABLES:
+        if name in counts:
+            print(f"  {name} : {counts[name]}")
+    for name in ("by_language", "by_domain", "by_qi_category", "by_expression_mode"):
+        if name in counts:
+            print(f"  {name} : {json.dumps(counts[name], ensure_ascii=False, sort_keys=True)}")
+    return 0
+
+
+# --- datasets audit-licenses ------------------------------------------------- #
+
+
+def _license_row(m: DatasetManifest) -> tuple[list[str], bool]:
+    """Ligne du tableau SPEC-09 §2.3 ; la 2ᵉ composante est la complétude."""
+    spdx = m.license.spdx
+    complete = bool(spdx) and spdx.upper() != "UNKNOWN" and bool(_SPDX_RE.match(spdx))
+    redist = m.license.redistribution
+    return (
+        [
+            m.key,
+            spdx or "<absent>",
+            "?" if redist is None else ("oui" if redist else "non"),
+            "OUI" if m.license.restricted else "non",
+            "oui" if m.evaluation.official_eligible else "NON",
+        ],
+        complete,
+    )
+
+
+def cmd_datasets_audit_licenses() -> int:
+    """Tableau de conformité SPEC-09 §2.3 ; échoue si un manifeste est incomplet."""
+    if not CONFIG_DIR.is_dir():
+        print(f"Répertoire de manifestes introuvable : {CONFIG_DIR}", file=sys.stderr)
+        return 1
+    loaded = load_all_manifests(CONFIG_DIR)
+    if not loaded:
+        print(f"Aucun manifeste trouvé dans {CONFIG_DIR}.")
+        return 0
+    rows: list[list[str]] = []
+    incomplete: list[str] = []
+    for key in sorted(loaded):
+        row, complete = _license_row(loaded[key].manifest)
+        if not complete:
+            incomplete.append(key)
+            row.append("← bloquant")
+        rows.append(row)
+    _print_table(
+        ("DATASET", "LICENCE", "REDISTRIB", "RESTREINT", "OFFICIAL-ELIGIBLE"),
+        rows,
+    )
+    if incomplete:
+        print(
+            f"Licences incomplètes : {', '.join(incomplete)} — "
+            "déclarez un identifiant SPDX officiel dans `license.spdx`.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+# --- arborescence argparse --------------------------------------------------- #
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="anonv2",
+        description="Anonymisation pilotée par le risque de ré-identification.",
+    )
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser("version", help="Affiche la version.")
+
+    datasets_p = sub.add_parser(
+        "datasets",
+        help="Acquisition, ingestion et validation des jeux de données.",
+    )
+    dsub = datasets_p.add_subparsers(dest="datasets_command")
+
+    dsub.add_parser("list", help="Clés, licences, statuts, volumétrie, source.")
+
+    describe_p = dsub.add_parser("describe", help="Manifeste résolu + couverture.")
+    describe_p.add_argument("key")
+
+    ingest_p = dsub.add_parser("ingest", help="Normalise vers le format pivot (SPEC-04).")
+    ingest_p.add_argument("key")
+    ingest_p.add_argument("--split", default="all", help="Split cible (défaut : tous).")
+    ingest_p.add_argument(
+        "--limit", type=int, default=None, help="Troncature par table."
+    )
+    ingest_p.add_argument(
+        "--all",
+        dest="all_splits",
+        action="store_true",
+        help="Ingeste tous les splits (défaut).",
+    )
+
+    validate_p = dsub.add_parser("validate", help="Tous les invariants SPEC-02.")
+    validate_p.add_argument("key")
+
+    stats_p = dsub.add_parser("stats", help="Comptes par langue, domaine, QI, mode.")
+    stats_p.add_argument("key")
+
+    dsub.add_parser("audit-licenses", help="Conformité des licences (SPEC-09 §2).")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "version":
+        return cmd_version()
+    if args.command != "datasets":
+        parser.print_help()
+        return 2
+    try:
+        if args.datasets_command == "list":
+            return cmd_datasets_list()
+        if args.datasets_command == "describe":
+            return cmd_datasets_describe(args.key)
+        if args.datasets_command == "ingest":
+            if args.all_splits and args.split != "all":
+                parser.error("--all est conflictuel avec --split distinct de 'all'")
+            return cmd_datasets_ingest(args.key, args.split, args.limit, args.all_splits)
+        if args.datasets_command == "validate":
+            return cmd_datasets_validate(args.key)
+        if args.datasets_command == "stats":
+            return cmd_datasets_stats(args.key)
+        if args.datasets_command == "audit-licenses":
+            return cmd_datasets_audit_licenses()
+    except UnknownDatasetError as exc:
+        print(f"Erreur d'usage : {exc}", file=sys.stderr)
+        return 2
+    parser.print_help()
+    return 2
+
+
+def app() -> None:
+    """Point d'entrée ``anonymisation.cli.main:app`` (console script)."""
+    sys.exit(main())
 
 
 if __name__ == "__main__":

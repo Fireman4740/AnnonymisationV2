@@ -50,7 +50,7 @@ label_map:
   GIVENNAME:   { identifier_type: DIRECT, qi_categories: [DIR_NAME],    granularity: EXACT, stability: STABLE }
   SURNAME:     { identifier_type: DIRECT, qi_categories: [DIR_NAME],    granularity: EXACT, stability: STABLE }
   EMAIL:       { identifier_type: DIRECT, qi_categories: [DIR_EMAIL],   granularity: EXACT, stability: VOLATILE }
-  TELEPHONENUM:{ identifier_type: DIRECT, qi_categories: [DIR_PHONE],   granularity: EXACT, stability: VOLATILE }
+  TELEPHONENUM: { identifier_type: DIRECT, qi_categories: [DIR_PHONE],   granularity: EXACT, stability: VOLATILE }
   STREET:      { identifier_type: DIRECT, qi_categories: [DIR_ADDRESS], granularity: EXACT, stability: VOLATILE }
   BUILDINGNUM: { identifier_type: DIRECT, qi_categories: [DIR_ADDRESS], granularity: EXACT, stability: VOLATILE }
   ZIPCODE:     { identifier_type: QUASI,  qi_categories: [GEN_GEO],     granularity: EXACT, stability: VOLATILE }
