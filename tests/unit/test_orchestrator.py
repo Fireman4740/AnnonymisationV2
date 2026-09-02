@@ -26,7 +26,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from anonymisation.pipeline.orchestrator import Pipeline, PipelineCapabilityError
+from anonymisation.pipeline.orchestrator import (
+    Pipeline,
+    PipelineCapabilityError,
+    _merge_overlapping,
+)
 from anonymisation.pipeline.profiles import RuntimeProfile, load_runtime_profile
 from anonymisation.pipeline.traces import (
     PIPELINE_STATUSES,
@@ -472,3 +476,42 @@ def test_s3_stricter_policy_lower_risk_lower_utility() -> None:
         assert _ACTION_RANK[by_ann_p3[ann_id]] >= _ACTION_RANK[by_ann_p2[ann_id]], (
             f"{ann_id} : P3 ne doit jamais être moins protectrice que P2"
         )
+
+
+def test_transitive_overlaps_merge_into_one_safe_decision() -> None:
+    """Un span long et deux spans internes ne doivent laisser aucun
+    chevauchement résiduel à ``apply_decisions``."""
+    text = "01234567890123456789"
+    decisions = [
+        AnonymizationDecision(
+            start=0,
+            end=10,
+            original=text[0:10],
+            action=Action.SUPPRESS,
+            replacement="[X]",
+            qi_category="DIR_NAME",
+            reason="test",
+        ),
+        AnonymizationDecision(
+            start=1,
+            end=4,
+            original=text[1:4],
+            action=Action.SUPPRESS,
+            replacement="[Y]",
+            qi_category="DIR_NAME",
+            reason="test",
+        ),
+        AnonymizationDecision(
+            start=9,
+            end=12,
+            original=text[9:12],
+            action=Action.SUPPRESS,
+            replacement="[Z]",
+            qi_category="DIR_NAME",
+            reason="test",
+        ),
+    ]
+    merged = _merge_overlapping(decisions, text)
+    assert len(merged) == 1
+    assert (merged[0].start, merged[0].end) == (0, 12)
+    assert merged[0].original == text[:12]

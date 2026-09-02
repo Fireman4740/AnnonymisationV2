@@ -22,7 +22,6 @@ from datetime import date
 from pathlib import Path
 
 from anonymisation import __version__
-from anonymisation.cli.predict import PredictError, cmd_predict
 from anonymisation.datasets.ingest import (
     LOCK_NAME,
     TABLE_MODELS,
@@ -46,9 +45,6 @@ from anonymisation.datasets.registry import (
     UnmappedLabelError,
     list_keys,
 )
-from anonymisation.pipeline.orchestrator import PipelineCapabilityError
-from anonymisation.pipeline.profiles import ProfileError
-from anonymisation.policy.models import PolicyConfigError
 from anonymisation.schema.io import JsonlError, atomic_write, read_jsonl, sha256_file, write_json
 from anonymisation.schema.validation import validate_dataset
 
@@ -482,6 +478,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nombre de documents (le lock passe au statut « sampled »).",
     )
 
+    score_p = sub.add_parser(
+        "score",
+        help="Calcule une scorecard depuis un run figé, sans relancer de modèle.",
+    )
+    score_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
+    score_p.add_argument("--protocol", required=True, help="Protocole d'évaluation.")
+
     datasets_p = sub.add_parser(
         "datasets",
         help="Acquisition, ingestion et validation des jeux de données.",
@@ -531,6 +534,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "version":
         return cmd_version()
     if args.command == "predict":
+        from anonymisation.cli.predict import PredictError, cmd_predict
+        from anonymisation.pipeline.orchestrator import PipelineCapabilityError
+        from anonymisation.pipeline.profiles import ProfileError
+        from anonymisation.policy.models import PolicyConfigError
+
         try:
             return cmd_predict(
                 args.dataset,
@@ -548,6 +556,14 @@ def main(argv: list[str] | None = None) -> int:
             PipelineCapabilityError,
             JsonlError,
         ) as exc:
+            print(f"Erreur d'usage : {exc}", file=sys.stderr)
+            return 2
+    if args.command == "score":
+        from anonymisation.cli.score import ScoreError, cmd_score
+
+        try:
+            return cmd_score(args.run, args.protocol)
+        except ScoreError as exc:
             print(f"Erreur d'usage : {exc}", file=sys.stderr)
             return 2
     if args.command != "datasets":

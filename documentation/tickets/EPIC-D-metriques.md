@@ -58,14 +58,14 @@ Les dénominateurs viennent de `.validation.json` produit à l'ingestion (A-2).
 
 ### Critères d'acceptation
 
-- [ ] Les 3 modes de correspondance donnent des valeurs différentes sur un cas
+- [x] Les 3 modes de correspondance donnent des valeurs différentes sur un cas
       construit exprès, et le mode figure dans la sortie.
-- [ ] `entity_recall` diffère du rappel span-level sur un document où une entité
+- [x] `entity_recall` diffère du rappel span-level sur un document où une entité
       a plusieurs mentions (sinon la coréférence est ignorée).
-- [ ] Les 5 ventilations sont produites, avec leurs effectifs.
-- [ ] Une catégorie absente du gold produit `null`, pas `0.0` — confondre les
+- [x] Les 5 ventilations sont produites, avec leurs effectifs.
+- [x] Une catégorie absente du gold produit `null`, pas `0.0` — confondre les
       deux ferait chuter artificiellement un macro-F1.
-- [ ] `F2 > F1` quand le rappel dépasse la précision (test de cohérence).
+- [x] `F2 > F1` quand le rappel dépasse la précision (test de cohérence).
 
 ---
 
@@ -126,13 +126,36 @@ incompatibles. L'audit v1 relève précisément ce mélange comme risque P1.
 
 ### Critères d'acceptation
 
-- [ ] Comparer un `OFFICIAL` et un `PROXY` lève une exception.
-- [ ] Comparer deux protocoles différents lève une exception.
-- [ ] Une `MetricValue` sans `protocol` est refusée à la construction.
-- [ ] `value=None` est autorisé uniquement si `status` est `UNAVAILABLE` ou
+- [x] Comparer un `OFFICIAL` et un `PROXY` lève une exception.
+- [x] Comparer deux protocoles différents lève une exception.
+- [x] Une `MetricValue` sans `protocol` est refusée à la construction.
+- [x] `value=None` est autorisé uniquement si `status` est `UNAVAILABLE` ou
       `FAILED`.
-
 ---
+
+> **Note de transparence — implémentation actuelle.** D-1 fournit les métriques
+> de spans, le rappel au niveau entité et les cinq ventilations en statut
+> `DIAGNOSTIC`, plus le macro-F1 des catégories (`macro_f1`, moyenne non
+> pondérée des F1 par catégorie, catégories sans gold exclues). La précision
+> token est pondérée par la longueur des tokens, proxy déterministe ; elle ne
+> doit pas être présentée comme la métrique officielle TAB tant que le
+> protocole multi-annotateurs de D-3 n'est pas porté.
+> D-2 porte le statut et le protocole dans chaque `MetricValue` et refuse toute
+> comparaison inter-protocole ou avec une métrique `PROXY`/`DIAGNOSTIC`.
+>
+> **Écart assumé sur les dénominateurs.** Les effectifs des ventilations sont
+> recalculés depuis le pivot gold du run, et non lus dans le `.validation.json`
+> produit à l'ingestion (A-2). Les deux sources doivent coïncider ; tant que le
+> recoupement n'est pas automatisé, un écart entre scorecard et rapport
+> d'ingestion n'est pas détecté.
+>
+> **Invariants d'agrégation.** Le rappel entité et la précision token sont
+> calculés **document par document** puis agrégés : les offsets ne sont
+> comparables qu'au sein d'un même texte, et une mise en commun des spans du
+> corpus ferait « protéger » une mention par une prédiction d'un autre
+> document. Les ventilations par mode d'expression filtrent gold *et*
+> prédictions sur le mode du seau ; un document multi-modes ne verse pas son
+> contenu entier dans chaque seau.
 
 ## D-3 — Métriques officielles TAB
 
@@ -208,10 +231,10 @@ Un rapport de run sans ces éléments **n'est pas publiable** :
 
 ### Critères d'acceptation
 
-- [ ] Une scorecard à laquelle il manque un des 7 éléments est refusée par
+- [x] Une scorecard à laquelle il manque un des 7 éléments est refusée par
       `validate_scorecard()`.
-- [ ] `error_rate` figure au premier niveau.
-- [ ] Aucune métrique `PROXY` n'apparaît dans le bloc `primary`.
-- [ ] La scorecard est sérialisable et relisible sans perte (aller-retour JSON).
-- [ ] Deux scorings du même run produisent des scorecards identiques, hors
+- [x] `error_rate` figure au premier niveau.
+- [x] Aucune métrique `PROXY` n'apparaît dans le bloc `primary`.
+- [x] La scorecard est sérialisable et relisible sans perte (aller-retour JSON).
+- [x] Deux scorings du même run produisent des scorecards identiques, hors
       horodatage.

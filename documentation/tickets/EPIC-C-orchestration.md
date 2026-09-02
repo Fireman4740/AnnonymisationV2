@@ -72,14 +72,14 @@ corromprait silencieusement toutes les suivantes. Écrire un test dédié.
 
 ### Critères d'acceptation
 
-- [ ] Le profil `deterministic` charge sans erreur depuis
+- [x] Le profil `deterministic` charge sans erreur depuis
       `configs/runtime/deterministic.yaml` et n'active ni NER ni LLM.
-- [ ] Les 6 étapes produisent chacune une `StageTrace`.
-- [ ] Une étape désactivée produit une trace `status="skipped"`, pas une
+- [x] Les 6 étapes produisent chacune une `StageTrace`.
+- [x] Une étape désactivée produit une trace `status="skipped"`, pas une
       absence de trace.
-- [ ] Test d'invariant : après TRANSFORM, les offsets des annotations pointent
+- [x] Test d'invariant : après TRANSFORM, les offsets des annotations pointent
       toujours sur `original_text`.
-- [ ] Le pipeline tourne de bout en bout sur le micro-dataset.
+- [x] Le pipeline tourne de bout en bout sur le micro-dataset.
 
 ---
 
@@ -129,11 +129,11 @@ document, sans interrompre le run).
 
 ### Critères d'acceptation
 
-- [ ] Un texte non anonymisé déclenche `leaked_direct` non vide.
-- [ ] Un texte entièrement supprimé déclenche `leaked_direct` vide.
-- [ ] Le contrôle de fuite gold est **indépendant du détecteur** : un test le
+- [x] Un texte non anonymisé déclenche `leaked_direct` non vide.
+- [x] Un texte entièrement supprimé déclenche `leaked_direct` vide.
+- [x] Le contrôle de fuite gold est **indépendant du détecteur** : un test le
       prouve en passant une annotation gold que le détecteur ne trouve pas.
-- [ ] `fail_on_leak=True` interrompt bien le document concerné, et lui seul.
+- [x] `fail_on_leak=True` interrompt bien le document concerné, et lui seul.
 
 ---
 
@@ -168,15 +168,20 @@ anonv2 predict --dataset tab --split test --policy P2 \
 
 ### Critères d'acceptation
 
-- [ ] Traite l'intégralité de chaque corpus en profil `deterministic` avec
-      **0 % d'erreur**.
-- [ ] Deux exécutions successives produisent des `predictions.jsonl`
+- [x] Traite l'intégralité de chaque corpus **ingéré localement** en profil
+      `deterministic` avec **0 % d'erreur**.
+- [x] Deux exécutions successives produisent des `predictions.jsonl`
       **identiques bit à bit**.
-- [ ] Une prédiction en erreur porte `status: "error"` et un champ `error`,
+- [x] Une prédiction en erreur porte `status: "error"` et un champ `error`,
       **jamais** une liste d'annotations vide (voir C-5).
-- [ ] `manifest.lock.json` contient le commit git courant.
-- [ ] `--limit N` fonctionne et est reflété dans le lock (statut dégradé en
+- [x] `manifest.lock.json` contient le commit git courant.
+- [x] `--limit N` fonctionne et est reflété dans le lock (statut dégradé en
       `sampled`).
+
+> Vérification complète réalisée sur le pivot local `openpii` (train et
+> validation). Les pivots `tab`, `ratbench` et `synthpai` ne sont pas présents
+> dans cet environnement ; leur campagne complète reste conditionnée à leur
+> acquisition et ingestion, sans extrapolation de ce résultat.
 
 ---
 
@@ -209,12 +214,12 @@ anonv2 score --run runs/<run_id>/ --protocol tab-official
 
 ### Critères d'acceptation
 
-- [ ] Fonctionne **hors ligne, sans charger aucun modèle** (test : le module de
+- [x] Fonctionne **hors ligne, sans charger aucun modèle** (test : le module de
       détection n'est jamais importé — vérifiable via `sys.modules`).
-- [ ] Produit `scorecard.json` au format SPEC-07 §10, avec les trois
+- [x] Produit `scorecard.json` au format SPEC-07 §10, avec les trois
       ventilations obligatoires (`by_language`, `by_domain`, `by_expression`).
-- [ ] Rejouer `score` deux fois donne un résultat identique.
-- [ ] Un run dont le `taxonomy_version` diffère est **refusé** avec un message
+- [x] Rejouer `score` deux fois donne un résultat identique.
+- [x] Un run dont le `taxonomy_version` diffère est **refusé** avec un message
       demandant une reprédiction.
 
 ---
@@ -272,8 +277,8 @@ Règles :
 
 ### Critères d'acceptation
 
-- [ ] Un run avec 10 % d'erreurs ne peut pas produire de métrique `OFFICIAL`.
-- [ ] `error_rate` figure dans la scorecard, au premier niveau.
-- [ ] Un document en erreur n'apparaît ni dans les TP, ni dans les FP, ni dans
+- [x] Un run avec 10 % d'erreurs ne peut pas produire de métrique `OFFICIAL`.
+- [x] `error_rate` figure dans la scorecard, au premier niveau.
+- [x] Un document en erreur n'apparaît ni dans les TP, ni dans les FP, ni dans
       les FN — un test le prouve en comparant les dénominateurs.
-- [ ] `errors_by_stage` permet d'identifier l'étape fautive.
+- [x] `errors_by_stage` permet d'identifier l'étape fautive.

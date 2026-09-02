@@ -176,7 +176,7 @@ def _merge_overlapping(
         buffer.clear()
 
     for decision in ordered:
-        if buffer and decision.start < buffer[-1].end:
+        if buffer and decision.start < max(item.end for item in buffer):
             buffer.append(decision)
         else:
             _flush()

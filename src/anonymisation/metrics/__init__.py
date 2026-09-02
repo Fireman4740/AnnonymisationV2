@@ -9,3 +9,39 @@ Hiérarchie normative :
 
 Aucun rapport ne doit présenter un F1 comme résultat principal.
 """
+
+from anonymisation.metrics.accounting import RunAccounting
+from anonymisation.metrics.contracts import (
+    MetricComparisonError,
+    MetricContractError,
+    MetricDirection,
+    MetricStatus,
+    MetricValue,
+    assert_comparable,
+)
+from anonymisation.metrics.entities import entity_protection_counts, entity_recall
+from anonymisation.metrics.scorecard import (
+    ScorecardError,
+    build_scorecard,
+    validate_reproducibility,
+    validate_scorecard,
+)
+from anonymisation.metrics.spans import span_metrics, weighted_token_precision
+
+__all__ = [
+    "MetricComparisonError",
+    "MetricContractError",
+    "MetricDirection",
+    "MetricStatus",
+    "MetricValue",
+    "RunAccounting",
+    "ScorecardError",
+    "assert_comparable",
+    "build_scorecard",
+    "entity_protection_counts",
+    "entity_recall",
+    "span_metrics",
+    "validate_reproducibility",
+    "validate_scorecard",
+    "weighted_token_precision",
+]

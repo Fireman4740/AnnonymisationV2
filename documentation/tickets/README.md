@@ -75,15 +75,15 @@ mêler ici reproduirait l'erreur de la v1.
 | **B-4** | Adaptateurs `supporttickets` + `bitextsupport` | P0 | B-1 | ⬜ |
 | **B-5** | Adaptateur `ratbench` + PUMS | P0 | B-3 | ⬜ |
 | **B-6** | Adaptateurs `dbbio` + `conll2003` | P1 | A-4, B-1 | ⬜ |
-| **C-1** | Orchestrateur 8 étapes + `StageTrace` | P0 | A-2 | ⬜ |
-| **C-2** | Étape VALIDATE + contrôle de fuite gold | P0 | C-1 | ⬜ |
-| **C-3** | `anonv2 predict` | P0 | C-1, A-3 | ⬜ |
-| **C-4** | `anonv2 score` (sans relancer les modèles) | P0 | C-3, D-1 | ⬜ |
-| **C-5** | Comptabilité d'erreur C4 | P0 | C-3 | ⬜ |
-| **D-1** | Métriques niveau 1 + ventilations | P0 | C-3 | ⬜ |
-| **D-2** | Contrats `MetricValue` / `MetricStatus` | P0 | — | ⬜ |
+| **C-1** | Orchestrateur 8 étapes + `StageTrace` | P0 | A-2 | ✅ |
+| **C-2** | Étape VALIDATE + contrôle de fuite gold | P0 | C-1 | ✅ |
+| **C-3** | `anonv2 predict` | P0 | C-1, A-3 | ✅ |
+| **C-4** | `anonv2 score` (sans relancer les modèles) | P0 | C-3, D-1 | ✅ |
+| **C-5** | Comptabilité d'erreur C4 | P0 | C-3 | ✅ |
+| **D-1** | Métriques niveau 1 + ventilations | P0 | C-3 | ✅ |
+| **D-2** | Contrats `MetricValue` / `MetricStatus` | P0 | — | ✅ |
 | **D-3** | Métriques officielles TAB | P1 | B-3, D-1 | ⬜ |
-| **D-4** | Scorecard + manifeste de run | P0 | D-1, D-2 | ⬜ |
+| **D-4** | Scorecard + manifeste de run | P0 | D-1, D-2 | ✅ |
 | **E-1** | Non-régression déterministe bout en bout | P0 | C-3 | ⬜ |
 | **E-2** | Tests de sanité S1–S3 | P0 | C-3, D-1 | ⬜ |
 | **E-3** | Golden test sur le micro-dataset | P0 | C-3 | ⬜ |
