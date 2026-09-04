@@ -1,4 +1,4 @@
-# Backends LLM interchangeables — SPEC-10 §5
+# Backends LLM interchangeables — SPEC-10 §6.1
 #
 # La clé d'API n'est JAMAIS écrite ici : elle est lue à l'exécution via
 # `api_key_cmd` ou `api_key_env`.
@@ -30,7 +30,7 @@ backends:
     health:
       url: "http://127.0.0.1:18020/health"
       # Message affiché si le serveur ne répond pas : actionnable, pas un
-      # timeout opaque (SPEC-10 §11).
+      # timeout opaque (SPEC-10 §6.4).
       hint: "Serveur local éteint. Démarrer : powershell -File F:\\IA\\Qwen3.8\\qwen.ps1 start (2-3 min au premier boot)"
 
   # --- Borne supérieure de qualité / attaquant B -------------------------- #
@@ -43,7 +43,7 @@ backends:
     temperature: 0.1
 
   # --- Sans LLM : CI, tests, pipeline dégradé ----------------------------- #
-  # Permet de faire tourner le pipeline de bout en bout sans GPU (SPEC-10 §11).
+  # Permet de faire tourner le pipeline de bout en bout sans GPU (SPEC-10 §6.4).
   null_backend:
     kind: null
     model: null
@@ -59,7 +59,7 @@ roles:
   paraphrase: qwen_local
 
 cache:
-  enabled: true                 # OBLIGATOIRE (SPEC-10 §5.1)
+  enabled: true                 # OBLIGATOIRE (SPEC-10 §6.2)
   dir: "data/interim/llm_cache"
   # Clé = sha256(backend + model + prompt + params).
   # Sans cache, chaque réévaluation recoûte des heures de GPU et les
