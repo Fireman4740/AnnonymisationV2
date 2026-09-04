@@ -40,7 +40,7 @@ integrity:
 
 structure:
   domain: generic
-  languages: ["fr"]
+  languages: ["en", "es", "fr", "it"]
   synthetic: true
   has_profiles: false
   has_combinations: false

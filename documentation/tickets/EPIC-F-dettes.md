@@ -175,8 +175,8 @@ dans toutes les fiches.
 | Fiche | Fait établi |
 |-------|-------------|
 | `personalreddit.md` | **Synthétique** (`eth-sri/llmprivacy`, via RUPTA) → `synthetic: true`, garde E2 **non applicable**. 318 train / 207 test. |
-| `quasifr.md` | 40 + 31 + 1 = **72 exemples**. Trop peu pour une mesure statistiquement solide. |
-| `dbbio.md` | **1 938 train / 239 test**. `l1/l2/l3` = ontologie **DBpedia** (`Agent` > `Artist` > `Photographer`), pas ESCO/ISCO. `people` est une **chaîne**, pas des offsets. |
+| `quasifr.md` | 40 + 31 + 1 = **72 exemples**, 427 annotations et six offsets ré-ancrés. Trop peu pour une mesure statistiquement solide. |
+| `dbbio.md` | **1 938 train / 243 val / 239 test**, soit 2 420 lignes canoniques. `l1/l2/l3` = ontologie **DBpedia** (`Agent` > `Artist` > `Photographer`), pas ESCO/ISCO. `people` est une **chaîne**, pas des offsets. |
 
 ### Restent légitimement ouverts
 
@@ -186,10 +186,11 @@ granularité du document CoNLL (phrase vs dépêche) · rôle des variantes
 
 ### Critères d'acceptation
 
-- [ ] Les faits vérifiés figurent dans les fiches, sans mention « à confirmer ».
-- [ ] Les points réellement ouverts le restent, marqués comme tels.
-- [ ] Les manifestes correspondants portent les bonnes volumétries dans
-      `integrity.expected_documents`.
+- [x] Les faits vérifiés figurent dans les fiches, sans confusion avec les points ouverts.
+- [x] Les points réellement ouverts le restent, marqués comme tels.
+- [x] Les manifestes correspondants portent les bonnes volumétries dans
+      `integrity.expected_documents` (`personalreddit`: 525, `quasifr`: 72,
+      `dbbio`: 2 420).
 
 ---
 

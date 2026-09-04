@@ -1,0 +1,79 @@
+# Manifeste — DB-bio
+# Fiche : documentation/datasets/dbbio.md
+# Source locale V1 : définir ANONV2_V1_DATASETS à la racine de eval/datasets.
+
+key: dbbio
+name: "DB-bio"
+description: >
+  2 420 biographies Wikipedia en anglais, réparties entre train, validation et
+  test, avec une hiérarchie d'occupation DBpedia l1/l2/l3. Les champs people et
+  wiki_name sont des chaînes candidates sans offsets source.
+doc: documentation/datasets/dbbio.md
+aliases: ["db-bio"]
+
+source:
+  kind: local
+  path: "DB-bio"
+  path_env: ANONV2_V1_DATASETS
+  files:
+    - train.jsonl
+    - val.jsonl
+    - test.jsonl
+    - train_sft.jsonl
+    - train_dpo.jsonl
+  instructions: >
+    Source V1 locale. Les trois fichiers train/val/test sont le protocole
+    canonique ; les variantes SFT/DPO sont conservées hors volumétrie jusqu'à
+    clarification de leur rôle.
+
+license:
+  spdx: "CC-BY-SA-3.0"
+  redistribution: true
+  restricted: false
+  citation: null
+  notes: >
+    Les biographies proviennent de Wikipedia. L'attribution et le partage à
+    l'identique doivent être conservés ; la conformité du paquet V1 reste à
+    vérifier avant redistribution indépendante.
+
+integrity:
+  sha256: null
+  expected_documents: 2420
+  expected_profiles: 0
+
+structure:
+  domain: generic
+  languages: ["en"]
+  synthetic: false
+  has_profiles: false
+  has_combinations: false
+  has_organizations: false
+  has_tasks: true
+  split_by: document
+  splits: ["train", "val", "test"]
+
+label_map: {}
+
+annotation:
+  names_are_unlocalized: true
+  name_fields: ["wiki_name", "people"]
+  note: >
+    Une chaîne de nom ne devient pas une Annotation DIR_NAME sans politique de
+    localisation et offset validé ; le corpus source ne fournit pas de spans.
+
+tasks:
+  - {id: "occupation", type: "hierarchy", description: "Hiérarchie DBpedia l1/l2/l3"}
+
+evaluation:
+  protocol: "dbbio-v1"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "DIAGNOSTIC"
+  granularities: ["document"]
+  report_by: ["split", "occupation_level"]
+
+population:
+  population_id: null
+  k_computable: false
+  risk_model: null
+  notes: "Aucune population de fréquence des occupations n'est déclarée."

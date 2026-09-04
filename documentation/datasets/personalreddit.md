@@ -5,7 +5,7 @@
 | **Clé interne** | `personalreddit` |
 | **Priorité** | **P0** |
 | **Benchmark** | B2 |
-| **Statut de la fiche** | Stable · v1.0 · 2026-08-30 |
+| **Statut de la fiche** | Stable · v1.1 · 2026-09-04 |
 
 ---
 
@@ -13,39 +13,53 @@
 
 | Champ | Valeur |
 |-------|--------|
-| Nom complet | PersonalReddit — Inference of Personal Attributes from Reddit |
-| Référence | ETH SRI (Vero, Vechev et al.), même famille que SynthPAI. Source : `https://github.com/eth-sri/llmprivacy` et `https://github.com/UKPLab/acl2025-rupta` |
-| Type | **Synthétique** — commentaires et profils générés |
-| Langue | Anglais |
-| Domaine | **Forums** (style Reddit synthétique) |
-| Source | Dépôt interne V1 |
+ Nom complet | PersonalReddit — **synthetic examples** for personal-attribute inference
+ Référence | ETH SRI, *Beyond Memorization: Violating Privacy via Inference with Large Language Models* (`staab2024beyond`). La release est publiée dans `https://github.com/eth-sri/llmprivacy/tree/main/data/synthetic` ; le PersonalReddit réel de l'article n'est pas distribué.
+ Type | **Synthétique** — exemples générés à partir de profils synthétiques
+ Langue | Anglais
+ Domaine | **Forums** (style Reddit synthétique)
+ Source | Copie locale de la release publique ETH SRI, séparée des données Reddit réelles
 
-## 2. Rôle et priorité
+## 2. Décision de statut et rôle
 
-**Le benchmark forums de la batterie P0, remplaçant court terme de SynthPAI.**
-Comme SynthPAI, c'est un corpus synthétique, mais construit différemment : profils
-explicites + inférence de texte par des modèles. C'est la même famille de travaux
-ETH SRI, avec une **structure explicite d'axe de difficulté** (`hardness`) qui
-impacte directement le calcul de risque — une dimension rare et précieuse.
+**Décision G-6 : le cache local est synthétique.** Il ne s'agit pas des 520 profils
+Reddit réels utilisés dans l'étude ICLR. La preuve est convergente :
 
-**Atout structurel décisif** :
-1. **Profil latent** de 9 attributs personnels (`personality`), observable via un
-   texte (`response`).
-2. **Hardness explicite**, qui se mappe directement sur `Document.meta.difficulty`
-   — une dimension de mesure rare dans les corpus existants.
-3. **Baseline d'attaquant fournie** (`guess`, `guess_correctness`) — un point de
-   comparaison externe pour l'attaquant de SPEC-08.
-4. **Domaine forums** — indispensable pour couvrir le tiers forums du périmètre.
+1. le README local décrit explicitement des « commentaires Reddit synthétiques » et
+   pointe vers `eth-sri/llmprivacy/data/synthetic` ;
+2. le dépôt ETH SRI indique que le PersonalReddit original n'est pas publié pour
+   des raisons de vie privée, mais publie séparément des exemples synthétiques ;
+3. les 318 lignes de `train.jsonl` et 207 lignes de `test.jsonl` totalisent 525
+   exemples et correspondent, après retrait du champ local `label`, aux 525 lignes
+   de `synthetic_dataset.jsonl` publié par ETH SRI ;
+4. l'inspection locale trouve 40 profils latents, sans identifiant réel ni nom
+   d'utilisateur Reddit.
+
+Le corpus est donc admissible pour un benchmark contrôlé d'inférence d'attributs,
+mais **ne constitue pas une validation de l'anonymisation de personnes réelles**.
+Il reste prioritaire pour l'axe forums grâce à son profil latent et à sa difficulté
+explicite (`hardness`).
+
+La licence des exemples publiés est **CC BY-NC-SA 4.0**. La licence MIT du dépôt
+ETH SRI couvre le code, pas automatiquement les exemples ; le manifeste porte
+donc la licence des données et interdit d'en déduire un droit d'usage commercial.
 
 ## 3. Contenu et volumétrie
 
 | Métrique | Valeur |
 |----------|--------|
-| Split `train.jsonl` | **318 lignes** |
-| Split `test.jsonl` | **207 lignes** |
-| Total | **525 lignes** (petit corpus) |
-| Taille disque totale | 3,0 Mo (JSONL) |
+| Fichier source `train.jsonl` | **318 lignes** |
+| Fichier source `test.jsonl` | **207 lignes** |
+| Total source | **525 lignes** |
+| Split pivot `train` (person_id) | **305 documents / 23 profils** |
+| Split pivot `test` (person_id) | **220 documents / 17 profils** |
+| Profils latents distincts | **40** |
+| Taille des deux splits | **~1,1 Mo** |
 | Langue | Anglais |
+
+Les 40 profils sont présents dans chacun des deux fichiers source. Le pivot
+reconstruit donc un split auteur-disjoint par `blake2b(f"{seed}:{person_id}")`,
+seed **42**, ratios **60/40** ; `source_split` reste dans `Document.meta`.
 
 ### Attributs personnels (dans `personality`)
 
@@ -66,51 +80,51 @@ impacte directement le calcul de risque — une dimension rare et précieuse.
 | Colonne | Type | Contenu |
 |---------|------|---------|
 | `personality` | `object` | Les 9 attributs latents (voir tableau §3.1) |
-| `feature` | `str` | Quel attribut est ciblé dans cette ligne |
-| `hardness` | `int` | Axe de difficulté (valeurs : 1, 2, 3, … ?) |
-| `question_asked` | `str` | La question posée au sujet |
-| `response` | `str` | Le texte de réponse du sujet |
-| `guess` | (type ?) | Prédiction externe de l'attribut target |
-| `guess_correctness` | `bool` ou score | Exactitude de la prédiction |
-| `label` | (type ?) | Valeur vraie de l'attribut |
+| `feature` | `str` | Attribut ciblé ; 8 valeurs observées, `income` n'est pas ciblé |
+| `hardness` | `int` | Difficulté observée, exactement de 1 à 5 |
+| `question_asked` | `str` | Question présentée au sujet synthétique |
+| `response` | `str` | Texte synthétique de la réponse |
+| `guess` | `str` | Justification et hypothèse de l'attaquant externe |
+| `guess_correctness` | `object` | Scores d'évaluation des hypothèses externes |
+| `label` | `str` | Champ présent dans les splits locaux ; absent de la release ETH SRI comparée |
 
-## 4. Structure brute
+## 4. Structure brute et preuve de provenance
 
-**Deux niveaux** :
+La release ETH SRI contient une ligne par réponse et un profil synthétique
+(`personality`) répété sur les lignes d'un même auteur latent. Aucun `person_id`
+source n'est fourni : un adaptateur doit dériver un identifiant stable du JSON
+canonique de `personality`, sans tenter d'inférer une identité réelle.
 
-1. **Profil** : un enregistrement `personality` par personne (à confirmer comment les
-   personnes sont identifiées — y a-t-il un `person_id` ?).
-2. **Réponse** : un texte (`response`) par ligne, avec
-   - `feature` (attribut visé),
-   - `hardness` (difficulté de l'inférence),
-   - `personality` (le profil de la personne),
-   - des prédictions externes (`guess`, `guess_correctness`).
+La comparaison locale est déterministe : l'union des lignes locales, normalisée
+en retirant seulement `label` (champ ajouté par la copie locale), est égale à la
+release `data/synthetic/synthetic_dataset.jsonl` d'ETH SRI. Le fichier amont est
+identifié dans l'API GitHub par le blob `49b4b7927f8d039eacf5dd48d2545ee5555ef9b1`.
 
-**Point délicat** : même ligne/texte peut cibler plusieurs attributs (`feature`),
-ou plusieurs difficultés. À clarifier lors de la première inspection.
-
-Structure similaire à SynthPAI, mais avec un axe de difficulté **explicite et
-mesurable**, ce qui est rare et précieux.
+La contradiction avec le PersonalReddit réel est ainsi résolue : les **520 profils
+réels** de l'article ne sont pas présents dans le cache et ne doivent pas être
+déduits des **525 exemples** synthétiques.
 
 ## 5. Accès et acquisition
 
 | | |
 |---|---|
-| Source | Dépôt V1 local : `F:\IA\Anonymisation\eval\datasets\PersonalReddit\Reddit_synthetic\` |
-| Fichiers | `train.jsonl`, `test.jsonl` |
-| Méthode | Chargement via `jsonlines` ou `json.load()` ligne par ligne |
-| Prérequis | Aucun (accès local immédiat) |
-| Cache local | `data/raw/personalreddit/` ou lecture directe depuis V1 |
+| Source | Dépôt V1 local : `F:\\IA\\Anonymisation\\eval\\datasets\\PersonalReddit\\Reddit_synthetic\\` |
+| Source publique de référence | `eth-sri/llmprivacy/data/synthetic/synthetic_dataset.jsonl` |
+| Fichiers locaux | `train.jsonl`, `test.jsonl` |
+| Méthode | Lecture JSONL ligne par ligne |
+| Prérequis | Aucun accès réseau ; définir `ANONV2_V1_DATASETS` |
+| Empreinte locale | `c2db554a096afdd8eac42e32438d65d5d3efdeb519a24092656ab2382c8c671c` |
 
 ## 6. Licence et conformité
 
-- **Synthétique confirmé** : profils et commentaires générés par modèles, pas de
-  personnes réelles. Voir README corpus + source GitHub ETH SRI.
-- **Aucune contrainte RGPD** sur les sujets (personnes synthétiques).
-- **Garde E2 de SPEC-08 n'est PAS applicable** : l'attaquant avec recherche web
-  est **autorisé** sur ce corpus. Toute recommandation contraire dans la littérature
-  s'applique à du Reddit réel, pas ici.
-- Licence source : CC-BY-SA (consulter le manifeste V1)
+- **Synthétique confirmé** : les exemples et profils sont générés ; ils ne sont
+  pas le corpus Reddit réel de l'article.
+- **Garde E2 de SPEC-08 non applicable** au cache synthétique : l'attaquant avec
+  recherche web peut être activé, sous réserve de la politique d'expérience.
+- **Aucune conclusion RGPD sur des personnes réelles** ne peut être tirée de ce
+  corpus ; cette décision ne s'étend pas au PersonalReddit original non distribué.
+- Licence des exemples : **CC BY-NC-SA 4.0**. Le dépôt ETH SRI est sous MIT pour
+  son code ; ces deux périmètres ne doivent pas être confondus.
 
 ## 7. Couverture
 
@@ -148,29 +162,28 @@ mesurable**, ce qui est rare et précieux.
 
 | Limite | Conséquence |
 |--------|-------------|
-| **Très petit corpus (525 lignes)** | Corpus d'évaluation et de mise au point uniquement, pas d'entraînement. Intervalle de confiance large sur les métriques. |
-| Synthétique | Excellent pour l'expérience contrôlée ; crédibilité limitée pour garantie opérationnelle. |
-| Pas d'annotations de spans | Aucune F1 de détection. Inférence au niveau document seulement. |
+| **Petit corpus (525 lignes, 40 profils)** | Corpus d'évaluation contrôlée et de mise au point ; incertitude élevée. |
+| Synthétique | Les résultats ne garantissent rien sur la protection de personnes réelles. |
+| Pas d'annotations de spans | Aucune F1 de détection ; inférence au niveau document uniquement. |
 | Anglais uniquement | Aucune mesure FR. |
-| Format `feature` + `hardness` complexe | Une même personne peut figurer dans plusieurs lignes avec différents `feature`/`hardness` — split par `person_id`, jamais par ligne. |
-| Pas de population de référence explicite | Le calcul de $k$ nécessite une population externe (ex. Census US). |
-| Hardness : échelle inconnue | Les valeurs (1, 2, 3, …) ne sont pas documentées. Première tâche : inspecter et documenter. |
+| **Train/test partagent les 40 profils** | Les fichiers source ne sont pas utilisables comme split auteur-disjoint ; reconstruire un split par groupe. |
+| Pas de population de référence | Le calcul de $k$ nécessite une population externe. |
+| `hardness` observé de 1 à 5 | La release expose l'échelle, mais sa sémantique exacte reste celle de la source. |
 
-> **C'est du synthétique, donc aucune contrainte RGPD.** L'attaquant avec recherche
-> web est autorisé ; les résultats d'attaque peuvent être publiés librement. Ce n'est
-> pas un benchmark réel d'anonymisation opérationnelle, mais excellent pour étudier
-> l'inférence d'attributs en isolation.
+> Le statut synthétique autorise la publication d'exemples dans les limites de la
+> CC BY-NC-SA 4.0. Il ne faut pas présenter ces résultats comme un benchmark
+> d'anonymisation opérationnelle sur Reddit réel.
 
 ## 10. Mapping vers le schéma interne
 
 | Objet PersonalReddit | Objet interne | Mapping |
 |----------------------|---------------|---------|
-| ligne (réponse) | `Document` | `domain = "forum"`, `language = "en"`, `author_id` (si `person_id` existe) |
+| ligne (réponse) | `Document` | `domain = "forum"`, `language = "en"`, `author_id` et `subject_ids` dérivés de `personality` |
 | `response` | `Document.text` | Texte brut du message |
-| `personality` | `Profile.attributes` | 9 attributs → codes SPEC-01 (voir tableau §10.1) |
-| `hardness` | `Document.meta.difficulty` | Directement mappé (valeur numérique ou ordinale) |
-| `feature` | `tasks.jsonl` | `task = "personality_prediction"`, `label = feature_value` |
-| `guess` / `guess_correctness` | attaquant baseline | Stocké dans `Document.meta` ou comme annotation de validation |
+| `personality` | `Profile.attributes` | 9 attributs → 7 clés SPEC-01 ; les collisions `GEN_GEO` et `GEN_SOCIOECON` regroupent les deux valeurs sans perte |
+| `hardness` | `Document.meta.hardness` | Entier validé dans [1, 5] |
+| `feature` | `tasks.jsonl` + annotation | `task = "personality_prediction"`, `label = feature_value`, annotation `IMPLICIT` sans offset |
+| `guess` / `guess_correctness` | baseline attaquant | Conservés dans `Document.meta` et `TaskLabel.meta` |
 
 ### Sous-tableau : mapping des attributs
 
@@ -188,48 +201,53 @@ mesurable**, ce qui est rare et précieux.
 
 ## 11. Splits et protocole
 
-- **Split officiel** : `train.jsonl` et `test.jsonl` (pas de dev) — à accepter ou
-  reconstruire selon les besoins.
-- **Granularité CRITIQUE** : **split par `person_id`**, jamais par ligne/réponse.
-  Sinon fuite massive : une même personne dans train et test.
-- Deux granularités d'évaluation :
-  - **document-level** : inférence depuis une seule `response`
-  - **author-level** : inférence depuis l'union des réponses d'une même personne
+- Les fichiers source restent `train.jsonl` et `test.jsonl`, mais ne sont pas les
+  splits d'évaluation.
+- Le pivot produit `train = 305 documents / 23 profils` et `test = 220 / 17`.
+- La séparation est groupée par `person_id`, avec `seed = 42`, ratios `train=0,6`
+  et `test=0,4`, via l'algorithme blake2b de SPEC-04 §9.
+- Aucun `person_id` ne figure dans les deux splits pivot (E-VAL-108 : aucune
+  erreur). La provenance du fichier reste dans `meta.source_split`.
+- Les deux granularités restent pertinentes : réponse unique
+  (`document-level`) et union des réponses d'un profil (`author-level`).
 
 ## 12. Plan d'implémentation de l'adaptateur
 
 | # | Étape | Sortie |
 |---|-------|--------|
-| 1 | Charger train + test, inspecter schéma réel | note §3, §4, §9 (hardness!) |
-| 2 | Synthétique confirmé ; aucune garde E2 requise | spec conformité |
-| 3 | Extraire personnes uniques ; vérifier split par person_id sans fuite | stats splits |
-| 4 | Mapper 9 attributs vers SPEC-01 (voir tableau §10.1) | `label_map` |
-| 5 | Fixer splits, checksum, volumétrie, statut réel/synth au manifeste | `configs/datasets/personalreddit.yaml` |
-| 6 | Implémenter `PersonalRedditAdapter` | `src/anonymisation/datasets/personalreddit.py` |
-| 7 | Émettre `profiles.jsonl` + `documents.jsonl` + `tasks.jsonl` | `data/processed/personalreddit/` |
-| 8 | Implémenter l'agrégation author-level | `src/anonymisation/datasets/aggregation.py` |
-| 9 | Rejouer l'attaquant baseline (inférence des auteurs via `guess`) comme baseline A | rapport |
+| 1 | Charger les deux JSONL et vérifier le schéma réel | ✅ 525 lignes, 40 profils, stats §3 et §4 |
+| 2 | Confirmer le statut synthétique et la licence | ✅ décision G-6 + manifeste |
+| 3 | Dériver les 40 `person_id` par hash canonique de `personality` | ✅ profils stables |
+| 4 | Refuser la confusion entre fichiers source et split auteur-disjoint | ✅ re-split pivot + provenance conservée |
+| 5 | Fixer splits, checksum, volumétrie et statut | ✅ manifeste v1.1 |
+| 6 | Implémenter `PersonalRedditAdapter` | ✅ `src/anonymisation/datasets/personalreddit.py` |
+| 7 | Émettre `profiles.jsonl`, `documents.jsonl` et `tasks.jsonl` | ✅ ingestion officielle publiée |
+| 8 | Implémenter l'agrégation author-level sur un split groupé | ☐ métriques d'agrégation encore à écrire |
+| 9 | Comparer la baseline `guess` sans exposer de données réelles | ☐ protocole de comparaison à figer |
 
-## 13. Critères d'acceptation
+## 13. Critères d'acceptation de l'adaptateur
 
-- [ ] Tous les documents et profils chargés avec `domain = "forum"`, `language = "en"`.
-- [ ] `person_id` présent et stable pour chaque auteur.
-- [ ] 9 attributs mappés, aucun orphelin.
-- [ ] Split par auteur sans fuite de `person_id`.
-- [ ] `hardness` documenté et valide pour chaque document.
-- [ ] L'évaluation author-level détecte strictement plus de QI que document-level
-      (test de sanité).
-- [ ] **Statut synthétique confirmé au manifeste** (pas de garde E2 applicable).
+- [x] Tous les documents et profils sont chargés avec `domain = "forum"`,
+      `language = "en"` — validation officielle : 525/40.
+- [x] `person_id` est dérivé de façon stable pour chaque profil latent.
+- [x] Les 9 attributs de `personality` sont mappés sans orphelin ; les deux
+      collisions de code sont regroupées dans les valeurs structurées.
+- [x] Un split d'évaluation auteur-disjoint est reconstruit avant la mesure
+      author-level ; E-VAL-108 ne signale aucune fuite.
+- [x] `hardness` est validé dans l'intervalle observé 1–5 pour chaque document.
+- [ ] L'évaluation author-level est comparée à document-level sur le même split
+      groupé — métriques à implémenter.
+- [x] **Statut synthétique confirmé au manifeste** ; la garde E2 n'est pas
+      applicable à ce cache.
 
 ## 14. Questions ouvertes
 
-- Combien de `person_id` uniques ? Distribution (combien de réponses par auteur) ?
-- Quelle est l'échelle de `hardness` ? Valeurs : 1-5 ? 1-10 ? Sémantique : difficile
-  à inférer vs facile ?
-- Y a-t-il un `person_id` explicite dans les données, ou faut-il l'inférer ?
-- La `question_asked` ajoute-t-elle du signal ou est-elle déterministe depuis
-  `feature` ?
-- Quelle est la distribution des `feature` ? Équilibrée ou skewed ?
-- Existe-t-il une population de référence US/anglophone pour le calcul de $k$ ?
-- Le `guess` et `guess_correctness` proviennent-ils du même modèle ou d'attaquants
-  différents ?
+- La stratégie de split groupé est-elle suffisante pour les expériences finales ?
+  — **Décidée pour cette release** : seed 42, ratios 60/40, mais une proportion
+  finale différente reste possible pour une campagne ultérieure.
+- La question `question_asked` ajoute-t-elle du signal ou est-elle déterministe
+  depuis `feature` ?
+- Existe-t-il une population de référence US/anglophone compatible avec le calcul
+  de $k$ ?
+- Le champ `guess` et `guess_correctness` provient-il d'un seul attaquant ou de
+  plusieurs évaluateurs ?

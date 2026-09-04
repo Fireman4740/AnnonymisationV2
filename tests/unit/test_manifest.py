@@ -82,9 +82,20 @@ def _write(tmp_path: Path, data: dict[str, Any], name: str = "tst.yaml") -> Path
 
 
 def test_repo_manifests_all_load() -> None:
-    """Les 5 manifestes du dépôt se chargent tels quels (jeu A-1)."""
+    """Les 10 manifestes du dépôt se chargent tels quels (jeu A-1/G-6)."""
     loaded = load_all_manifests(REPO_ROOT / "configs" / "datasets")
-    assert set(loaded) == {"openpii", "ratbench", "synthpai", "tab", "hr_qi"}
+    assert set(loaded) == {
+        "openpii",
+        "panorama",
+        "ratbench",
+        "spia",
+        "synthpai",
+        "tab",
+        "hr_qi",
+        "personalreddit",
+        "quasifr",
+        "dbbio",
+    }
 
 
 def test_repo_manifests_keep_declared_values() -> None:
@@ -103,6 +114,15 @@ def test_repo_manifests_keep_declared_values() -> None:
     openpii = loaded["openpii"].manifest
     assert openpii.aliases == ["ai4privacy", "open-pii-500k"]
 
+
+    personalreddit = loaded["personalreddit"].manifest
+    assert personalreddit.structure.synthetic is True
+    assert personalreddit.integrity.expected_documents == 525
+    assert personalreddit.integrity.expected_profiles == 40
+    assert personalreddit.license.spdx == "CC-BY-NC-SA-4.0"
+    dbbio = loaded["dbbio"].manifest
+    assert dbbio.integrity.expected_documents == 2420
+    assert dbbio.structure.has_tasks is True
 
 # --- Contrôle 3 : spdx UNKNOWN → official_eligible = False ------------------- #
 
