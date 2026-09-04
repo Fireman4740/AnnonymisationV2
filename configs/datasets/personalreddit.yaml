@@ -1,0 +1,88 @@
+# Manifeste — PersonalReddit synthetic release
+# Fiche : documentation/datasets/personalreddit.md
+#
+# Ce cache n'est pas le PersonalReddit réel utilisé dans l'article ICLR 2024.
+# Il contient les exemples synthétiques publiés par ETH SRI.
+
+key: personalreddit
+name: "PersonalReddit — synthetic examples"
+description: >
+  525 exemples synthétiques d'inférence d'attributs personnels sur des réponses
+  de style Reddit, avec 40 profils latents, huit attributs ciblés et une
+  difficulté explicite de 1 à 5.
+doc: documentation/datasets/personalreddit.md
+aliases: ["personal-reddit"]
+
+source:
+  kind: local
+  path: "PersonalReddit/Reddit_synthetic"
+  path_env: ANONV2_V1_DATASETS
+  files: ["train.jsonl", "test.jsonl"]
+  repo: "https://github.com/eth-sri/llmprivacy"
+  revision: "d9cd9191ef927c66c41cbd5debe749e44292e3d1"
+  paper: "arXiv:2310.07298"
+  seed: 42
+  instructions: >
+    Définir ANONV2_V1_DATASETS sur la racine de eval/datasets de la V1.
+    Le sous-ensemble local est vérifiable contre
+    data/synthetic/synthetic_dataset.jsonl du dépôt ETH SRI ; aucune acquisition
+    réseau implicite n'est autorisée.
+
+license:
+  spdx: "CC-BY-NC-SA-4.0"
+  redistribution: true
+  restricted: false
+  citation: "staab2024beyond"
+  notes: >
+    Les exemples synthétiques publiés par ETH SRI sont sous CC BY-NC-SA 4.0.
+    Cette licence ne s'étend pas au PersonalReddit réel, qui n'est pas distribué.
+
+integrity:
+  # fingerprint([test.jsonl, train.jsonl]) avec les chemins triés par nom.
+  sha256: "c2db554a096afdd8eac42e32438d65d5d3efdeb519a24092656ab2382c8c671c"
+  expected_documents: 525
+  expected_profiles: 40
+
+structure:
+  domain: forum
+  languages: ["en"]
+  synthetic: true
+  has_profiles: true
+  has_combinations: false
+  has_organizations: false
+  has_tasks: true
+  # Le split source train/test est conservé dans meta.source_split ; le split
+  # pivot est groupé par person_id pour interdire toute fuite latente.
+  split_by: person_id
+  splits: ["train", "test"]
+
+label_map: {}
+
+annotation:
+  split_algorithm: "blake2b(f'{seed}:{person_id}', digest_size=8)"
+  split_ratios: {train: 0.6, test: 0.4}
+  source_split_field: "meta.source_split"
+  profile_attribute_collisions:
+    GEN_GEO: [city_country, birth_city_country]
+    GEN_SOCIOECON: [income, income_level]
+
+evaluation:
+  protocol: "personalreddit-synthetic-v1"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "DIAGNOSTIC"
+  granularities: ["document", "author"]
+  report_by: ["feature", "hardness", "source_split"]
+  sanity_checks:
+    - id: "G6-S1"
+      description: "la source locale est synthétique et ne déclenche pas la garde E2"
+    - id: "G6-S2"
+      description: "les fichiers train/test source sont re-groupés par person_id"
+
+population:
+  population_id: "personalreddit-synthetic"
+  k_computable: false
+  notes: >
+    Population interne des 40 profils synthétiques pour les liens auteur ;
+    aucune population externe de fréquence n'est fournie, donc k n'est pas
+    calculable pour cette release.
