@@ -203,6 +203,16 @@ patterns:
     confidence: 0.6
     context_boost: ["chemin", "fichier", "path", "file", "dossier"]
     deny_context: []
+  - id: hostname
+    qi_category: SUP_ENVIRONMENT
+    identifier_type: QUASI
+    granularity: EXACT
+    stability: VOLATILE
+    languages: ["*"]
+    regex: '\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+(?:[A-Za-z]{2,63}|internal|local)\b'
+    confidence: 0.55
+    context_boost: ["host", "hostname", "serveur", "server", "hôte"]
+    deny_context: ["example.com", "example.org", "localhost"]
 
   - id: case_ref
     qi_category: DIR_CASE_REF

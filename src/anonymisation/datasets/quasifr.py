@@ -23,6 +23,7 @@ from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 from anonymisation.datasets._local import check_files, fingerprint, resolve_source_dir
@@ -76,6 +77,58 @@ class QuasifrAdapter(DatasetAdapter):
             "LICENSE",
         }
     )
+
+    # Classification manuelle des justifications non vides observées dans la
+    # release. Une note absente ou non listée reste OTHER_QI : elle n'est pas
+    # devinée. Le tableau détaillé est publié dans l'annexe F-3.
+    _QUASI_ID_NOTE_MAP: ClassVar[dict[str, tuple[str, ...]]] = {
+        "Âge": ("GEN_AGE",),
+        "Âge précis": ("GEN_AGE",),
+        "Tranche d'âge": ("GEN_AGE",),
+        "Âge avancé combiné à pathologie": ("GEN_AGE", "GEN_HEALTH_STATE"),
+        "Maladie rare (faible k-anonymat)": ("GEN_HEALTH_STATE",),
+        "Événement marquant récent": ("GEN_DATE_EVENT",),
+        "Blessure précise": ("GEN_HEALTH_STATE",),
+        "Statut lié à un fait divers": ("GEN_DATE_EVENT",),
+        "Activité physique": ("GEN_LIFESTYLE",),
+        "Véhicule rare": ("GEN_SOCIOECON",),
+        "Dispositif médical rare": ("GEN_HEALTH_STATE",),
+        "Attribut unique dans le département (k=1)": ("GEN_GENDER", "GEN_OCCUPATION"),
+        "Condition de travail spécifique": ("GEN_OCCUPATION",),
+        "Métier local": ("GEN_OCCUPATION", "GEN_GEO"),
+        "Fonction publique locale unique": ("GEN_OCCUPATION", "GEN_GEO"),
+        "Description de poste unique via un produit spécifique": (
+            "GEN_OCCUPATION",
+            "GEN_AFFILIATION",
+        ),
+        "Métier actuel très spécifique": ("GEN_OCCUPATION",),
+        "Identification par possession unique dans une petite zone géographique": (
+            "GEN_SOCIOECON",
+            "GEN_GEO",
+        ),
+        "Expertise sur un module interne obscur": ("GEN_OCCUPATION",),
+        "Poste très spécifique dans une petite équipe": (
+            "GEN_OCCUPATION",
+            "GEN_AFFILIATION",
+        ),
+        "Poste médical unique dans une petite ville": ("GEN_OCCUPATION", "GEN_GEO"),
+        "Possession unique d'un véhicule de collection dans une petite île": (
+            "GEN_SOCIOECON",
+            "GEN_GEO",
+        ),
+        "Combinaison métier/activité unique localement": (
+            "GEN_OCCUPATION",
+            "GEN_LIFESTYLE",
+            "GEN_GEO",
+        ),
+        "Domaine académique très spécifique": ("GEN_EDUCATION",),
+        "Taille d'équipe très réduite": ("HR_EMPLOYER_SIZE",),
+        "Cumul de rôle local visible": ("GEN_OCCUPATION", "GEN_GEO"),
+        "Nom commercial local": ("GEN_AFFILIATION", "GEN_GEO"),
+        "Grant élevé, sensitif": ("GEN_SOCIOECON",),
+        "Hostname avec loc implicite": ("SUP_ENVIRONMENT", "GEN_GEO"),
+        "Nom d'hôte interne": ("SUP_ENVIRONMENT",),
+    }
 
     def __init__(self, manifest: Any, raw_dir: Path) -> None:
         super().__init__(manifest, raw_dir)
@@ -227,9 +280,9 @@ class QuasifrAdapter(DatasetAdapter):
                 f"quasifr : label {label!r} absent du label_map — erreur E-MAP-001"
             )
 
-        # ID est un label source hétérogène : les quatre formes connues sont
-        # distinguées par leur justification, sans inventer une catégorie pour
-        # une note inconnue.
+        # ID est un label source hétérogène : les formes connues sont
+        # distinguées par leur justification ; une note inconnue conserve le
+        # mapping déclaré dans le manifeste.
         if label == "ID":
             note = (risk_note or "").casefold()
             if "contrat" in note:
@@ -240,14 +293,22 @@ class QuasifrAdapter(DatasetAdapter):
                 code = "DIR_ONLINE_ID"
             else:
                 code = entry.qi_categories[0]
-            from types import SimpleNamespace
-
             return SimpleNamespace(
                 identifier_type=entry.identifier_type,
                 qi_categories=(code,),
                 granularity=entry.granularity,
                 stability=entry.stability,
             )
+
+        if label == "QUASI_ID":
+            categories = self._QUASI_ID_NOTE_MAP.get((risk_note or "").strip())
+            if categories is not None:
+                return SimpleNamespace(
+                    identifier_type=entry.identifier_type,
+                    qi_categories=categories,
+                    granularity=entry.granularity,
+                    stability=entry.stability,
+                )
         return entry
 
     @staticmethod

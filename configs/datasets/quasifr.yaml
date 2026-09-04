@@ -73,10 +73,10 @@ label_map:
   DATE_REL:   {identifier_type: QUASI,   qi_categories: [GEN_DATE_EVENT],     granularity: RANGE, stability: STABLE}
   EVENT:      {identifier_type: QUASI,   qi_categories: [GEN_DATE_EVENT],     granularity: EXACT, stability: STABLE}
   ROLE:       {identifier_type: QUASI,   qi_categories: [GEN_OCCUPATION],     granularity: COARSE, stability: VOLATILE}
-  MONTANT:    {identifier_type: QUASI,   qi_categories: [OTHER_QI],          granularity: EXACT, stability: VOLATILE}
-  AMOUNT:     {identifier_type: QUASI,   qi_categories: [OTHER_QI],          granularity: EXACT, stability: VOLATILE}
+  MONTANT:    {identifier_type: QUASI,   qi_categories: [GEN_SOCIOECON],     granularity: EXACT, stability: VOLATILE}
+  AMOUNT:     {identifier_type: QUASI,   qi_categories: [GEN_SOCIOECON],     granularity: EXACT, stability: VOLATILE}
   QUASI_ID:   {identifier_type: QUASI,   qi_categories: [OTHER_QI],          granularity: COARSE, stability: STABLE}
-  HOST:       {identifier_type: QUASI,   qi_categories: [OTHER_QI],          granularity: EXACT, stability: VOLATILE}
+  HOST:       {identifier_type: QUASI,   qi_categories: [SUP_ENVIRONMENT],   granularity: EXACT, stability: VOLATILE}
   COREF:      {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: EXACT, stability: STABLE}
   ERROR_CODE: {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: EXACT, stability: STABLE}
   PATH:       {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: EXACT, stability: VOLATILE}
