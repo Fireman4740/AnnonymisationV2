@@ -60,9 +60,9 @@ en §10. **Ces renvois sont donc cassés.**
 
 ### Critères d'acceptation
 
-- [ ] Tous les renvois de `backends.yaml` pointent vers des sections existantes.
-- [ ] Le contenu de `backends.yaml` est couvert par une section de SPEC-10.
-- [ ] Le journal des modifications de SPEC-10 mentionne explicitement
+- [x] Tous les renvois de `backends.yaml` pointent vers des sections existantes.
+- [x] Le contenu de `backends.yaml` est couvert par une section de SPEC-10.
+- [x] Le journal des modifications de SPEC-10 mentionne explicitement
       l'écrasement et sa réparation.
 
 ### Leçon de processus
@@ -98,11 +98,11 @@ d'IPI se lisent dans la publication, sans aucun accès aux données.
 
 ### Critères d'acceptation
 
-- [ ] Les 9 catégories IPI sont listées avec leur définition.
-- [ ] Chacune est associée à un ou plusieurs codes `GEN_*`, ou déclarée sans
+- [x] Les 9 catégories IPI sont listées avec leur définition.
+- [x] Chacune est associée à un ou plusieurs codes `GEN_*`, ou déclarée sans
       équivalent (avec justification).
-- [ ] Les écarts sont explicités : ce que le projet ajoute, ce qu'il omet.
-- [ ] SPEC-01 peut passer en `Gelé` à l'issue du ticket.
+- [x] Les écarts sont explicités : ce que le projet ajoute, ce qu'il omet.
+- [x] SPEC-01 peut passer en `Gelé` à l'issue du ticket.
 
 ---
 
@@ -140,11 +140,11 @@ peut-être pas prévus.
 
 ### Critères d'acceptation
 
-- [ ] Le taux d'`OTHER_QI` est mesuré et publié par corpus.
-- [ ] Si le taux dépasse 1 %, soit des codes sont ajoutés (via la procédure
+- [x] Le taux d'`OTHER_QI` est mesuré et publié par corpus.
+- [x] Si le taux dépasse 1 %, soit des codes sont ajoutés (via la procédure
       SPEC-01 §10, y compris la source de population), soit le dépassement est
       justifié par écrit.
-- [ ] Les codes jamais instanciés sont listés avec un verdict.
+- [x] Les codes jamais instanciés sont listés avec un verdict.
 
 ### Piège connu
 
