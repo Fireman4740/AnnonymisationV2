@@ -51,9 +51,23 @@ _REQUIRED_TOP_LEVEL = (
 class ScorecardError(ValueError):
     """Scorecard absente, incohérente ou non publiable."""
 
+
 def _label(value: Any) -> str:
     """Sérialise un enum ou une chaîne en libellé de ventilation."""
     return str(getattr(value, "value", value))
+
+
+def _status_label(status: Any) -> str:
+    """Retourne le statut d'une métrique, enum ou chaîne, en minuscule."""
+    return str(getattr(status, "value", status)).lower()
+
+
+def _has_proxy_risk(record: Mapping[str, Any]) -> bool:
+    """Détecte une évaluation de risque proxy dans une prédiction sérialisée."""
+    risk = record.get("risk")
+    if not isinstance(risk, Mapping):
+        return False
+    return _status_label(risk.get("status")) == MetricStatus.PROXY.value
 
 
 def _metric_dict(
@@ -238,6 +252,12 @@ def build_scorecard(
         else MetricStatus(str(requested_status).lower())
     )
     status = accounting.status_for(status)
+    if status is MetricStatus.OFFICIAL and any(_has_proxy_risk(record) for record in predictions):
+        raise ScorecardError(
+            "Scorecard OFFICIAL interdite : les prédictions portent un risque PROXY "
+            "(estimateur naïf)."
+        )
+
 
     overall = _aggregate_counts(
         [(gold, pred) for gold, pred, _ in rows],
@@ -464,7 +484,10 @@ def validate_scorecard(scorecard: Mapping[str, Any]) -> None:
     if "error_rate" not in scorecard or "error_rate" not in scorecard["accounting"]:
         raise ScorecardError("Scorecard sans error_rate au premier niveau")
     for name, metric in scorecard["primary"].items():
-        if isinstance(metric, Mapping) and str(metric.get("status", "")).lower() == "proxy":
+        if (
+            isinstance(metric, Mapping)
+            and _status_label(metric.get("status")) == MetricStatus.PROXY.value
+        ):
             raise ScorecardError(f"Métrique PROXY interdite dans primary : {name}")
     reproducibility = dict(scorecard.get("reproducibility") or {})
     for key in _REQUIRED_REPRODUCIBILITY:

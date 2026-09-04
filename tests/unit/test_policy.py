@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 import yaml
 
+from anonymisation.metrics.contracts import MetricStatus
 from anonymisation.policy.engine import NaiveRiskEstimator, PolicyEngine
 from anonymisation.policy.models import PolicyConfigError, load_policy_set
 from anonymisation.transform.decisions import Action
@@ -226,6 +227,19 @@ def test_generalize_reduces_risk_via_naive_estimator():
     exact = [_QiState("a", "GEN_AGE", 0)]
     generalized = [_QiState("a", "GEN_AGE", 2)]
     assert estimator(generalized) < estimator(exact)
+
+def test_naive_risk_output_status_is_immutable():
+    estimator = NaiveRiskEstimator()
+    value = estimator([])
+
+    assert value.status is MetricStatus.PROXY
+    assert estimator.status is MetricStatus.PROXY
+    with pytest.raises(AttributeError):
+        value.status = MetricStatus.OFFICIAL
+    with pytest.raises(AttributeError):
+        estimator.status = MetricStatus.OFFICIAL
+    with pytest.raises(TypeError):
+        NaiveRiskEstimator(status=MetricStatus.OFFICIAL)
 
 
 def test_custom_risk_fn_is_used_instead_of_naive(policy_set):

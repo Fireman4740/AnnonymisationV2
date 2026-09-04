@@ -21,6 +21,7 @@ officiels.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -128,6 +129,19 @@ def test_deterministic_profile_loads_without_ner_or_llm() -> None:
     assert p.llm.allow_remote is False
     assert p.determinism.strict is True
     assert p.determinism.seed == 42
+
+def test_naive_profile_emits_one_proxy_warning(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING, logger="anonymisation.pipeline.profiles")
+    caplog.clear()
+
+    load_runtime_profile("deterministic")
+
+    warnings = [
+        record
+        for record in caplog.records
+        if "assess.estimator='naive'" in record.getMessage()
+    ]
+    assert len(warnings) == 1
 
 
 # --------------------------------------------------------------------------- #

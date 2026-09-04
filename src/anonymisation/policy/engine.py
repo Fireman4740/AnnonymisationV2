@@ -34,9 +34,11 @@ décision s'applique uniformément, sans recours au risque — c'est le sens de
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from typing import Any
 
+from anonymisation.metrics.contracts import MetricStatus
 from anonymisation.policy.models import Policy
 from anonymisation.transform.decisions import (
     Action,
@@ -123,6 +125,21 @@ class _QiState:
     level: int
 
 
+class _NaiveRiskValue(float):
+    """Valeur numérique de risque qui transporte son statut de proxy.
+
+    Le moteur de politique a besoin d'un ``float`` pour ses comparaisons et
+    son classement des actions. Cette sous-classe conserve cette compatibilité
+    tout en rendant le statut visible et non surchargeable sur chaque sortie.
+    """
+
+    __slots__ = ()
+
+    @property
+    def status(self) -> MetricStatus:
+        return MetricStatus.PROXY
+
+
 class NaiveRiskEstimator:
     r"""Estimateur de risque **provisoire, non calibré** (voir en-tête de module).
 
@@ -166,6 +183,11 @@ class NaiveRiskEstimator:
         self._population_size = int(population_size or self.DEFAULT_POPULATION_SIZE)
         if self._population_size < 1:
             raise ValueError("population_size doit être >= 1")
+    @property
+    def status(self) -> MetricStatus:
+        """Statut contractuel de toutes les valeurs émises par cet estimateur."""
+        return MetricStatus.PROXY
+
 
     def _prevalence_for(self, qi_category: str, level: int) -> float:
         """Prévalence de la catégorie, élargie d'un cran par niveau généralisé."""
@@ -181,16 +203,16 @@ class NaiveRiskEstimator:
             product *= self._prevalence_for(state.qi_category, state.level)
         return self._population_size * product
 
-    def __call__(self, states: Sequence[_QiState]) -> float:
+    def __call__(self, states: Sequence[_QiState]) -> _NaiveRiskValue:
         if not states:
             # Aucun QI observé : rien ne restreint la population, risque nul.
-            return 0.0
+            return _NaiveRiskValue(0.0)
         k = self.estimate_k(states)
         if k <= 1.0:
             # k < 1 signifie « personne ne correspond dans la population de
             # référence » : en pratique l'individu est unique -> risque maximal.
-            return 1.0
-        return min(1.0, 1.0 / k)
+            return _NaiveRiskValue(1.0)
+        return _NaiveRiskValue(min(1.0, 1.0 / k))
 
 
 RiskFn = Callable[[Sequence[Any]], float]
@@ -228,7 +250,9 @@ class PolicyEngine:
     def _risk_status_meta(self) -> dict[str, Any]:
         if self._risk_fn_is_custom:
             return {}
-        return {"risk_status": "PROXY", "risk_model": "naive_proxy"}
+        status = getattr(self._risk_fn, "status", MetricStatus.PROXY)
+        status_name = getattr(status, "name", str(status).upper())
+        return {"risk_status": status_name, "risk_model": "naive_proxy"}
 
     # ------------------------------------------------------------------ #
     # Point d'entrée

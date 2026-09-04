@@ -12,7 +12,7 @@ import json
 import pytest
 
 from anonymisation.metrics.contracts import MetricStatus
-from anonymisation.metrics.scorecard import build_scorecard, validate_scorecard
+from anonymisation.metrics.scorecard import ScorecardError, build_scorecard, validate_scorecard
 from anonymisation.schema.models import Annotation, Document
 from anonymisation.schema.taxonomy import (
     ExpressionMode,
@@ -191,3 +191,33 @@ def test_scorecard_survives_a_json_round_trip() -> None:
     assert reloaded == json.loads(json.dumps(card, ensure_ascii=False, sort_keys=True))
     assert reloaded["publishable"] is True
     assert reloaded["error_rate"] == 0.0
+
+def test_primary_proxy_risk_is_rejected_even_if_metric_is_forced() -> None:
+    documents = {"d1": _document("d1", "Alice travaille.")}
+    annotation = _annotation("d1", 0, 5, span_text="Alice")
+    card = _build(documents, {"d1": (annotation,)}, [_prediction("d1", [annotation])])
+    card["primary"]["naive_risk"] = {"status": MetricStatus.PROXY}
+
+    with pytest.raises(ScorecardError, match="PROXY"):
+        validate_scorecard(card)
+
+
+def test_naive_risk_cannot_produce_official_scorecard() -> None:
+    documents = {"d1": _document("d1", "Alice travaille.")}
+    annotation = _annotation("d1", 0, 5, span_text="Alice")
+    prediction = _prediction("d1", [annotation])
+    prediction["risk"] = {"risk": 0.5, "status": "PROXY"}
+
+    with pytest.raises(ScorecardError, match="OFFICIAL"):
+        build_scorecard(
+            run_id="run-naive",
+            dataset="mini",
+            split="train",
+            protocol="mini-diagnostic",
+            protocol_version="1",
+            predictions=[prediction],
+            gold_by_doc={"d1": (annotation,)},
+            documents_by_doc=documents,
+            reproducibility=LOCK,
+            requested_status=MetricStatus.OFFICIAL,
+        )

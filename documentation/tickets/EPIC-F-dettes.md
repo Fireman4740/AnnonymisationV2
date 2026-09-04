@@ -221,6 +221,8 @@ Il reste que :
 
 - `src/anonymisation/policy/engine.py`
 - `src/anonymisation/metrics/scorecard.py`
+- `src/anonymisation/pipeline/profiles.py`
+- tests unitaires de l'estimateur, de la scorecard et du chargement de profil
 
 ### Travail
 
@@ -233,9 +235,9 @@ Il reste que :
 
 ### Critères d'acceptation
 
-- [ ] Impossible de produire une scorecard `OFFICIAL` avec l'estimateur naïf.
-- [ ] Un test tente de forcer le statut à `OFFICIAL` et échoue.
-- [ ] L'avertissement apparaît une fois par run, pas à chaque document.
+- [x] Impossible de produire une scorecard `OFFICIAL` avec l'estimateur naïf.
+- [x] Un test tente de forcer le statut à `OFFICIAL` et échoue.
+- [x] L'avertissement apparaît une fois par chargement de run, pas à chaque document.
 
 ### À retirer quand
 

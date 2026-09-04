@@ -14,6 +14,7 @@ relativement au répertoire du profil, puis relativement à la racine du dépôt
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -22,6 +23,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from anonymisation.detect.fusion import STRATEGIES
+
+logger = logging.getLogger(__name__)
 
 #: Émetteurs LLM non implantés en v1 (audit §12.3) — cités dans les messages
 #: d'erreur pour orienter l'utilisateur.
@@ -327,5 +330,13 @@ def load_runtime_profile(source: str | Path) -> LoadedProfile:
                 f"{', '.join(forbidden)} est interdit — le profil déterministe "
                 "doit tourner sans NER ni LLM (SPEC-10 §9, audit C1)."
             )
+    # Le loader est appelé une fois par run, avant la boucle des documents :
+    # l'avertissement ne se répète donc pas pour chaque document.
+    if stages.assess.estimator == "naive":
+        logger.warning(
+            "Profil %r : assess.estimator='naive' produit des risques PROXY "
+            "non publiables comme métriques OFFICIAL.",
+            profile.profile,
+        )
 
     return LoadedProfile(profile=profile, config_path=path)
