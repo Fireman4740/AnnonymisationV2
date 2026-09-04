@@ -8,12 +8,17 @@ doc: "documentation/datasets/tab.md"
 aliases: ["text-anonymization-benchmark"]
 
 source:
-  kind: huggingface           # ou url — à confirmer à l'acquisition
+  kind: local
+  path: "TAB/official"
+  path_env: ANONV2_V1_DATASETS
+  files: ["echr_train.json", "echr_dev.json", "echr_test.json"]
   repo: null
-  revision: null
-  files: []
-  v1_cache: "../Anonymisation/eval/datasets/TAB"   # réutilisable après vérif de checksum
-
+  revision: "official-v1"
+  paper: "pilan2022tab"
+  instructions: >
+    Définir ANONV2_V1_DATASETS sur la racine de eval/datasets de la V1.
+    La source utilisée est TAB/official/echr_{train,dev,test}.json ; aucune
+    acquisition réseau implicite n'est autorisée.
 license:
   spdx: "UNKNOWN"
   redistribution: true        # sous conditions, citation obligatoire
