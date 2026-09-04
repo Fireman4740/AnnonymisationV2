@@ -1,0 +1,109 @@
+# Manifeste — Corpus QI français (QUASIFR)
+# Fiche : documentation/datasets/quasifr.md
+# Source locale V1 : définir ANONV2_V1_DATASETS à la racine de
+# Anonymisation/eval/datasets (les fichiers sont sous data/).
+
+key: quasifr
+name: "Corpus QI français"
+description: >
+  Corpus annoté de quasi-identifiants en français : 72 exemples dans trois
+  variantes de difficulté, 427 annotations source et identifiants de
+  coréférence. Les six offsets incohérents sont ré-ancrés uniquement quand le
+  texte annoté n'a qu'une occurrence ; les cas ambigus sont consignés et non
+  devinés.
+doc: documentation/datasets/quasifr.md
+aliases: ["quasi-fr", "quasi_fr"]
+
+source:
+  kind: local
+  path: "data"
+  path_env: ANONV2_V1_DATASETS
+  files:
+    - anonymization_dataset.json
+    - hard_quasi_id_dataset.json
+    - max_anonymization_dataset.json
+  instructions: >
+    Source V1 locale. Les trois fichiers sont conservés comme splits logiques
+    et ne doivent pas être fusionnés sans conserver leur provenance.
+
+license:
+  spdx: "UNKNOWN"
+  redistribution: false
+  restricted: false
+  citation: null
+  notes: "Licence du dépôt V1 à confirmer ; données absentes du dépôt V2."
+
+integrity:
+  sha256: null
+  expected_documents: 72
+  expected_profiles: 0
+
+structure:
+  domain: generic
+  languages: ["fr"]
+  synthetic: true
+  has_profiles: false
+  has_combinations: false
+  has_organizations: false
+  has_tasks: false
+  split_by: document
+  splits: ["anonymization", "hard_quasi_id", "max_anonymization"]
+
+# Les types source sont tous déclarés. Les types hors périmètre utilisent le
+# code de service IGNORED ; ils restent dans annotations.jsonl et ne sont pas
+# comptés comme OTHER_QI.
+label_map:
+  PER:        {identifier_type: DIRECT,  qi_categories: [DIR_NAME],          granularity: EXACT, stability: STABLE}
+  LOC:        {identifier_type: QUASI,   qi_categories: [GEN_GEO],           granularity: COARSE, stability: STABLE}
+  ORG:        {identifier_type: QUASI,   qi_categories: [GEN_AFFILIATION],   granularity: COARSE, stability: STABLE}
+  TEAM:       {identifier_type: QUASI,   qi_categories: [GEN_AFFILIATION],   granularity: COARSE, stability: STABLE}
+  EMAIL:      {identifier_type: DIRECT,  qi_categories: [DIR_EMAIL],         granularity: EXACT, stability: VOLATILE}
+  PHONE:      {identifier_type: DIRECT,  qi_categories: [DIR_PHONE],         granularity: EXACT, stability: VOLATILE}
+  IP:         {identifier_type: DIRECT,  qi_categories: [DIR_DEVICE_ID],     granularity: EXACT, stability: VOLATILE}
+  MAC:        {identifier_type: DIRECT,  qi_categories: [DIR_DEVICE_ID],     granularity: EXACT, stability: VOLATILE}
+  UUID:       {identifier_type: DIRECT,  qi_categories: [DIR_DEVICE_ID],     granularity: EXACT, stability: VOLATILE}
+  API_KEY:    {identifier_type: DIRECT,  qi_categories: [DIR_ONLINE_ID],     granularity: EXACT, stability: VOLATILE}
+  AWS_KEY:    {identifier_type: DIRECT,  qi_categories: [DIR_ONLINE_ID],     granularity: EXACT, stability: VOLATILE}
+  URL:        {identifier_type: DIRECT,  qi_categories: [DIR_ONLINE_ID],     granularity: EXACT, stability: VOLATILE}
+  ADDRESS:    {identifier_type: DIRECT,  qi_categories: [DIR_ADDRESS],       granularity: EXACT, stability: STABLE}
+  NIR:        {identifier_type: DIRECT,  qi_categories: [DIR_ID_NUMBER],     granularity: EXACT, stability: STABLE}
+  TICKET:     {identifier_type: DIRECT,  qi_categories: [DIR_CASE_REF],      granularity: EXACT, stability: STABLE}
+  ID:         {identifier_type: DIRECT,  qi_categories: [DIR_ID_NUMBER],     granularity: EXACT, stability: STABLE}
+  DATE:       {identifier_type: QUASI,   qi_categories: [GEN_DATE_EVENT],     granularity: EXACT, stability: STABLE}
+  DATE_REL:   {identifier_type: QUASI,   qi_categories: [GEN_DATE_EVENT],     granularity: RANGE, stability: STABLE}
+  EVENT:      {identifier_type: QUASI,   qi_categories: [GEN_DATE_EVENT],     granularity: EXACT, stability: STABLE}
+  ROLE:       {identifier_type: QUASI,   qi_categories: [GEN_OCCUPATION],     granularity: COARSE, stability: VOLATILE}
+  MONTANT:    {identifier_type: QUASI,   qi_categories: [OTHER_QI],          granularity: EXACT, stability: VOLATILE}
+  AMOUNT:     {identifier_type: QUASI,   qi_categories: [OTHER_QI],          granularity: EXACT, stability: VOLATILE}
+  QUASI_ID:   {identifier_type: QUASI,   qi_categories: [OTHER_QI],          granularity: COARSE, stability: STABLE}
+  HOST:       {identifier_type: QUASI,   qi_categories: [OTHER_QI],          granularity: EXACT, stability: VOLATILE}
+  COREF:      {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: EXACT, stability: STABLE}
+  ERROR_CODE: {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: EXACT, stability: STABLE}
+  PATH:       {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: EXACT, stability: VOLATILE}
+  STYLE:      {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: COARSE, stability: VOLATILE}
+  PRODUCT:    {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: COARSE, stability: STABLE}
+  API:        {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: COARSE, stability: STABLE}
+  TOOL:       {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: COARSE, stability: STABLE}
+  CONFIG:     {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: COARSE, stability: STABLE}
+  MODEL:      {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: COARSE, stability: STABLE}
+  PROJECT:    {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: COARSE, stability: STABLE}
+  LICENSE:    {identifier_type: IGNORED, qi_categories: [IGNORED],            granularity: COARSE, stability: STABLE}
+
+annotation:
+  offset_policy: "unique_reanchor_else_record_drop"
+  ignored_types: [COREF, ERROR_CODE, PATH, STYLE, PRODUCT, API, TOOL, CONFIG, MODEL, PROJECT, LICENSE]
+  note: "La classification fine des QUASI_ID est publiée dans l'annexe de couverture taxonomique après ingestion."
+
+evaluation:
+  protocol: "quasifr-v1"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "DIAGNOSTIC"
+  granularities: ["document", "entity"]
+  report_by: ["split", "expression_mode", "source_type"]
+
+population:
+  population_id: null
+  k_computable: false
+  risk_model: null
+  notes: "Aucune population française de référence déclarée ; le score de risque reste diagnostique/proxy."

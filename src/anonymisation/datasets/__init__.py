@@ -8,7 +8,7 @@ L'infrastructure d'ingestion (épic A) est importée sans effet de bord ; les
 adaptateurs de l'épic B sont importés ici un à un, au fil de la livraison.
 """
 
-from anonymisation.datasets import _bio, _local, ingest, manifest, openpii  # noqa: F401
+from anonymisation.datasets import _bio, _local, ingest, manifest, openpii, panorama, quasifr, spia  # noqa: F401
 from anonymisation.datasets.base import AcquisitionReport, DatasetAdapter
 from anonymisation.datasets.registry import (
     ALIASES,
@@ -21,10 +21,9 @@ from anonymisation.datasets.registry import (
     resolve,
 )
 
-# --- Adaptateurs restants — épic B (décommenter au fil de la livraison) -----
-# from anonymisation.datasets import synthpai   # noqa: F401
-# from anonymisation.datasets import tab        # noqa: F401
-# from anonymisation.datasets import ratbench   # noqa: F401
+# --- Adaptateurs restants — épic B/G ---------------------------------------
+# Les imports explicites garantissent un registre indépendant de l'ordre du
+# système de fichiers (SPIA/PANORAMA sont livrés par l'épic G).
 
 __all__ = [
     "ALIASES",
