@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Statut** | Stable |
-| **Version** | 1.0 |
-| **Date** | 2026-08-30 |
+| **Statut** | Gelé |
+| **Version** | 1.1 |
+| **Date** | 2026-09-04 |
 | **Dépend de** | — |
 | **Utilisée par** | SPEC-02, SPEC-03, SPEC-06, SPEC-07 |
 
@@ -30,11 +30,10 @@ La taxonomie dérive de trois sources, conformément à
 | IPI [@baroud2025ipi] | Les catégories d'identifiants indirects et la logique multi-adversaires |
 | Domaines du projet | Blocs RH, support et forums, absents de la littérature |
 
-> ⚠️ **Action ouverte (bloquante pour la v1.1)** : les 9 catégories d'IPI n'ont
-> pas encore été confrontées ligne à ligne au bloc générique ci-dessous. La
-> table de réconciliation du §9 DOIT être remplie après lecture des guidelines
-> IPI. Tant qu'elle est vide, le bloc générique est une proposition motivée, pas
-> un alignement vérifié.
+> ✅ **Réconciliation effectuée (v1.1, 2026-09-04, ticket F-2)** : les 9 catégories
+d'IPI ont été confrontées ligne à ligne au bloc générique — voir §9. La
+décomposition en 13 codes `GEN_*` est confirmée ; les écarts restants (événements,
+temps clinique) y sont documentés.
 
 ## 3. Structure : quatre axes orthogonaux
 
@@ -136,7 +135,7 @@ Le contenu du §4.
 | `GEN_LIFESTYLE` | Pratique, loisir, appartenance rare ou distinctive | « je fais du curling en compétition » |
 | `GEN_PHYSICAL` | Trait physique distinctif | « je mesure 2 m 05 » |
 
-**13 codes.** Ils DOIVENT être réconciliés avec les 9 catégories IPI (§9).
+**13 codes.** Réconciliés avec les 9 catégories IPI en §9 (v1.1).
 
 ### 4.3 Bloc `HR_*` — quasi-identifiants du domaine RH
 
@@ -283,14 +282,54 @@ La généralisation est l'action la plus intéressante du point de vue de
 l'utilité : elle réduit $k^{-1}$ sans détruire l'information. Sa disponibilité
 dépend de `granularity`, d'où l'importance de ce champ.
 
-## 9. Table de réconciliation avec IPI — **à remplir**
+## 9. Table de réconciliation avec IPI [@baroud2025ipi]
 
-| Catégorie IPI (1..9) | Code(s) SPEC-01 correspondant(s) | Écart |
-|----------------------|----------------------------------|-------|
-| *(à remplir après lecture des guidelines)* | | |
+Les 9 catégories d'identifiants indirects d'IPI (corpus : 100 *discharge
+summaries* MIMIC-III, 6 199 annotations — le corpus est **MIMIC-III**, pas
+MIMIC-IV) confrontées ligne à ligne au bloc `GEN_*` de §4.2. Définitions
+verbatim de l'appendix A de la publication ; compte = table 1.
 
-Tant que cette table est vide, la fiche [`ipi-mimic.md`](../datasets/ipi-mimic.md)
-reste au statut « action ouverte », et SPEC-01 ne peut pas passer en `Gelé`.
+| # | Catégorie IPI | Définition (guidelines) | n (% des 6 199) | Code(s) SPEC-01 | Écart |
+|---|---------------|-------------------------|-----------------|-----------------|-------|
+| 1 | `appearance` | Poids, taille, description du corps ou modifications corporelles (cicatrice, très grand, très petit, variation de poids sur une période, tatouage, piercing) | 132 (2,13 %) | `GEN_PHYSICAL` | Mineur : les modifications médicales (greffe, amputation) porteront aussi `sensitivity = HEALTH` — l'axe est orthogonal, pas d'écart de couverture. |
+| 2 | `circumstances` | Événement (accident, tempête, incendie) ayant causé une blessure ou survenu au centre ; patient agressif, refus de soin, sortie AMA ; mode d'admission ; déclarations, demandes, plaintes | 99 (1,6 %) | aucun code — partiellement `GEN_DATE_EVENT` | **Écart réel** : IPI décrit des *événements* et des *comportements*, pas des attributs. La seule part mappable est la date de l'événement (`GEN_DATE_EVENT`). L'événement lui-même n'a pas de code de QI : il relèverait de `OTHER_QI` (et de `sensitivity = JUDICIAL` si plainte/procédure). |
+| 3 | `sec` | Emploi (« retired police officer »), antécédents judiciaires, assurance santé, statut social (sans-abrisme, logement subventionné) | 59 (0,95 %) | `GEN_OCCUPATION` + `GEN_SOCIOECON` | L'antécédent judiciaire n'est pas un QI dans SPEC-01 : c'est l'axe `sensitivity = JUDICIAL` (art. 9 RGPD) qui le porte. L'assurance santé est couverte par `GEN_SOCIOECON` (statut, patrimoine). |
+| 4 | `family` | Adoption, jumeau, FIV ; historique médical de la famille (« parent mort à 40 ans ») ; implication (fille = procureure de soins) | 273 (4,4 %) | `GEN_FAMILY` ; historique médical familial : `GEN_HEALTH_STATE` avec `subject = THIRD_PARTY` | Mineur : le projet gère explicitement le tiers par l'axe `subject`, ce qu'IPI ne formalise pas. |
+| 5 | `fclt_personnel` | Hôpitaux, unités, laboratoires, services, établissements, équipes consultées, étages/chambres, spécialités, médecins externes | 1 421 (22,92 %) — la plus grosse catégorie | `GEN_AFFILIATION` (organisation de soin = organisation d'appartenance) ; médecin externe *nommé* : `DIR_NAME` | Nuance d'objet : IPI désigne l'organisation **de soin**, SPEC-01 toute affiliation (employeur, école, association). Seul sous-élément sans code propre : le médecin externe non nommé (spécialité seule) → `OTHER_QI`. |
+| 6 | `time` | Âge, ou informations temporelles : 2ᵉ jour post-opératoire, 13ᵉ jour de grossesse, 6ᵉ jour de vie, heures exactes de prélèvement/posologie. Les durées liées à la maladie elle-même sont exclues | 4 006 (64,62 %) — l'essentiel des annotations | `GEN_AGE` (l'âge) ; `GEN_DATE_EVENT` (le daté) | **Écart réel** : le temps *clinique* (« post-op day 2 ») n'est pas un événement de vie de la personne ; `GEN_DATE_EVENT` est le réceptacle le plus proche mais sa définition (§4.2) vise la vie de la personne. Documenté comme limite, pas de nouveau code (fréquence dans la population non estimable — §10, point 3). |
+| 7 | `lfstl` | Loisirs (sport, instrument), style de vie (régime, vie privée) | 144 (2,32 %) | `GEN_LIFESTYLE` | Aucune. (Tobac/alcool : `sensitivity = HEALTH` en sus.) |
+| 8 | `details` | PII non détecté par les anonymiseurs automatiques, ou description indirecte d'un PII (« vit dans un foyer de transition », « a eu 18 ans avant la pandémie », n° de licence) | 32 (0,52 %) | **Pas un code — une propriété structurelle** : l'axe `expression_mode` (`IMPLICIT` / `NON_STANDARD`) appliqué au code du PII sous-jacent (adresse → `DIR_ADDRESS` / `GEN_GEO`, âge → `GEN_AGE`, licence → `DIR_ID_NUMBER`) | Aucune : c'est l'apport de la taxonomie à quatre axes. IPI traite le problème comme une catégorie résiduelle ; SPEC-01 le décompose. |
+| 9 | `other` | Informations non médicales sensibles : langue, ethnie (« Caucasian », « AAF »), orientation sexuelle | 33 (0,53 %) | `GEN_ORIGIN_BELIEF` (langue, origine, opinions) | L'orientation sexuelle n'a pas de code QI dédié : portée par l'axe `sensitivity = SEXLIFE` (art. 9 RGPD) ; le code porteur, quand l'information identifie, reste `GEN_ORIGIN_BELIEF`. |
+
+### 9.1 Codes `GEN_*` sans équivalent IPI
+
+Quatre des 13 codes du bloc générique n'ont **pas** d'équivalent IPI — ce sont
+des extensions du projet, cohérentes avec l'origine déclarée du §2 (IPI + TAB +
+domaines du projet) :
+
+| Code | Raison de l'absence dans IPI |
+|------|------------------------------|
+| `GEN_GENDER` | IPI ne l'annotait pas : le sexe est un champ structurel de MIMIC (démo), hors des *discharge summaries*. |
+| `GEN_GEO` | Corpus mono-site (Beth Israel Deaconess, Boston) : la géographie n'y est pas discriminante. IPI n'a pas de catégorie lieu ; les adresses y sont traitées comme PII directs (`details`). |
+| `GEN_EDUCATION` | Non annoté dans MIMIC-III (champ démo non exploité par IPI). |
+| `GEN_HEALTH_STATE` | Corpus clinique : la santé du patient est le *domaine*, pas l'identifiant. Le code du projet couvre le cas hors clinique (arrêt maladie, handicap — l'exemple canonique du projet). |
+
+Les blocs `HR_*`, `SUP_*`, `FOR_*` n'ont de même aucun équivalent IPI : le
+corpus IPI est clinique mono-domaine (limites §9 de la fiche [`ipi-mimic.md`](../datasets/ipi-mimic.md)).
+
+### 9.2 Conclusion de la réconciliation
+
+- **9 catégories IPI → couverture totale** : 7 correspondent à un code
+  `GEN_*` (parfois complété par un axe), 1 est une propriété structurelle
+  (`details` → `expression_mode`), 1 est un écart réel documenté
+  (`circumstances` → événements/comportements, sans code d'attribut).
+- **13 codes `GEN_*`** : 9 couverts par IPI (à des degrés divers), 4 sans
+  équivalent (extensions projet).
+- La décomposition en 13 codes est **confirmée** : elle raffine IPI sans la
+  contredire, et les axes `expression_mode` / `sensitivity` absorbent ce que
+  IPI traitait comme catégories résiduelles.
+- **Statut** : SPEC-01 passe à `Gelé` (v1.1) : la campagne d'expériences en
+  cours peut s'appuyer sur cette taxonomie.
 
 ## 10. Extensibilité
 
@@ -310,3 +349,4 @@ Le point 3 est la barrière qui empêche la taxonomie de gonfler indéfiniment.
 | Version | Date | Changement |
 |---------|------|-----------|
 | 1.0 | 2026-08-30 | Création. Bloc DIR (10), GEN (13), HR (10), SUP (10), FOR (4). Table de réconciliation IPI ouverte. |
+| 1.1 | 2026-09-04 | **Ticket F-2 — réconciliation IPI.** §9 rempli : les 9 catégories d'IPI (MIMIC-III, 6 199 annotations) confrontées ligne à ligne au bloc `GEN_*` — 7 mappées sur un code `GEN_*` (parfois complété par un axe), `details` absorbée par l'axe `expression_mode`, `circumstances` documentée comme écart réel (événements/comportements, sans code d'attribut) ; 4 codes `GEN_*` sans équivalent IPI (extensions projet) listés en §9.1. Note d'alerte du §2 convertie en confirmation. Statut `Stable` → `Gelé` : la taxonomie fige pour la campagne d'expériences en cours. |

@@ -2,10 +2,9 @@
 
 | | |
 |---|---|
-| **Clé interne** | `ipi` |
-| **Priorité** | ❌ **NON RETENU** — décision du 2026-08-30 |
+| **Statut de la fiche** | Archivée · v1.2 · 2026-09-04 |
+| **Priorité** | **NON RETENU** (décision 2026-08-30) — partie *spécification* terminée le 2026-09-04 (ticket F-2) |
 | **Benchmark** | — |
-| **Statut de la fiche** | Archivée · v1.1 · 2026-08-30 |
 
 ---
 
@@ -46,13 +45,12 @@
 
 Le travail ne se limite pas aux PII classiques : les auteurs proposent un schéma
 de **neuf catégories d'identifiants indirects**, construit **en tenant compte de
-plusieurs adversaires possibles** — ce qui est exactement la logique de
-[SPEC-08](../specifications/SPEC-08-attaquants.md).
-
+différents adversaires potentiels** (connaissances, famille, personnel médical).
 Priorité double :
 
-- **P0 pour le schéma** : les guidelines d'annotation sont exploitables
-  immédiatement, sans accès aux données.
+- **P0 pour la spécification** : ✅ fait (2026-09-04, ticket F-2) — les 9
+  catégories figurent dans SPEC-01 §9 avec définitions, exemples et mapping ;
+  SPEC-01 est Gelé v1.1.
 - **P2 pour les données** : les spans nécessitent un accès MIMIC-III, long à
   obtenir et non redistribuable.
 
@@ -170,12 +168,17 @@ QICR.
 
 ## 11. Mapping vers le schéma interne
 
-| Objet IPI | Objet interne | Notes |
-|-----------|---------------|-------|
-| catégorie IPI (1..9) | `Annotation.qi_category` | mapping 1:1 vers les codes SPEC-01 bloc « générique » |
-| span | `Annotation` | `identifier_type = "QUASI"` par construction |
-| document MIMIC | `Document` | `domain = "clinical"`, texte chargé depuis `data/external/mimic3/` |
-| modèle d'adversaire visé | `Annotation.meta.adversary` | conservé, utile au reporting par niveau d'attaquant |
+| Catégorie IPI | Mappage dans SPEC-01 (v1.1 §9) |
+|---------------|----------------------------------|
+| appearance | `GEN_PHYSICAL` |
+| circumstances | **aucun code** — événement/comportement, non attribut ; seul le daté → `GEN_DATE_EVENT` (écart réel documenté) |
+| sec | `GEN_OCCUPATION` + `GEN_SOCIOECON` ; antécédent judiciaire → axe `sensitivity = JUDICIAL` |
+| family | `GEN_FAMILY` ; historique médical familial → `GEN_HEALTH_STATE` avec `subject = THIRD_PARTY` |
+| fclt_personnel | `GEN_AFFILIATION` ; médecin externe nommé → `DIR_NAME` |
+| time | `GEN_AGE` ; daté → `GEN_DATE_EVENT` ; temps clinique = limite documentée |
+| lfstl | `GEN_LIFESTYLE` |
+| details | **pas un code** : l'axe `expression_mode` (`IMPLICIT`/`NON_STANDARD`) appliqué au code du PII sous-jacent |
+| other | `GEN_ORIGIN_BELIEF` ; orientation sexuelle → axe `sensitivity = SEXLIFE` |
 
 ## 12. Splits et protocole
 
@@ -201,9 +204,14 @@ taxonomie conditionne SPEC-01, donc SPEC-02, donc tous les adaptateurs.
 
 ## 14. Critères d'acceptation
 
-- [ ] Les 9 catégories IPI figurent dans SPEC-01 avec leur définition et un
-      exemple.
-- [ ] Le mapping IPI → SPEC-01 est total (aucune catégorie orpheline).
+- [x] Les 9 catégories IPI figurent dans SPEC-01 avec leur définition et un
+      exemple. — ✅ 2026-09-04 (ticket F-2) : SPEC-01 v1.1 §9 (définitions
+      verbatim de l'appendix A + comptes de la table 1).
+- [x] Le mapping IPI → SPEC-01 est total (aucune catégorie orpheline). — ✅
+      2026-09-04 (ticket F-2) : 7 catégories mappées sur un code `GEN_*`
+      (parfois complété par un axe), `details` absorbée par l'axe
+      `expression_mode`, `circumstances` documentée comme écart réel
+      (événement/comportement, sans code d'attribut) — SPEC-01 §9.
 - [ ] L'adaptateur fonctionne sur un jeu factice sans MIMIC-III.
 - [ ] Les tests réels portent `@pytest.mark.restricted_license` et sont skippés
       sans données.
@@ -213,6 +221,11 @@ taxonomie conditionne SPEC-01, donc SPEC-02, donc tous les adaptateurs.
 
 - Les spans sont-ils publiés séparément et sous quelle licence ?
 - Les 9 catégories sont-elles disjointes, ou un span peut-il en porter
-  plusieurs ? (impacte le modèle de données de SPEC-02 : mono- ou multi-label)
+  plusieurs ? — **Répondu par la publication** (2026-09-04) : un span porte
+  **une** catégorie — les comptes de la table 1 (132+99+59+273+1421+4006+144+32+33)
+  somment exactement aux 6 199 annotations, et l'annotation Prodigy est en
+  B/I/O word-level (une étiquette par mot). L'adaptateur (lorsque l'accès
+  MIMIC-III sera obtenu) émettra des listes `qi_categories` à un seul élément ;
+  le modèle de données de SPEC-02 reste multi-label (généralisation stricte).
 - La demande PhysioNet est-elle réellement nécessaire au projet, ou la taxonomie
   suffit-elle ? → décision à prendre en fin de lot L1.

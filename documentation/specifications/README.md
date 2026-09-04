@@ -39,7 +39,7 @@ SPEC-04. Les cinq autres peuvent attendre le lot suivant.
 
 | Spec | Titre | Statut | Ce qu'elle fixe |
 |------|-------|--------|-----------------|
-| [SPEC-01](SPEC-01-taxonomie-qi.md) | Taxonomie unifiée des quasi-identifiants | Stable | Les codes de catégories QI, les axes d'annotation, les règles de combinaison |
+| [SPEC-01](SPEC-01-taxonomie-qi.md) | Taxonomie unifiée des quasi-identifiants | Gelé | Les codes de catégories QI, les axes d'annotation, les règles de combinaison |
 | [SPEC-02](SPEC-02-schema-donnees.md) | Schéma de données interne | Stable | Les six tables JSONL, leurs champs, leurs invariants |
 | [SPEC-03](SPEC-03-registre-et-adaptateurs.md) | Registre et contrat d'adaptateur | Stable | L'interface `DatasetAdapter`, le manifeste YAML, le registre |
 | [SPEC-04](SPEC-04-pipeline-ingestion.md) | Pipeline d'ingestion | Stable | Acquisition → normalisation → validation → cache, et les codes d'erreur |
