@@ -99,7 +99,7 @@ mêler ici reproduirait l'erreur de la v1.
 | **G-3** | TRIA / TRIR | P1 | D-2, G-1 | ⬜ |
 | **G-4** | Mean Utility | P1 | D-2 | ⬜ |
 | **G-5** | Partial match + ER_di / ER_qi | P0 | D-1 | ⬜ |
-| **G-6** | Trancher le statut de PersonalReddit | P0 | — | ⬜ |
+| **G-6** | Trancher le statut de PersonalReddit | P0 | — | ✅ |
 
 ## 4. Chemin critique
 
@@ -173,7 +173,8 @@ Le pipeline d'évaluation est déclaré fiable quand :
       publiées (un masqueur NER doit y obtenir un CPR de l'ordre de 0,33).
 - [ ] **ER_di / ER_qi** sont produits au niveau entité, et diffèrent du rappel
       span-level.
-- [ ] Le statut réel/synthétique de PersonalReddit est tranché.
+- [x] Le statut réel/synthétique de PersonalReddit est tranché : le cache local
+      est synthétique et distinct du corpus réel non distribué.
 
 ## 7. Principe directeur du lot
 

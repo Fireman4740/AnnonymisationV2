@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Statut** | Stable |
-| **Version** | 1.0 |
-| **Date** | 2026-08-30 |
+| **Version** | **2.1** |
+| **Date** | 2026-09-04 |
 | **Dépend de** | SPEC-01 |
 | **Utilisée par** | SPEC-03, SPEC-04, SPEC-05, SPEC-06, SPEC-07 |
 
@@ -29,7 +29,7 @@ toucher aux datasets.
 | Validation | **Pydantic v2** — les modèles Python sont la définition normative |
 | Emplacement | `data/processed/<dataset_key>/<split>/<table>.jsonl` |
 | Compression | `.jsonl.zst` accepté en lecture, jamais en écriture intermédiaire |
-| Versionnement du schéma | champ `schema_version` dans le manifeste, valeur actuelle `"2.0"` |
+| Versionnement du schéma | champ `schema_version` dans le manifeste, valeur actuelle **`"2.1"`** |
 
 Choix du JSONL plutôt que Parquet : lisibilité en `git diff` et en `head`,
 inspection sans outillage, et volumétrie modeste (< 5 Go au total). Un export
@@ -73,6 +73,7 @@ pourra simplement pas alimenter les métriques de niveau 3 et 4.
   "language": "en",
   "text": "I defended my thesis last year and I'm still looking for a postdoc...",
   "author_id": "synthpai:p_017",
+  "subject_ids": ["synthpai:p_017", "synthpai:p_018"],
   "org_id": null,
   "thread_id": "synthpai:t_033",
   "position_in_thread": 4,
@@ -89,7 +90,8 @@ pourra simplement pas alimenter les métriques de niveau 3 et 4.
 | `domain` | `str` | ✅ | `hr` \| `support` \| `forum` \| `legal` \| `clinical` \| `generic` |
 | `language` | `str` | ✅ | ISO 639-1 (`fr`, `en`, `es`, `de`…) |
 | `text` | `str` | ✅ | Texte brut, **jamais normalisé** après calcul des offsets |
-| `author_id` | `str \| null` | ⬜ | Réfère `profiles.person_id` |
+| `author_id` | `str \| null` | ⬜ | Réfère `profiles.person_id` ; sujet principal historique |
+| `subject_ids` | `list[str]` | ⬜ | Identifiants de **tous** les sujets présents, uniques dans le document |
 | `org_id` | `str \| null` | ⬜ | Réfère `organizations.org_id` |
 | `thread_id` | `str \| null` | ⬜ | Regroupement conversationnel |
 | `position_in_thread` | `int \| null` | ⬜ | Ordre dans le fil |
@@ -104,6 +106,8 @@ pourra simplement pas alimenter les métriques de niveau 3 et 4.
   même version. Un `doc_id` ne DOIT jamais être un index de ligne.
 - **I-DOC-3** : si `author_id` est non nul, il DOIT exister dans
   `profiles.jsonl`.
+- **I-DOC-4** : `subject_ids` est dédupliqué et chaque `Annotation.subject_id`
+  d'un document multi-sujets DOIT appartenir à cette liste.
 
 ---
 
@@ -113,6 +117,7 @@ pourra simplement pas alimenter les métriques de niveau 3 et 4.
 {
   "annotation_id": "tab:a_10233",
   "doc_id": "tab:case_00417",
+  "subject_id": "tab:case_00417:subject:applicant",
   "start": 128,
   "end": 136,
   "span_text": "doctorant",
@@ -135,6 +140,7 @@ pourra simplement pas alimenter les métriques de niveau 3 et 4.
 |-------|------|:------:|-----------|
 | `annotation_id` | `str` | ✅ | Unique |
 | `doc_id` | `str` | ✅ | Réfère `documents.doc_id` |
+| `subject_id` | `str \| null` | ⬜ | Réfère `documents.subject_ids` ; requis pour un document multi-sujets |
 | `start` / `end` | `int \| null` | ⬜ | Offsets **caractères**, sur `text`, fin exclusive |
 | `span_text` | `str \| null` | ⬜ | **DOIT** vérifier `text[start:end] == span_text` |
 | `identifier_type` | enum | ✅ | SPEC-01 §3.1 |
@@ -404,8 +410,7 @@ anonv2 datasets validate <dataset_key>
 vérifie tous les invariants `I-*` de cette spec et retourne un code d'erreur
 non nul en cas de violation.
 
-## 14. Journal des modifications
-
 | Version | Date | Changement |
 |---------|------|-----------|
+| **2.1** | 2026-09-04 | Ajout de `Document.subject_ids` et `Annotation.subject_id` pour les corpus multi-sujets ; contrôle E-VAL-104 des sujets orphelins. |
 | 1.0 | 2026-08-30 | Création. Six tables, invariants I-DOC/I-ANN/I-PRO/I-CMB. Reprise partielle des contrats V1. |

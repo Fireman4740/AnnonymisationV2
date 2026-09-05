@@ -284,7 +284,7 @@ def test_lock_has_seven_reproducibility_elements(tmp_path: Path) -> None:
         "date",
         "status",
     }
-    assert lock["schema_version"] == "2.0"
+    assert lock["schema_version"] == "2.1"
     assert lock["taxonomy_version"] == TAXONOMY_VERSION
     assert lock["date"] == date.today().isoformat()
     assert lock["source"]["kind"] == "local"

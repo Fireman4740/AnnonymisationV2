@@ -26,6 +26,7 @@ __all__ = [
     "candidates_to_annotations",
     "FusionDecision",
     "fuse",
+    "CompiledPattern",
     "DeterministicDetector",
 ]
 

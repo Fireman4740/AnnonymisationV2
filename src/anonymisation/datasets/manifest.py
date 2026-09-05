@@ -285,16 +285,20 @@ class LoadedManifest:
     resolution: SourceResolution | None = None
 
 
-def load_manifest(path: Path) -> LoadedManifest:
+def load_manifest(path: Path, *, resolve_source: bool = True) -> LoadedManifest:
     """Charge et contrôle le manifeste YAML ``path`` (EPIC A-1).
 
     Ordre des contrôles : YAML → mapping ``label_map`` → ``spdx: UNKNOWN``
     (force ``official_eligible = False`` et journalise) → schéma Pydantic
-    (dont ``has_profiles``/``split_by``) → résolution de la source locale.
+    (dont ``has_profiles``/``split_by``) → résolution de la source locale si
+    ``resolve_source`` est vrai.
 
     Lève :class:`ManifestError` (schéma, ``label_map``), ``LocalSourceError``
-    (source locale absente) — tous deux actionnables : fichier, champ,
-    valeur, et variable à définir le cas échéant.
+    (source locale absente quand ``resolve_source=True``) — tous deux
+    actionnables : fichier, champ, valeur, et variable à définir le cas échéant.
+    Le catalogue global peut désactiver cette dernière étape pour rester
+    utilisable sur un clone sans les corpus externes ; les commandes d'ingestion
+    gardent le contrôle strict par défaut.
     """
     path = Path(path)
     try:
@@ -348,17 +352,24 @@ def load_manifest(path: Path) -> LoadedManifest:
     except Exception as exc:  # ValidationError, TypeError, ValueError…
         raise ManifestError(f"{path} : manifeste invalide :\n{exc}") from exc
 
-    # --- Contrôle 4 : source locale résolue et vérifiée ---
-    resolution: SourceResolution | None = resolve_local_source(manifest.source)
+    # --- Contrôle 4 : source locale résolue et vérifiée -------------------- #
+    resolution: SourceResolution | None = (
+        resolve_local_source(manifest.source) if resolve_source else None
+    )
 
     return LoadedManifest(path=path, manifest=manifest, resolution=resolution)
 
 
-def load_all_manifests(directory: Path) -> dict[str, LoadedManifest]:
-    """Charge tous les ``*.yaml`` de ``directory``, clé → :class:`LoadedManifest`.
+def load_all_manifests(
+    directory: Path, *, resolve_sources: bool = False
+) -> dict[str, LoadedManifest]:
+    """Charge tous les manifestes sans exiger les corpus par défaut.
 
     L'ordre de chargement est trié (déterministe). Une même clé dans deux
-    fichiers est une erreur : elle rendrait le registre ambigu.
+    fichiers est une erreur : elle rendrait le registre ambigu. Le catalogue
+    sert notamment à la CI statique et aux commandes de liste, qui doivent
+    fonctionner sans données externes ; passer ``resolve_sources=True`` active
+    la vérification stricte des sources locales.
     """
     directory = Path(directory)
     if not directory.is_dir():
@@ -366,7 +377,7 @@ def load_all_manifests(directory: Path) -> dict[str, LoadedManifest]:
 
     loaded: dict[str, LoadedManifest] = {}
     for yaml_path in sorted(directory.glob("*.yaml")):
-        item = load_manifest(yaml_path)
+        item = load_manifest(yaml_path, resolve_source=resolve_sources)
         key = item.manifest.key
         if key in loaded:
             raise ManifestError(

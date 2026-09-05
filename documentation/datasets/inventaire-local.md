@@ -31,7 +31,7 @@ Racine : `F:\IA\Anonymisation\eval\datasets\`
 | **TAB officiel** | `TAB/official/echr_{train,dev,test}.json` + `evaluation.py` | 82 Mo | 127 documents en dev ; annotations par annotateur avec `entity_type`, `start_offset`, `end_offset`, `span_text`, **`identifier_type`** (DIRECT/QUASI), **`entity_id`** (coréférence), `confidential_status` |
 | **RAT-Bench** | `RAT-Bench/english.jsonl` | 2,3 Go (avec cache) | `id`, `profile`, `direct_identifiers`, `indirect_identifiers`, `features`, **`difficulty`**, `text`, `scenario` |
 | **PUMS** | `RAT-Bench/cache/pums_population.parquet` | — | **3 373 378 individus**, 10 attributs + poids `PWGTP` : state of residence, citizenship status, marital status, educational attainment, sex, employment status, occupation, race |
-| **PersonalReddit** | `PersonalReddit/Reddit_synthetic/{train,test}.jsonl` | 3,0 Mo | `personality` (age, sex, city_country, birth_city_country, education, occupation, income, income_level, relationship_status), `feature`, **`hardness`**, `response`, `guess`, `guess_correctness` |
+| **PersonalReddit** | `PersonalReddit/Reddit_synthetic/{train,test}.jsonl` | 2,3 Mo | **525 exemples synthétiques**, 40 profils latents ; `personality` (9 attributs), `feature`, **`hardness`** (1–5), `response`, `guess`, `guess_correctness` |
 | **DB-bio** | `DB-bio/{train,val,test}.jsonl` | 20 Mo | `text`, `l1`/`l2`/`l3` (labels d'occupation hiérarchiques), `wiki_name`, `people` |
 | **SupportTicketsReal** | `SupportTicketsReal/train.parquet` | 24 Mo | **61 765 tickets**, colonnes `subject`, `body`, `answer`, `type`, **`queue`**, `priority`, **`language`**, **`version`**, `tag_1..8` |
 | **BitextSupportSynthetic** | `BitextSupportSynthetic/train.parquet` | 5,8 Mo | 26 872 échanges, `instruction`, `category`, **`intent`**, `response` |
@@ -104,7 +104,7 @@ source est calculé et figé dans le manifeste à la première ingestion.
 | **RAT-Bench** | 2,3 Go dont l'essentiel est le cache PUMS. Charger PUMS en colonnes (pyarrow), jamais intégralement en mémoire naïvement. |
 | **PUMS** | La colonne `PWGTP` est un **poids de sondage** : `k` doit être calculé en sommant les poids, pas en comptant les lignes. Ignorer ce point sous-estimerait `k` d'un facteur ~100. |
 | **SupportTicketsReal** | Tickets **réels** → personnes réelles. Garde E2 de SPEC-08 : l'attaquant avec recherche web y est interdit, et aucune sortie d'attaquant ne doit être journalisée. |
-| **PersonalReddit** | Vérifier s'il s'agit de données Reddit réelles ou synthétiques (le répertoire s'appelle `Reddit_synthetic`). Traiter comme réel par précaution tant que ce n'est pas établi. |
+| **PersonalReddit** | Le cache local est la release synthétique ETH SRI ; il ne contient pas les 520 profils Reddit réels de l'article. Licence des exemples : CC BY-NC-SA 4.0 ; garde E2 non applicable. |
 | **DB-bio** | Personnes réelles (biographies Wikipedia) → même garde E2. |
 
 ## 7. Conséquence sur la priorisation

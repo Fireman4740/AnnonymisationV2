@@ -127,7 +127,6 @@ def validate_anonymization(
                     f"placeholder pseudonyme malformé pour {d.qi_category}@{d.start}-{d.end}"
                 )
 
-    # -- 2. Motifs DIRECT résiduels dans le texte anonymisé.
     if checks.check_forbidden_patterns:
         matches = apply_patterns(anonymized_text, language, patterns)
         if lexicons is not None:

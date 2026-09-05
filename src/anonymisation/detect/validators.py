@@ -16,7 +16,9 @@ naïf : un numéro à 16 chiffres qui échoue Luhn n'est pas une carte bancaire.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import date
+from typing import Any
 
 # --------------------------------------------------------------------------- #
 # Algorithmes de contrôle génériques
@@ -349,25 +351,25 @@ def validate_date(value: str, language: str = "fr") -> dict[str, str] | None:
 
     match = _DATE_NUMERIC_RE.match(value)
     if match:
-        day, month, year = match.groups()
-        year_i = int(year) if len(year) == 4 else 2000 + int(year)
-        return _safe_iso(year_i, int(month), int(day))
+        day_text, month_text, year_text = (str(part) for part in match.groups())
+        year_i = int(year_text) if len(year_text) == 4 else 2000 + int(year_text)
+        return _safe_iso(year_i, int(month_text), int(day_text))
 
     match = _DATE_FR_TEXT_RE.match(value)
     if match:
-        day, month_name, year = match.groups()
-        month = _MONTHS_FR.get(month_name.lower())
-        if month is None:
+        day_text, month_name, year_text = (str(part) for part in match.groups())
+        month_fr = _MONTHS_FR.get(month_name.lower())
+        if month_fr is None:
             return None
-        return _safe_iso(int(year), month, int(day))
+        return _safe_iso(int(year_text), month_fr, int(day_text))
 
     match = _DATE_EN_TEXT_RE.match(value)
     if match:
-        month_name, day, year = match.groups()
-        month = _MONTHS_EN.get(month_name.lower())
-        if month is None:
+        month_name, day_text, year_text = (str(part) for part in match.groups())
+        month_en = _MONTHS_EN.get(month_name.lower())
+        if month_en is None:
             return None
-        return _safe_iso(int(year), month, int(day))
+        return _safe_iso(int(year_text), month_en, int(day_text))
 
     return None
 
@@ -383,7 +385,7 @@ def _safe_iso(year: int, month: int, day: int) -> dict[str, str] | None:
 #: ``validator`` du YAML vers une fonction réelle. Toute entrée YAML citant
 #: un nom absent d'ici doit faire échouer le chargement (pas d'ignorance
 #: silencieuse).
-VALIDATORS: dict[str, object] = {
+VALIDATORS: dict[str, Callable[[str], Any]] = {
     "luhn": luhn,
     "validate_iban": validate_iban,
     "validate_bic": validate_bic,

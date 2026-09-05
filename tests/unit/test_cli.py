@@ -191,6 +191,18 @@ def test_ingest_conflicting_args_exit2(repo: Path) -> None:
         cli.main(["datasets", "ingest", "tst", "--all", "--split", "train"])
     assert excinfo.value.code == 2
 
+def test_ingest_all_skips_unregistered_corpus_and_reports(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le batch CI continue et liste un corpus sans adaptateur."""
+    _write_manifest(repo)
+    monkeypatch.setattr(cli, "REGISTRY", {})
+
+    assert cli.main(["datasets", "ingest", "--all", "--skip-missing"]) == 0
+    out = capsys.readouterr().out
+    assert "Corpus absents ou ignorés" in out
+    assert "tst : adaptateur absent" in out
+
 
 def test_download_parser_accepts_force_and_pin() -> None:
     args = cli.build_parser().parse_args(["datasets", "download", "tst", "--force", "--pin"])

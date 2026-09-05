@@ -207,7 +207,9 @@ def test_decisions_are_explainable(policy_set):
 
 def test_monotonic_suppression_count_across_policies(policy_set):
     """P0 -> P4 doit produire un nombre de suppressions QUASI croissant (ou égal)."""
-    annotations_factory = lambda: [_quasi_age(), _quasi_geo()]
+    def annotations_factory():
+        return [_quasi_age(), _quasi_geo()]
+
     counts = []
     for name in ("P0", "P1", "P2", "P3", "P4"):
         engine = PolicyEngine(policy_set.get(name))

@@ -12,9 +12,10 @@ validateur cité dans le YAML mais absent de ``validators.VALIDATORS`` fait
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import yaml
 
@@ -134,7 +135,8 @@ def load_patterns(config_path: Path | None = None) -> tuple[list[CompiledPattern
         validator_name = entry.get("validator")
         validator_fn: Callable[[str], Any] | None = None
         if validator_name is not None:
-            validator_fn = VALIDATORS.get(validator_name)
+            validator_key = str(validator_name)
+            validator_fn = VALIDATORS.get(validator_key)
             if validator_fn is None:
                 raise PatternConfigError(
                     f"Motif {entry_id!r} : validateur inconnu {validator_name!r}. "
@@ -183,7 +185,7 @@ def _context_window(text: str, start: int, end: int, window: int) -> str:
 def apply_patterns(
     text: str,
     language: str,
-    patterns: list[CompiledPattern],
+    patterns: Sequence[CompiledPattern],
 ) -> list[Candidate]:
     """Applique tous les motifs compilés à ``text`` et produit des ``Candidate``.
 

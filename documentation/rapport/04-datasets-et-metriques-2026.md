@@ -68,15 +68,18 @@ métriques concrètes**.
 | **SPIA** [@oh2026spia] | 675 documents (144 TAB + 531 PANORAMA), **1 712 sujets**, 7 040 PII, 15 catégories | EN | **Premier dataset multi-sujets avec métriques d'inférence par sujet** | MIT + CC BY 4.0 |
 | **PANORAMA** [@selvam2025panorama] | 384 789 documents | EN | Grande échelle, **cohérence d'attributs forcée** (âges familiaux, éducation-emploi) | CC BY 4.0 |
 
-Ces deux corpus sont **ouverts et redistribuables**, contrairement à
-PersonalReddit et MIMIC-III. Ils entrent au niveau de priorité P0 pour l'axe D.
+Les deux corpus SPIA et PANORAMA sont **ouverts et redistribuables** (MIT + CC BY
+4.0). Le cache PersonalReddit local est une autre catégorie : il contient les
+exemples synthétiques ETH SRI sous CC BY-NC-SA 4.0, tandis que le PersonalReddit
+réel de l'article ICLR n'est pas distribué. Ils entrent au niveau de priorité P0
+pour l'axe D.
 
 ### 3.2 Corrections sur les datasets déjà fichés
 
 | Dataset | Correction |
 |---------|-----------|
-| **PersonalReddit** | 520 profils **réels**, non redistribué pour raisons de vie privée. ⚠️ Contredit ce que le README du cache local laissait entendre — voir §6. |
-| **SynthPAI** | Proxy **libre** de PersonalReddit, écart < 12,5 % vs données réelles. C'est ce chiffre qui légitime son usage en remplacement. |
+| **PersonalReddit** | Le cache local (`Reddit_synthetic/`) est la release synthétique ETH SRI : 525 exemples et 40 profils latents. Il est distinct des 520 profils réels du papier, non redistribués pour raisons de vie privée. Voir la décision G-6. |
+| **SynthPAI** | Proxy **libre** de l'inférence d'attributs PersonalReddit ; il ne doit pas être présenté comme un accès aux profils réels. |
 | **IPI** | Confirmation : guidelines et identifiants publiés, **pas les documents**. Cohérent avec l'abandon de PhysioNet. |
 | **TAB** | 1 268 arrêts, dont **144 repris dans SPIA** — permet une comparaison directe avec la littérature multi-sujets. |
 | **ai4privacy OpenPII** | Jusqu'à 1 M d'exemples, **30 langues** dont le français. Axe A uniquement. |
@@ -240,7 +243,7 @@ précisée :
 |---------|--------|
 | **Aucun benchmark de risque (axes B/D) n'existe en français.** PETRE, TRIR, AAC, CPR/IPR, SynthPAI, SPIA sont tous validés en anglais. | La transposition au français est une **hypothèse de travail**, pas un résultat établi. À déclarer dans toute publication. |
 | **Aucun dataset RH ou support n'a jamais servi à calculer CPR/IPR, TRIR ou AAC.** Ces métriques sont validées sur juridique (TAB) et forums. | Leur transférabilité à des tickets courts ou des CV **reste à démontrer empiriquement**. C'est un résultat à produire, pas à supposer. |
-| **PersonalReddit : 520 profils réels, non redistribués.** | ⚠️ **Contredit** le README du cache local (`Reddit_synthetic/`), qui le présente comme synthétique. À trancher avant toute mesure — voir ticket [F-6](../tickets/EPIC-F-dettes.md). La prudence impose de le traiter comme réel. |
+| **PersonalReddit : le cache local est synthétique.** | La décision G-6 distingue les 525 exemples ETH SRI présents localement des 520 profils réels du papier, qui ne sont pas redistribués. La garde E2 ne s'applique pas au cache synthétique ; elle reste obligatoire pour toute donnée Reddit réelle. |
 | PIIBench multi-source et SPY : chiffres non revérifiés en profondeur. | À vérifier avant citation formelle. |
 | IDs arXiv 2604.21211 (SPIA), 2604.15776 (PIIBench), 2505.12238 (PANORAMA), 2502.18545 (PII-Bench) | Dates 2025–2026 : **à revérifier avant citation définitive**. |
 

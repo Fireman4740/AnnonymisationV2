@@ -23,9 +23,10 @@ Exemples (voir tests) :
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import yaml
 

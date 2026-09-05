@@ -8,12 +8,17 @@ une métrique diagnostique à un chiffre officiel est interdit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from math import isfinite
 from typing import Any
 
 
-class MetricStatus(StrEnum):
+class MetricStatus(str, Enum):
+    """Statut de publication d'une métrique.
+
+    ``str`` est mélangé à ``Enum`` (plutôt que ``enum.StrEnum``) pour rester
+    importable sur Python 3.10, la version documentée comme compatible.
+    """
 
     OFFICIAL = "official"
     SAMPLED = "sampled"
@@ -23,7 +28,7 @@ class MetricStatus(StrEnum):
     FAILED = "failed"
 
 
-class MetricDirection(StrEnum):
+class MetricDirection(str, Enum):
     """Sens d'amélioration d'une métrique."""
 
     MAXIMIZE = "maximize"

@@ -14,6 +14,7 @@ API publique :
   hors-ligne de l'étape VALIDATE.
 """
 
+from anonymisation.pipeline.guards import LocalOnlyViolationError, assert_local_only
 from anonymisation.pipeline.orchestrator import Pipeline, PipelineCapabilityError
 from anonymisation.pipeline.profiles import (
     ProfileError,
@@ -44,4 +45,6 @@ __all__ = [
     "load_runtime_profile",
     "serialize_pipeline_result",
     "validate_anonymization",
+    "LocalOnlyViolationError",
+    "assert_local_only",
 ]

@@ -195,16 +195,46 @@ def validate_dataset(
                     ref_id=ann.annotation_id,
                 )
             )
+    # E-VAL-104 — référence de sujet explicite (SPEC-02 v2.1).
+    for ann in annotations:
+        document = documents_by_id.get(ann.doc_id)
+        if document is None or not document.subject_ids:
+            continue
+        if ann.subject_id is None:
+            issues.append(
+                ValidationIssue(
+                    code="E-VAL-104",
+                    severity="error",
+                    message=(
+                        "annotation.subject_id absent pour un document multi-sujets : "
+                        f"{document.doc_id!r}"
+                    ),
+                    doc_id=ann.doc_id,
+                    ref_id=ann.annotation_id,
+                )
+            )
+        elif ann.subject_id not in document.subject_ids:
+            issues.append(
+                ValidationIssue(
+                    code="E-VAL-104",
+                    severity="error",
+                    message=(
+                        f"subject_id orphelin : {ann.subject_id!r} absent de "
+                        f"documents[{document.doc_id!r}].subject_ids"
+                    ),
+                    doc_id=ann.doc_id,
+                    ref_id=ann.annotation_id,
+                )
+            )
 
     # ---------------------------------------------------------------- #
     # E-VAL-101 — I-ANN-1 : offsets valides (bloquant)
-    # ---------------------------------------------------------------- #
     for ann in annotations:
-        doc = documents_by_id.get(ann.doc_id)
-        if doc is None:
+        annotation_doc = documents_by_id.get(ann.doc_id)
+        if annotation_doc is None:
             continue  # déjà signalé par E-VAL-104
         try:
-            ann.check_against_text(doc.text)
+            ann.check_against_text(annotation_doc.text)
         except ValueError as exc:
             issues.append(
                 ValidationIssue(

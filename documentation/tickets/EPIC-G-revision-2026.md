@@ -44,8 +44,10 @@ cohérence produit des combinaisons de QI **plausibles**, là où un générateu
 naïf produit des profils incohérents dont le `k` n'a aucun sens. C'est un modèle
 méthodologique direct pour [SPEC-05](../specifications/SPEC-05-generation-corpus-synthetiques.md).
 
-Les deux sont **ouverts et redistribuables** (MIT + CC BY 4.0), contrairement à
-PersonalReddit et MIMIC-III.
+Les deux sont **ouverts et redistribuables** (MIT + CC BY 4.0). Le cache
+PersonalReddit local est distinct : il contient les exemples synthétiques ETH SRI
+sous CC BY-NC-SA 4.0 ; le PersonalReddit réel de l'article ICLR n'est pas
+distribué.
 
 ### Périmètre
 
@@ -280,52 +282,45 @@ protégée.
 
 ---
 
-## G-6 — Trancher le statut de PersonalReddit
+## G-6 — Trancher le statut de PersonalReddit — **Résolu**
 
 | | |
 |---|---|
 | **Priorité** | **P0 — bloquant pour toute mesure sur ce corpus** |
 | **Dépend de** | — |
 | **Effort** | 0,25 j |
+| **Décision** | Le cache local est synthétique (`structure.synthetic: true`) |
 
-### La contradiction
+### Contradiction résolue
 
-| Source | Affirmation |
-|--------|-------------|
-| `README.md` du cache local | « Dataset de commentaires Reddit **synthétiques** », origine `eth-sri/llmprivacy/data/synthetic`, répertoire `Reddit_synthetic/` |
-| Revue d'avril 2026 [@staab2024beyond] | PersonalReddit = **520 profils réels**, **non redistribué** pour raisons de vie privée |
+| Source | Constat |
+|--------|---------|
+| `README.md` du cache local | Décrit des commentaires Reddit synthétiques et pointe vers `eth-sri/llmprivacy/data/synthetic`. |
+| Dépôt ETH SRI | Le PersonalReddit original n'est pas publié pour des raisons de vie privée ; des exemples synthétiques sont publiés séparément. |
+| Cache local | 318 lignes `train` + 207 lignes `test` = 525 exemples, 40 profils latents ; l'union correspond à `synthetic_dataset.jsonl` après retrait du champ local `label`. |
+| Inspection du contenu | Profils, réponses et lieux générés ; aucun identifiant de compte ou nom d'utilisateur Reddit réel. |
 
-Les deux ne peuvent pas être vrais. Hypothèse la plus probable : le cache local
-contient le **sous-ensemble synthétique** publié par ETH SRI, distinct du
-PersonalReddit réel utilisé dans le papier ICLR — mais le README le nomme de
-façon ambiguë.
+Les **520 profils réels** rapportés par `staab2024beyond` ne sont donc pas dans le
+cache local. La proximité numérique entre 520 profils et 525 exemples ne prouve
+aucune identité de corpus.
 
-### Pourquoi c'est bloquant
+### Conséquences appliquées
 
-Le statut détermine :
-
-- `structure.synthetic` dans le manifeste ;
-- l'applicabilité de la **garde E2** de SPEC-08 (attaquant web interdit sur les
-  corpus de personnes réelles) ;
-- la possibilité de **publier des exemples qualitatifs** ;
-- l'applicabilité du RGPD.
-
-### Travail
-
-1. Comparer la volumétrie locale (318 train + 207 test = **525 lignes**) aux
-   **520 profils** du papier. La proximité des deux chiffres est suspecte et
-   demande vérification.
-2. Inspecter le contenu : des noms, lieux et détails réellement plausibles
-   plutôt que générés ?
-3. Vérifier la licence sur `eth-sri/llmprivacy`.
-4. Trancher, et répercuter dans la fiche, le manifeste et les gardes.
+- `configs/datasets/personalreddit.yaml` déclare `structure.synthetic: true`,
+  525 documents, 40 profils et la licence CC BY-NC-SA 4.0.
+- `documentation/datasets/personalreddit.md` distingue explicitement la release
+  synthétique du corpus réel non redistribué.
+- La garde E2 n'est pas applicable au cache synthétique ; elle reste obligatoire
+  pour toute source Reddit réelle.
+- Les fichiers locaux `train.jsonl` et `test.jsonl` partagent les 40 profils :
+  ils ne doivent pas être utilisés comme split auteur-disjoint. Toute mesure
+  author-level doit reconstruire un split groupé déterministe.
 
 ### Critères d'acceptation
 
-- [ ] Le statut est établi, avec la preuve à l'appui.
-- [ ] Le manifeste porte le bon `structure.synthetic`.
-- [ ] La fiche [`personalreddit.md`](../datasets/personalreddit.md) est corrigée
-      et la contradiction documentée.
-- [ ] **En cas de doute persistant, traiter comme réel** : c'est le choix
-      conservateur, et le coût d'une erreur dans l'autre sens serait une fuite
-      de données personnelles réelles.
+- [x] Le statut est établi, avec preuve de provenance, volumétrie et contenu.
+- [x] Le manifeste porte `structure.synthetic: true`.
+- [x] La fiche `personalreddit.md` est corrigée et la contradiction documentée.
+- [x] La règle conservatrice est satisfaite par une séparation explicite entre
+      cache synthétique et PersonalReddit réel non distribué ; aucune donnée
+      ambiguë n'est traitée comme réelle sans preuve.

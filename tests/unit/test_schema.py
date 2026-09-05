@@ -15,12 +15,12 @@ from pydantic import ValidationError
 from anonymisation.schema.models import (
     Annotation,
     Combination,
+    CombinationSource,
     Document,
     Domain,
     QiValue,
     RiskModel,
     Scope,
-    CombinationSource,
     TargetType,
 )
 from anonymisation.schema.taxonomy import (

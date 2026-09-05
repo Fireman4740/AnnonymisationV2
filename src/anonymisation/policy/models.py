@@ -12,6 +12,7 @@ en plus de la validation Pydantic standard :
 
 from __future__ import annotations
 
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, Final
 
@@ -62,7 +63,7 @@ class Thresholds(BaseModel):
         if self.suppress_above is not None:
             ordered.append(self.suppress_above)
 
-        for lower, upper in zip(ordered, ordered[1:]):
+        for lower, upper in pairwise(ordered):
             if lower > upper:
                 raise PolicyConfigError(
                     f"Seuils non monotones : {ordered} "

@@ -16,9 +16,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # pour `import fixtures`
+
+from fixtures import load_micro
 
 from anonymisation.schema.models import (
     Annotation,
@@ -42,7 +42,6 @@ from anonymisation.schema.taxonomy import (
     Subject,
 )
 from anonymisation.schema.validation import validate_dataset
-from fixtures import load_micro
 
 TEXT = "J'ai moins de 30 ans et je suis doctorant, je cherche à poser un arrêt maladie."
 

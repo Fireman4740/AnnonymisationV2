@@ -69,7 +69,7 @@ class PseudoMapper:
         self._mapping: dict[str, str] = {}
 
     def _digest(self, qi_category: str, surface_normalisee: str) -> str:
-        message = f"{self._scope}|{qi_category}|{surface_normalisee}".encode("utf-8")
+        message = f"{self._scope}|{qi_category}|{surface_normalisee}".encode()
         raw = hmac.new(self._secret, message, hashlib.sha256).digest()
         # Base32 : alphabet lisible (pas de confusion 0/O, 1/I), tronqué à
         # ``length`` caractères. Suffisant pour l'explicabilité, pas pour

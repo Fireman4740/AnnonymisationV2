@@ -96,13 +96,13 @@ def _metric_dict(
 
 
 def _aggregate_counts(
-    records: Iterable[tuple[Sequence[Any], Sequence[Any]]], *, match: str = "overlap"
+    records: Iterable[tuple[Sequence[Any], Sequence[Any]]], *, match: str = "partial"
 ) -> dict[str, Any]:
     totals = {"tp": 0, "fp": 0, "fn": 0, "gold": 0, "pred": 0}
     for gold, pred in records:
         result = span_metrics(gold, pred, match=match)
         for key in totals:
-            totals[key] += int(result[key] or 0)
+            totals[key] += result[key] or 0
     tp, fp, fn = totals["tp"], totals["fp"], totals["fn"]
     precision = tp / (tp + fp) if tp + fp else None
     recall = tp / (tp + fn) if tp + fn else None
@@ -217,7 +217,7 @@ def build_scorecard(
     documents_by_doc: Mapping[str, Any],
     reproducibility: Mapping[str, Any],
     requested_status: MetricStatus | str = MetricStatus.DIAGNOSTIC,
-    match: str = "overlap",
+    match: str = "partial",
 ) -> dict[str, Any]:
     """Agrège un run figé en scorecard SPEC-07 §10.
 

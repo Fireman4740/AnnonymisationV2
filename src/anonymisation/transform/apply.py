@@ -14,8 +14,9 @@ Points de correction critiques (voir tests) :
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Sequence
+from itertools import pairwise
 
 from anonymisation.transform.decisions import Action, AnonymizationDecision
 
@@ -49,7 +50,7 @@ def _check_bounds(text: str, decisions: Sequence[AnonymizationDecision]) -> None
 def _check_no_overlap(decisions: Sequence[AnonymizationDecision]) -> None:
     ordered = sorted(decisions, key=lambda d: d.start)
     overlaps: list[tuple[int, int, int, int]] = []
-    for previous, current in zip(ordered, ordered[1:]):
+    for previous, current in pairwise(ordered):
         if current.start < previous.end:
             overlaps.append((previous.start, previous.end, current.start, current.end))
     if overlaps:

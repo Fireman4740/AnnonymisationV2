@@ -21,7 +21,7 @@ from anonymisation.metrics.entities import (
     same_category,
 )
 
-_MATCH_MODES = frozenset({"exact", "overlap", "entity"})
+_MATCH_MODES = frozenset({"exact", "partial", "overlap", "entity"})
 _TOKEN_RE = re.compile(r"\S+")
 
 
@@ -35,18 +35,12 @@ def _candidate_match(gold: SpanLike, pred: SpanLike, mode: str) -> bool:
     return overlaps(gold, pred) and same_category(gold, pred)
 
 
-def _one_to_one_counts(
-    gold: Sequence[SpanLike], pred: Sequence[SpanLike], mode: str
-) -> tuple[int, int, int]:
-    """Compte TP/FP/FN avec un appariement injectif **maximal**.
-
-    Un appariement glouton dépendrait de l'ordre des spans : un gold large
-    pourrait consommer la seule prédiction qu'un gold plus étroit peut
-    apparier, et sous-estimer le rappel. L'algorithme de Kuhn (chemins
-    augmentants) donne un cardinal maximal, donc un résultat indépendant de
-    l'ordre d'entrée ; les listes d'adjacence sont triées, l'exécution est
-    donc déterministe.
-    """
+def _matching_pairs(
+    gold: Sequence[SpanLike],
+    pred: Sequence[SpanLike],
+    mode: str,
+) -> frozenset[tuple[int, int]]:
+    """Retourne un appariement injectif maximal et déterministe."""
     adjacency = [
         [
             index
@@ -68,8 +62,39 @@ def _one_to_one_counts(
                 return True
         return False
 
-    true_positive = sum(_augment(gold_index, set()) for gold_index in range(len(gold)))
+    for gold_index in range(len(gold)):
+        _augment(gold_index, set())
+    return frozenset((gold_index, pred_index) for pred_index, gold_index in holder_of.items())
+
+
+def _one_to_one_counts(
+    gold: Sequence[SpanLike], pred: Sequence[SpanLike], mode: str
+) -> tuple[int, int, int]:
+    pairs = _matching_pairs(gold, pred, mode)
+    true_positive = len(pairs)
     return true_positive, len(pred) - true_positive, len(gold) - true_positive
+
+
+def _partial_counts(
+    gold: Sequence[SpanLike], pred: Sequence[SpanLike]
+) -> tuple[float, int, int, int]:
+    """Compte exacts/partiels selon SemEval-2013 task 9.1.
+
+    Un span partiellement recouvert compte pour 0,5 dans le numerateur de
+    precision et de rappel, tout en consommant un gold et une prediction.
+    """
+    exact_pairs = _matching_pairs(gold, pred, "exact")
+    used_gold = {gold_index for gold_index, _ in exact_pairs}
+    used_pred = {pred_index for _, pred_index in exact_pairs}
+    remaining_gold = [index for index in range(len(gold)) if index not in used_gold]
+    remaining_pred = [index for index in range(len(pred)) if index not in used_pred]
+    partial_gold = [gold[index] for index in remaining_gold]
+    partial_pred = [pred[index] for index in remaining_pred]
+    partial_pairs = _matching_pairs(partial_gold, partial_pred, "partial")
+    correct = len(exact_pairs)
+    partial = len(partial_pairs)
+    matched = correct + partial
+    return correct + 0.5 * partial, correct, partial, matched
 
 
 def _entity_counts(gold: Sequence[SpanLike], pred: Sequence[SpanLike]) -> tuple[int, int, int]:
@@ -113,7 +138,7 @@ def _entity_counts(gold: Sequence[SpanLike], pred: Sequence[SpanLike]) -> tuple[
     return matched_gold, len(pred_groups) - matched_pred, len(gold_groups) - matched_gold
 
 
-def _ratio(numerator: int, denominator: int) -> float | None:
+def _ratio(numerator: float, denominator: float) -> float | None:
     return numerator / denominator if denominator else None
 
 
@@ -128,33 +153,51 @@ def span_metrics(
     gold: Iterable[SpanLike],
     pred: Iterable[SpanLike],
     *,
-    match: str = "overlap",
+    match: str = "partial",
 ) -> dict[str, Any]:
-    """Retourne précision/rappel/F1/F2 et dénominateurs span-level.
+    """Retourne les métriques span-level avec le mode déclaré.
 
-    ``exact`` exige les mêmes offsets, ``overlap`` une intersection non vide,
-    ``entity`` agrège les mentions par entité. Les catégories taxonomiques
-    doivent être compatibles ; un simple chevauchement mal étiqueté est un FP.
-    Une métrique dont le dénominateur gold est vide vaut ``None`` plutôt que
-    ``0.0`` dans les champs de rappel/F1.
+    ``partial`` suit SemEval-2013 task 9.1 : un chevauchement de bornes avec
+    label compatible vaut 0,5 en precision et rappel ; ``overlap`` est
+    conservé comme alias historique à crédit plein. ``entity`` exige que
+    toutes les mentions d'une entité soient couvertes.
     """
     if match not in _MATCH_MODES:
         raise ValueError(
             f"Mode de correspondance inconnu : {match!r} "
-            "(choix : exact, overlap, entity)"
+            "(choix : exact, partial, overlap, entity)"
         )
     gold_values = tuple(gold)
     pred_values = tuple(pred)
+    partial_count = 0
+    correct_count = 0
+    tp = 0.0
+    fp = 0.0
+    fn = 0.0
     if match == "entity":
-        tp, fp, fn = _entity_counts(gold_values, pred_values)
+        entity_tp, entity_fp, entity_fn = _entity_counts(gold_values, pred_values)
+        tp = float(entity_tp)
+        fp = float(entity_fp)
+        fn = float(entity_fn)
+        correct_count = entity_tp
+    elif match == "partial":
+        tp, correct_count, partial_count, _ = _partial_counts(gold_values, pred_values)
+        fp = len(pred_values) - correct_count - 0.5 * partial_count
+        fn = len(gold_values) - correct_count - 0.5 * partial_count
     else:
-        tp, fp, fn = _one_to_one_counts(gold_values, pred_values, match)
+        exact_tp, exact_fp, exact_fn = _one_to_one_counts(gold_values, pred_values, match)
+        tp = float(exact_tp)
+        fp = float(exact_fp)
+        fn = float(exact_fn)
+        correct_count = exact_tp
     precision = _ratio(tp, tp + fp)
     recall = _ratio(tp, tp + fn)
     return {
         "match": match,
         "mode": match,
         "tp": tp,
+        "correct": correct_count,
+        "partial": partial_count,
         "fp": fp,
         "fn": fn,
         "gold": len(gold_values) if match != "entity" else len(group_entities(gold_values)),
@@ -209,7 +252,7 @@ def weighted_token_precision(
 
 
 def category_metrics(
-    gold: Iterable[SpanLike], pred: Iterable[SpanLike], category: str, *, match: str = "overlap"
+    gold: Iterable[SpanLike], pred: Iterable[SpanLike], category: str, *, match: str = "partial"
 ) -> dict[str, Any]:
     """Calcule les métriques d'une catégorie, avec ``None`` si gold absent."""
     gold_values = tuple(

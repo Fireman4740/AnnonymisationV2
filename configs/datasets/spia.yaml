@@ -1,0 +1,70 @@
+key: spia
+name: "SPIA — Subject-level PII Inference Assessment"
+description: >
+  Benchmark multi-sujets de protection par inférence : 144 documents TAB et
+  531 documents PANORAMA, 1 712 sujets et 7 040 PII sur 15 catégories.
+doc: documentation/tickets/EPIC-G-revision-2026.md
+aliases: ["spia-benchmark"]
+
+source:
+  kind: local
+  path_env: ANONV2_SPIA_ROOT
+  files: ["spia_tab_144.jsonl", "spia_panorama_531.jsonl"]
+  paper: "arXiv:2604.21211"
+  instructions: >
+    Recuperer la release publique depuis github.com/maisonOP/spia ou
+    spia-bench/SPIA-benchmark, puis definir ANONV2_SPIA_ROOT sur sa racine
+    contenant les deux JSONL. Ne jamais ajouter ces donnees au depot.
+
+license:
+  spdx: "MIT AND CC-BY-4.0"
+  redistribution: true
+  restricted: false
+  citation: "oh2026spia"
+  notes: "TAB est MIT ; PANORAMA est CC BY 4.0. Le recouvrement TAB est preserve dans meta.tab_overlap."
+
+integrity:
+  sha256: null
+  expected_documents: 675
+  expected_profiles: 1712
+
+structure:
+  domain: generic
+  languages: ["en"]
+  synthetic: false
+  has_profiles: true
+  has_combinations: false
+  has_organizations: false
+  has_tasks: false
+  split_by: subject_id
+  splits: ["test"]
+
+label_map:
+  ID_NUMBER: {identifier_type: DIRECT, qi_categories: [DIR_ID_NUMBER], granularity: EXACT, stability: STABLE}
+  DRIVER_LICENSE: {identifier_type: DIRECT, qi_categories: [DIR_ID_NUMBER], granularity: EXACT, stability: STABLE}
+  PHONE: {identifier_type: DIRECT, qi_categories: [DIR_PHONE], granularity: EXACT, stability: VOLATILE}
+  PASSPORT: {identifier_type: DIRECT, qi_categories: [DIR_ID_NUMBER], granularity: EXACT, stability: STABLE}
+  EMAIL: {identifier_type: DIRECT, qi_categories: [DIR_EMAIL], granularity: EXACT, stability: VOLATILE}
+  NAME: {identifier_type: DIRECT, qi_categories: [DIR_NAME], granularity: EXACT, stability: STABLE}
+  SEX: {identifier_type: QUASI, qi_categories: [GEN_GENDER], granularity: COARSE, stability: STABLE}
+  AGE: {identifier_type: QUASI, qi_categories: [GEN_AGE], granularity: EXACT, stability: STABLE}
+  LOCATION: {identifier_type: QUASI, qi_categories: [GEN_GEO], granularity: COARSE, stability: VOLATILE}
+  NATIONALITY: {identifier_type: QUASI, qi_categories: [GEN_ORIGIN_BELIEF], granularity: COARSE, stability: STABLE}
+  EDUCATION: {identifier_type: QUASI, qi_categories: [GEN_EDUCATION], granularity: COARSE, stability: STABLE}
+  RELATIONSHIP: {identifier_type: QUASI, qi_categories: [GEN_FAMILY], granularity: COARSE, stability: STABLE}
+  OCCUPATION: {identifier_type: QUASI, qi_categories: [GEN_OCCUPATION], granularity: COARSE, stability: VOLATILE}
+  AFFILIATION: {identifier_type: QUASI, qi_categories: [GEN_AFFILIATION], granularity: COARSE, stability: VOLATILE}
+  POSITION: {identifier_type: QUASI, qi_categories: [HR_JOB_TITLE], granularity: COARSE, stability: VOLATILE}
+
+evaluation:
+  protocol: "spia-v1"
+  protocol_version: "1"
+  official_eligible: true
+  default_metric_status: "OFFICIAL"
+  granularities: ["document", "subject"]
+  report_by: ["source_corpus", "subject"]
+
+population:
+  population_id: null
+  k_computable: false
+  notes: "CPR/IPR reposent sur l'inference adversariale SPIA, pas sur k."

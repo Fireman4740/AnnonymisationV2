@@ -671,7 +671,8 @@ def check_lock_compatibility(lock_path: Path) -> dict[str, Any]:
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise LockIncompatibleError(f"lock illisible : {lock_path} ({exc})") from exc
-
+    if not isinstance(lock, dict):
+        raise LockIncompatibleError(f"{lock_path} : le lock doit être un mapping JSON")
     taxonomy = lock.get("taxonomy_version")
     if taxonomy is None:
         raise LockIncompatibleError(
@@ -682,4 +683,4 @@ def check_lock_compatibility(lock_path: Path) -> dict[str, Any]:
             f"{lock_path} : version de taxonomie figée {taxonomy!r} != courante "
             f"{TAXONOMY_VERSION!r} — les codes SPEC-01 ont changé, réingestion requise"
         )
-    return lock
+    return {str(name): value for name, value in lock.items()}

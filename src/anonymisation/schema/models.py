@@ -14,9 +14,9 @@ Deux choix imposés sur tous les modèles :
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Final
+from typing import Any, Final, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from anonymisation.schema.taxonomy import (
     ExpressionMode,
@@ -29,7 +29,7 @@ from anonymisation.schema.taxonomy import (
     validate_code,
 )
 
-SCHEMA_VERSION: Final[str] = "2.0"
+SCHEMA_VERSION: Final[str] = "2.1"
 
 _BASE = ConfigDict(frozen=True, extra="forbid")
 
@@ -90,11 +90,27 @@ class Document(BaseModel):
     language: str                       # ISO 639-1
     text: str                           # immuable après calcul des offsets
     author_id: str | None = None
+    subject_ids: tuple[str, ...] = ()   # sujets explicitement présents (G-1)
     org_id: str | None = None
     thread_id: str | None = None
     position_in_thread: int | None = None
     timestamp: str | None = None        # ISO 8601 UTC
     meta: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_subject_ids(self) -> Document:
+        if any(not subject_id for subject_id in self.subject_ids):
+            raise ValueError("subject_ids ne peut pas contenir d'identifiant vide")
+        if len(set(self.subject_ids)) != len(self.subject_ids):
+            raise ValueError("subject_ids doit être sans doublon")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _serialize_without_empty_subjects(self, handler: Any) -> dict[str, Any]:
+        data = cast(dict[str, Any], handler(self))
+        if not self.subject_ids:
+            data.pop("subject_ids", None)
+        return data
 
 
 # --------------------------------------------------------------------------- #
@@ -105,6 +121,7 @@ class Annotation(BaseModel):
 
     annotation_id: str
     doc_id: str
+    subject_id: str | None = None   # sujet porteur de cette PII (G-1)
     start: int | None = None
     end: int | None = None
     span_text: str | None = None
@@ -121,6 +138,12 @@ class Annotation(BaseModel):
     confidence: float = 1.0
     meta: dict[str, Any] = Field(default_factory=dict)
 
+    @model_serializer(mode="wrap")
+    def _serialize_without_empty_subject(self, handler: Any) -> dict[str, Any]:
+        data = cast(dict[str, Any], handler(self))
+        if self.subject_id is None:
+            data.pop("subject_id", None)
+        return data
     @model_validator(mode="after")
     def _check(self) -> Annotation:
         if not self.qi_categories:

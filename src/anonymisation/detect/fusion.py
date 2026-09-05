@@ -22,6 +22,7 @@ au calcul de k (SPEC-01 §6).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from anonymisation.detect.base import Candidate
@@ -62,15 +63,15 @@ def _is_real_conflict(a: Candidate, b: Candidate) -> bool:
     return _overlaps(a, b) and a.qi_category == b.qi_category
 
 
-def _sort_key(strategy: str):
+def _sort_key(strategy: str) -> Callable[[Candidate], tuple[float, ...]]:
     if strategy == "longest":
-        return lambda c: (c.length, c.confidence)
+        return lambda c: (float(c.length), c.confidence)
     if strategy == "highest_score":
-        return lambda c: (c.confidence, c.length)
+        return lambda c: (c.confidence, float(c.length))
     if strategy == "priority_longest":
-        return lambda c: (_TYPE_PRIORITY[c.identifier_type], c.length, c.confidence)
+        return lambda c: (float(_TYPE_PRIORITY[c.identifier_type]), float(c.length), c.confidence)
     if strategy == "priority_score":
-        return lambda c: (_TYPE_PRIORITY[c.identifier_type], c.confidence, c.length)
+        return lambda c: (float(_TYPE_PRIORITY[c.identifier_type]), c.confidence, float(c.length))
     raise ValueError(f"Stratégie de fusion inconnue : {strategy!r}. Choix : {STRATEGIES}")
 
 

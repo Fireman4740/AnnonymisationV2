@@ -303,7 +303,7 @@ class PolicyEngine:
         categories = getattr(annotation, "qi_categories", None)
         if not categories:
             raise PolicyEngineError("Annotation sans qi_categories : impossible de choisir une action")
-        return categories[0]
+        return str(categories[0])
 
     def _keep_decision(self, annotation: AnnotationLike, text: str, reason: str) -> AnonymizationDecision:
         start, end = self._require_offsets(annotation)
@@ -508,12 +508,14 @@ class PolicyEngine:
             if best_choice is None:
                 break
 
-            _, aid, action_name, new_value, new_risk = best_choice
-            if action_name == "GENERALIZE" and new_value is not None:
-                state[aid] = new_value
+            _, chosen_aid, chosen_action, chosen_value, new_risk = best_choice
+            if chosen_action == "GENERALIZE" and chosen_value is not None:
+                state[chosen_aid] = {
+                    str(key): item for key, item in chosen_value.items()
+                }
             else:
-                active.remove(aid)
-                suppressed.add(aid)
+                active.remove(chosen_aid)
+                suppressed.add(chosen_aid)
             risk = new_risk
 
         # Seuil non atteint malgré l'épuisement des actions possibles :
@@ -567,9 +569,23 @@ class PolicyEngine:
                     )
                 )
                 continue
-
             check_action_allowed("QUASI", granularity, Action.GENERALIZE)
-            surface, _ = generalize({**(getattr(ann, "value_normalized", None) or {}), "level": 0}, category, steps=level)  # type: ignore[arg-type]
+            normalized_value = getattr(ann, "value_normalized", None)
+            value_for_generalization: dict[str, Any]
+            if isinstance(normalized_value, dict):
+                value_for_generalization = {
+                    str(key): item for key, item in normalized_value.items()
+                }
+            else:
+                value_for_generalization = {}
+            generalized = generalize(
+                {**value_for_generalization, "level": 0}, category, steps=level
+            )
+            if generalized is None:
+                raise PolicyEngineError(
+                    f"Hiérarchie de généralisation épuisée pour {category!r}"
+                )
+            surface, _ = generalized
             decisions.append(
                 AnonymizationDecision(
                     start=start,

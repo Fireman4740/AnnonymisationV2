@@ -9,12 +9,16 @@ explicable.
 
 from __future__ import annotations
 
-from anonymisation.transform.apply import OverlappingDecisionsError, TransformResult, apply_decisions
+from anonymisation.transform.apply import (
+    OverlappingDecisionsError,
+    TransformResult,
+    apply_decisions,
+)
 from anonymisation.transform.decisions import (
     Action,
     ActionNotAllowedError,
-    AnonymizationDecision,
     AnnotationLike,
+    AnonymizationDecision,
     InvalidDecisionError,
     check_action_allowed,
 )

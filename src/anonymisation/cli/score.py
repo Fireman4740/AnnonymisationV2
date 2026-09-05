@@ -49,7 +49,7 @@ def _read_predictions(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         raise ScoreError(f"Prédictions absentes : {path}")
     records: list[dict[str, Any]] = []
-    line_number = "?"
+    line_number: int | str = "?"
     try:
         with path.open("r", encoding="utf-8") as handle:
             for _line_number, raw_line in enumerate(handle, start=1):

@@ -208,7 +208,7 @@ suivi par la v1, et la raison de son échec de campagne.
 | Décision | Échéance | Défaut proposé |
 |----------|----------|----------------|
 | Publier ou non les corpus internes | fin L5 | Publier |
-| Statut de PersonalReddit : données réelles ou synthétiques ? | **début L2** | Traiter comme réel (garde E2) tant que non établi |
+| Statut de PersonalReddit : données réelles ou synthétiques ? | **résolu, G-6** | Le cache local `Reddit_synthetic/` est la release synthétique ETH SRI (`synthetic: true`) ; il est distinct du PersonalReddit réel non distribué. Garde E2 non applicable au cache. |
 | Télécharger OpenPII pour le F1 par langue | fin L2 | Oui, c'est peu coûteux et c'est la seule couverture FR/multilingue de PII |
 | Modèle retenu pour l'attaquant B | début L6 | Le plus capable < 30 B disponible localement |
 | Campagne d'annotation humaine sur un sous-corpus | fin L5 | À arbitrer sur le coût |

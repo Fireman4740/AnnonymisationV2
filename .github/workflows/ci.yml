@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  ci-1-static:
+    name: CI-1 statique
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Installer les dépendances de développement
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+      - name: Ruff
+        run: ruff check src tests scripts
+      - name: Mypy strict
+        run: mypy --strict src/anonymisation
+      - name: Contrôle données et secrets
+        run: python scripts/check_no_data_committed.py
+
+  ci-2-unit:
+    name: CI-2 unitaire
+    needs: ci-1-static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Installer les dépendances de développement
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+      - name: Tests sans données externes
+        run: pytest -m "not requires_data and not slow"
+
+  ci-3-integration:
+    name: CI-3 intégration
+    needs: ci-2-unit
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Installer les dépendances de développement
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+      - name: Ingérer les corpus disponibles
+        run: anonv2 datasets ingest --all --skip-missing
+      - name: Valider les corpus effectivement ingérés
+        shell: bash
+        run: |
+          set -euo pipefail
+          for manifest in configs/datasets/*.yaml; do
+            key="$(basename "$manifest" .yaml)"
+            if [[ -f "data/processed/$key/.manifest.lock.json" ]]; then
+              anonv2 datasets validate "$key"
+            else
+              echo "CI-3 : corpus $key absent ou non ingéré — validation sautée"
+            fi
+          done
+      - name: Tests d'intégration disponibles
+        run: pytest -m "requires_data"
+
+  ci-4-evaluation:
+    name: CI-4 évaluation
+    needs: ci-3-integration
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Installer les dépendances de développement
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+      - name: Benchmark complet
+        run: pytest -m "slow"

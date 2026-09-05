@@ -18,8 +18,9 @@ Invariant absolu (audit §12.2, repris ici) :
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Sequence, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from anonymisation.schema.models import Annotation
 from anonymisation.schema.taxonomy import (

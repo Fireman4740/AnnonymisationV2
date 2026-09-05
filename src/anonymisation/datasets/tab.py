@@ -268,6 +268,14 @@ class TabAdapter(DatasetAdapter):
             canonical_annotator, canonical = ordered[0]
             source_types = sorted({item[1]["identifier_type"] for item in ordered})
             source_statuses = sorted({item[1]["confidential_status"] for item in ordered})
+            # Union multi-annotateurs : le statut retenu est le plus sensible,
+            # jamais le premier par ordre alphabétique — « NOT_CONFIDENTIAL »
+            # précède « SEX », et le prendre effacerait la sensibilité déclarée
+            # par un annotateur sur la même mention.
+            effective_status = next(
+                (status for status in source_statuses if status != "NOT_CONFIDENTIAL"),
+                source_statuses[0],
+            )
             effective_source_type = (
                 "DIRECT" if "DIRECT" in source_types else source_types[0]
             )
@@ -306,9 +314,9 @@ class TabAdapter(DatasetAdapter):
                     "identifier_type": output_identifier,
                     "source_identifier_types": source_types,
                     "identifier_type_adjusted": adjusted,
-                    "confidential_status": source_statuses[0],
+                    "confidential_status": effective_status,
                     "source_confidential_statuses": source_statuses,
-                    "sensitivity": self._status_to_sensitivity(source_statuses[0]),
+                    "sensitivity": self._status_to_sensitivity(effective_status),
                     "annotator_id": canonical_annotator,
                     "annotators": [item[0] for item in ordered],
                     "entity_id": output_entity_id,

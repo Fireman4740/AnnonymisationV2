@@ -1,0 +1,56 @@
+key: panorama
+name: "PANORAMA"
+description: >
+  Corpus synthetique de 384 789 textes PII-laces issus de 9 674 profils,
+  avec coherence contrainte des attributs et six types de contenu.
+doc: documentation/rapport/04-datasets-et-metriques-2026.md
+aliases: ["panorama-main"]
+
+source:
+  kind: local
+  path_env: ANONV2_PANORAMA_ROOT
+  files: ["train.parquet"]
+  repo: "srirxml/PANORAMA"
+  revision: "f0037fdba4d2f2be771079c3388d48a1242af3e0"
+  paper: "arXiv:2505.12238"
+  instructions: >
+    Acquerir la release Parquet depuis Hugging Face puis definir
+    ANONV2_PANORAMA_ROOT. Le lecteur Parquet requiert l'extra datasets.
+
+license:
+  spdx: "CC-BY-4.0"
+  redistribution: true
+  restricted: false
+  citation: "selvam2025panorama"
+  notes: "Corpus entierement synthetique ; ne pas le confondre avec SPIA, qui en echantillonne 531 documents."
+
+integrity:
+  sha256: null
+  expected_documents: 384789
+  expected_profiles: 9674
+
+structure:
+  domain: forum
+  languages: ["en"]
+  synthetic: true
+  has_profiles: false
+  has_combinations: false
+  has_organizations: false
+  has_tasks: false
+  split_by: document
+  splits: ["train"]
+
+label_map: {}
+
+evaluation:
+  protocol: "panorama-v1"
+  protocol_version: "1"
+  official_eligible: true
+  default_metric_status: "OFFICIAL"
+  granularities: ["document"]
+  report_by: ["content_type"]
+
+population:
+  population_id: null
+  k_computable: false
+  notes: "La release principale ne contient pas la table PANORAMA-Plus des profils."

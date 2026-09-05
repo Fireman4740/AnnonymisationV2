@@ -14,10 +14,9 @@ plus tard par le moteur de risque (SPEC-01 §6.2) : un âge devient un
 intervalle ``[min, max]``, une version un ``semver``, etc.
 """
 
-from __future__ import annotations
-
 import re
-from typing import Callable
+from collections.abc import Callable
+from typing import Any
 
 from anonymisation.detect.base import Candidate
 from anonymisation.schema.taxonomy import (
@@ -42,10 +41,10 @@ def _candidate(
     granularity: Granularity,
     stability: Stability,
     expression_mode: ExpressionMode = ExpressionMode.EXPLICIT,
-    value_normalized: dict | None = None,
+    value_normalized: dict[str, Any] | None = None,
     sensitivity: Sensitivity | None = None,
 ) -> Candidate:
-    meta: dict = {}
+    meta: dict[str, Any] = {}
     if value_normalized is not None:
         meta["value_normalized"] = value_normalized
     if sensitivity is not None:
@@ -260,6 +259,7 @@ def rule_seniority(text: str, language: str, lexicons: dict[str, list[str]]) -> 
     pattern = _SENIORITY_FR if language == "fr" else _SENIORITY_EN
     for m in pattern.finditer(text):
         years_group, since_year_group = m.group(1), m.group(2)
+        value_normalized: dict[str, Any]
         if years_group is not None:
             years = int(years_group)
             value_normalized = {"range": [years, years]}

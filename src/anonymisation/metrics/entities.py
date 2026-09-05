@@ -162,26 +162,92 @@ def entity_protection_counts(
     return protected, len(gold_groups)
 
 
-def entity_recall(
+def entity_recall_micro(
     gold: Iterable[SpanLike],
     pred: Iterable[SpanLike],
     *,
     identifier_type: IdentifierType | str,
 ) -> float:
-    """Calcule le rappel de protection au niveau entité, sur un document.
+    """Rappel entité micro-moyenné entre annotateurs.
 
-    Une entité n'est comptée comme protégée que si **toutes** ses mentions gold
-    ont une correspondance prédite. Cette définition évite qu'un nom répété
-    neuf fois, dont une occurrence fuit encore, soit présenté comme protégé
-    (SPEC-07 §2). Une absence d'entité gold renvoie ``0.0`` ; les ventilations
-    qui doivent distinguer absence et zéro utilisent ``None`` avant cet appel.
-
-    Les offsets étant relatifs à un texte donné, ``gold`` et ``pred`` doivent
-    porter sur le **même document** (voir :func:`entity_protection_counts`).
+    Chaque annotateur contribue ses entités au numérateur et au dénominateur.
+    Une prédiction sans ``annotator_id`` est partagée par tous les annotateurs;
+    une prédiction annotée est comparée à son annotateur homonyme.
     """
-    protected, total = entity_protection_counts(
-        gold, pred, identifier_type=identifier_type
+    gold_values = tuple(gold)
+    pred_values = tuple(pred)
+    annotators = tuple(
+        sorted(
+            {
+                str(field_value(item, "annotator_id"))
+                for item in gold_values
+                if field_value(item, "annotator_id") is not None
+            }
+        )
     )
-    if not total:
-        return 0.0
-    return protected / total
+    if len(annotators) < 2:
+        protected, total = entity_protection_counts(
+            gold_values, pred_values, identifier_type=identifier_type
+        )
+        return protected / total if total else 0.0
+
+    protected_total = 0
+    entity_total = 0
+    for annotator in annotators:
+        gold_group = tuple(
+            item for item in gold_values if str(field_value(item, "annotator_id")) == annotator
+        )
+        annotated_predictions = tuple(
+            item
+            for item in pred_values
+            if field_value(item, "annotator_id") is None
+            or str(field_value(item, "annotator_id")) == annotator
+        )
+        protected, total = entity_protection_counts(
+            gold_group, annotated_predictions, identifier_type=identifier_type
+        )
+        protected_total += protected
+        entity_total += total
+    return protected_total / entity_total if entity_total else 0.0
+
+
+def entity_recall(
+    gold: Iterable[SpanLike],
+    pred: Iterable[SpanLike],
+    *,
+    identifier_type: IdentifierType | str,
+    micro_average: bool | None = None,
+) -> float:
+    """Calcule le rappel entity-level ``ER_di`` ou ``ER_qi``.
+
+    Quand plusieurs annotateurs sont presents, le comportement par defaut est
+    la micro-moyenne normative. ``micro_average=False`` conserve le calcul
+    mono-ensemble pour les diagnostics historiques.
+    """
+    gold_values = tuple(gold)
+    pred_values = tuple(pred)
+    annotator_ids = {
+        field_value(item, "annotator_id")
+        for item in gold_values
+        if field_value(item, "annotator_id") is not None
+    }
+    if micro_average is not False and len(annotator_ids) > 1:
+        return entity_recall_micro(
+            gold_values, pred_values, identifier_type=identifier_type
+        )
+    protected, total = entity_protection_counts(
+        gold_values, pred_values, identifier_type=identifier_type
+    )
+    return protected / total if total else 0.0
+
+
+def entity_recall_metrics(
+    gold: Iterable[SpanLike], pred: Iterable[SpanLike]
+) -> dict[str, float]:
+    """Retourne les deux ventilations obligatoires ER_di et ER_qi."""
+    gold_values = tuple(gold)
+    pred_values = tuple(pred)
+    return {
+        "ER_di": entity_recall(gold_values, pred_values, identifier_type=IdentifierType.DIRECT),
+        "ER_qi": entity_recall(gold_values, pred_values, identifier_type=IdentifierType.QUASI),
+    }

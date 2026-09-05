@@ -168,7 +168,8 @@ coréférence et le risque :
 
 1. **Corpus QI français** (`quasifr`) — le plus petit et le plus simple ; valide
    la chaîne d'ingestion complète, et c'est du français annoté en QI.
-2. **PersonalReddit** — introduit le profil latent et le split par auteur.
+2. **PersonalReddit** — introduit le profil latent et l'axe de difficulté ; ses
+   fichiers source train/test nécessitent une reconstruction du split par auteur.
 3. **TAB officiel** — introduit la coréférence, le multi-annotateurs et les
    métriques entity-level.
 4. **SupportTicketsReal** — introduit le domaine support, le multilinguisme et

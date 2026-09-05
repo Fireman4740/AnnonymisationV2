@@ -20,6 +20,7 @@ import sys
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from anonymisation import __version__
 from anonymisation.datasets.ingest import (
@@ -34,13 +35,13 @@ from anonymisation.datasets.ingest import (
 )
 from anonymisation.datasets.manifest import (
     DatasetManifest,
-    ManifestError,
     load_all_manifests,
     load_manifest,
 )
 from anonymisation.datasets.registry import (
     ALIASES,
     REGISTRY,
+    ManifestError,
     UnknownDatasetError,
     UnmappedLabelError,
     list_keys,
@@ -86,11 +87,14 @@ def _lock_path(key: str) -> Path:
     return _dataset_dir(key) / LOCK_NAME
 
 
-def _read_lock(key: str) -> dict | None:
+def _read_lock(key: str) -> dict[str, Any] | None:
     path = _lock_path(key)
     if not path.is_file():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return None
+    return {str(name): value for name, value in payload.items()}
 
 
 def _manifest_path(key: str) -> Path:
@@ -201,6 +205,16 @@ def cmd_datasets_describe(key: str) -> int:
     return 0
 
 
+def _acquisition_is_current(path: Path, digest: str) -> bool:
+    """Le rapport d'acquisition existant décrit-il bien le corpus acquis ?"""
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("sha256") == digest
+
+
 def cmd_datasets_download(key: str, force: bool, pin: bool = False) -> int:
     """Acquiert une source et écrit son rapport reproductible."""
 
@@ -221,7 +235,13 @@ def cmd_datasets_download(key: str, force: bool, pin: bool = False) -> int:
         adapter = REGISTRY[canonical](loaded.manifest, RAW_ROOT / canonical)
         report = adapter.download(force=force)
         acquisition_path = report.path / ".acquisition.json"
-        if not acquisition_path.is_file():
+        # L'adaptateur peut avoir écrit son propre rapport (plus riche) pendant
+        # ``download`` ; on ne l'écrase que s'il est absent ou périmé — un
+        # rapport qui annonce l'ancien sha256 après une réacquisition rendrait
+        # la trace de reproductibilité fausse.
+        if not acquisition_path.is_file() or not _acquisition_is_current(
+            acquisition_path, report.sha256
+        ):
             write_json(
                 acquisition_path,
                 {
@@ -296,6 +316,65 @@ def cmd_datasets_ingest(key: str, split: str, limit: int | None, all_splits: boo
     )
     return 0
 
+def cmd_datasets_ingest_all(
+    split: str, limit: int | None, skip_missing: bool
+) -> int:
+    """Ingeste les manifestes disponibles et liste les corpus absents.
+
+    ``--skip-missing`` ne masque que l'absence d'un adaptateur ou d'une
+    source. Une erreur de schéma ou d'ingestion reste bloquante, sinon la CI
+    publierait un rapport vert pour un corpus réellement cassé.
+    """
+    if not CONFIG_DIR.is_dir():
+        print(f"Répertoire de manifestes introuvable : {CONFIG_DIR}", file=sys.stderr)
+        return 1
+
+    skipped: list[tuple[str, str]] = []
+    failures: list[tuple[str, str]] = []
+    ingested = 0
+    for manifest_path in sorted(CONFIG_DIR.glob("*.yaml")):
+        key = manifest_path.stem
+        if key not in REGISTRY:
+            skipped.append((key, "adaptateur absent"))
+            continue
+        try:
+            loaded = load_manifest(manifest_path)
+            if loaded.resolution is None and not (RAW_ROOT / key).exists():
+                reason = f"source non acquise dans {RAW_ROOT / key}"
+                if skip_missing:
+                    skipped.append((key, reason))
+                    continue
+                failures.append((key, reason))
+                continue
+        except LocalSourceError as exc:
+            if skip_missing:
+                skipped.append((key, str(exc)))
+                continue
+            failures.append((key, str(exc)))
+            continue
+        except ManifestError as exc:
+            failures.append((key, str(exc)))
+            continue
+
+        result = cmd_datasets_ingest(key, split, limit, all_splits=True)
+        if result == 0:
+            ingested += 1
+        else:
+            failures.append((key, "échec de la commande d'ingestion"))
+
+    print(f"Corpus ingérés : {ingested}")
+    print("Corpus absents ou ignorés :")
+    if skipped:
+        for key, reason in skipped:
+            print(f"  - {key} : {reason}")
+    else:
+        print("  aucun")
+    if failures:
+        print("Échecs d'ingestion :", file=sys.stderr)
+        for key, reason in failures:
+            print(f"  - {key} : {reason}", file=sys.stderr)
+    return 1 if failures else 0
+
 
 # --- datasets validate ------------------------------------------------------- #
 
@@ -336,7 +415,7 @@ def cmd_datasets_validate(key: str) -> int:
             print(f"Échec de la validation de {canonical} : {exc}", file=sys.stderr)
             return 1
     else:
-        loaded: dict[str, list] = {}
+        loaded: dict[str, list[Any]] = {}
         for rel in lock["files"]:
             table = rel.split("/")[-1].rsplit(".", 1)[0]
             model = TABLE_MODELS.get(table)
@@ -506,7 +585,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     ingest_p = dsub.add_parser("ingest", help="Normalise vers le format pivot (SPEC-04).")
-    ingest_p.add_argument("key")
+    ingest_p.add_argument(
+        "key", nargs="?", help="Clé du dataset ; omise avec --all pour le batch."
+    )
     ingest_p.add_argument("--split", default="all", help="Split cible (défaut : tous).")
     ingest_p.add_argument(
         "--limit", type=int, default=None, help="Troncature par table."
@@ -515,7 +596,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--all",
         dest="all_splits",
         action="store_true",
-        help="Ingeste tous les splits (défaut).",
+        help="Avec une clé : ingeste tous les splits ; sans clé : tous les datasets.",
+    )
+    ingest_p.add_argument(
+        "--skip-missing",
+        action="store_true",
+        help="En batch, saute les corpus sans source ou adaptateur et les liste.",
     )
 
     validate_p = dsub.add_parser("validate", help="Tous les invariants SPEC-02.")
@@ -577,6 +663,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.datasets_command == "download":
             return cmd_datasets_download(args.key, args.force, args.pin)
         if args.datasets_command == "ingest":
+            if args.key is None:
+                if not args.all_splits:
+                    parser.error("la clé est obligatoire, sauf avec --all")
+                if args.split != "all":
+                    parser.error("--all sans clé exige --split all")
+                return cmd_datasets_ingest_all(args.split, args.limit, args.skip_missing)
+            if args.skip_missing and not args.all_splits:
+                parser.error("--skip-missing est réservé au batch `ingest --all`")
             if args.all_splits and args.split != "all":
                 parser.error("--all est conflictuel avec --split distinct de 'all'")
             return cmd_datasets_ingest(args.key, args.split, args.limit, args.all_splits)

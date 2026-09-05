@@ -107,6 +107,11 @@ class _RunState:
     candidates: list[Candidate] = field(default_factory=list)
     annotations: list[Annotation] = field(default_factory=list)
     decisions: list[AnonymizationDecision] = field(default_factory=list)
+    #: Décisions réellement appliquées au texte par TRANSFORM (non-KEEP,
+    #: chevauchements fusionnés). VALIDATE contrôle celles-ci : contrôler les
+    #: décisions planifiées signalerait comme « placeholder manquant » tout
+    #: remplacement qu'une fusion a remplacé par la suppression du span union.
+    applied_decisions: list[AnonymizationDecision] = field(default_factory=list)
     risk: RiskAssessment | None = None
     traces: list[StageTrace] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -650,16 +655,14 @@ class Pipeline:
     # Étape 5 — TRANSFORM
     # ------------------------------------------------------------------ #
     def _stage_transform(self, state: _RunState) -> StageTrace:
-        # Seules les décisions NON-KEEP sont appliquées : ``apply_decisions``
-        # refuse tout chevauchement, y compris avec des KEEP (or KEEP et
-        # SUPPRESS peuvent légitimement porter sur le même span, I-ANN-5).
-        # La liste complète reste dans ``state.decisions`` (explicabilité).
-        non_keep = [d for d in state.decisions if d.action is not Action.KEEP]
-        merged = _merge_overlapping(non_keep, state.doc.text)
-
-        pseudos = [d for d in merged if d.action is Action.PSEUDONYMIZE]
+        # Le moteur de politique ne détient pas de secret HMAC : il pose un
+        # jeton ``[CAT_A_PSEUDONYMISER]``. La substitution par le placeholder
+        # réel doit précéder la construction de la liste appliquée, sinon le
+        # texte anonymisé garde le jeton d'attente alors que les décisions
+        # publiées annoncent le pseudonyme (incohérence + placeholder signalé
+        # comme manquant par VALIDATE).
         mapper: PseudoMapper | None = None
-        if pseudos:
+        if any(d.action is Action.PSEUDONYMIZE for d in state.decisions):
             pspec = self._profile.stages.transform.pseudonymization
             secret = os.environ.get(pspec.secret_env, "")
             if not secret:
@@ -688,6 +691,14 @@ class Pipeline:
             else:
                 final.append(decision)
         state.decisions = final
+
+        # Seules les décisions NON-KEEP sont appliquées : ``apply_decisions``
+        # refuse tout chevauchement, y compris avec des KEEP (or KEEP et
+        # SUPPRESS peuvent légitimement porter sur le même span, I-ANN-5).
+        # La liste complète reste dans ``state.decisions`` (explicabilité).
+        non_keep = [d for d in final if d.action is not Action.KEEP]
+        merged = _merge_overlapping(non_keep, state.doc.text)
+        state.applied_decisions = merged
 
         result = apply_decisions(state.doc.text, merged)
         state.current_text = result.anonymized_text
@@ -724,7 +735,7 @@ class Pipeline:
         checks = self._profile.stages.validation
         outcome = validate_anonymization(
             anonymized_text=state.current_text,
-            decisions=state.decisions,
+            decisions=state.applied_decisions,
             gold_annotations=state.gold,
             patterns=self._patterns,
             lexicons=self._lexicons,
@@ -743,11 +754,16 @@ class Pipeline:
                 status="ok",
             )
 
-        summary = (
-            f"{len(outcome.leaked_direct)} fuite(s) gold, "
-            f"{len(outcome.residual_patterns)} motif(s) DIRECT résiduel(s), "
-            f"{len(outcome.malformed_placeholders)} placeholder(s) malformé(s)"
-        )
+        # Seuls les constats non nuls sont cités : ``metrics/accounting`` classe
+        # l'erreur par mots-clés (« fuite », « placeholder », « motif »), donc un
+        # résumé qui énumère les trois compteurs — même à zéro — imputerait
+        # toute panne VALIDATE à une fuite (C-5, ventilation errors_by_type).
+        findings = [
+            (len(outcome.leaked_direct), "fuite(s) gold"),
+            (len(outcome.residual_patterns), "motif(s) DIRECT résiduel(s)"),
+            (len(outcome.malformed_placeholders), "placeholder(s) malformé(s)"),
+        ]
+        summary = ", ".join(f"{count} {label}" for count, label in findings if count)
         state.errors.append(f"VALIDATE : {summary}")
 
         fatal = checks.fail_on_leak and bool(outcome.leaked_direct)

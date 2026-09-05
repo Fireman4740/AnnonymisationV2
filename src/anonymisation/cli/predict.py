@@ -28,6 +28,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from anonymisation import __version__
 from anonymisation.datasets.ingest import LOCK_NAME
 from anonymisation.datasets.registry import (
@@ -36,12 +38,10 @@ from anonymisation.datasets.registry import (
     UnknownDatasetError,
     list_keys,
 )
+from anonymisation.pipeline.guards import LocalOnlyViolationError, assert_local_only
 from anonymisation.pipeline.orchestrator import Pipeline
 from anonymisation.pipeline.profiles import RuntimeProfile, load_runtime_profile
-from anonymisation.pipeline.traces import (
-    serialize_pipeline_result,
-    serialize_stage_trace,
-)
+from anonymisation.pipeline.traces import serialize_pipeline_result, serialize_stage_trace
 from anonymisation.schema.io import (
     atomic_write,
     read_jsonl,
@@ -59,6 +59,32 @@ POLICY_FILE = REPO_ROOT / "configs" / "policy" / "policies.yaml"
 
 class PredictError(ValueError):
     """Erreur d'usage ou de contrat actionnable (pivot manquant, split, ...)."""
+
+def _assert_local_only_for_dataset(profile: RuntimeProfile, key: str) -> None:
+    """Applique la garde réseau avant qu'un pipeline puisse voir le texte."""
+    if not profile.llm.allow_remote:
+        return
+
+    manifest_path = DATASETS_CONFIG / f"{key}.yaml"
+    if not manifest_path.is_file():
+        raise PredictError(
+            f"Corpus {key!r} : manifeste absent ({manifest_path}) ; "
+            "impossible d'autoriser un accès distant sans connaître son statut "
+            "synthetic."
+        )
+    try:
+        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise PredictError(
+            f"Manifeste du corpus {key!r} illisible : {manifest_path} ({exc})"
+        ) from exc
+    if not isinstance(raw, dict):
+        raise PredictError(f"Manifeste du corpus {key!r} invalide : mapping YAML attendu")
+    manifest_payload: dict[str, Any] = {str(name): value for name, value in raw.items()}
+    try:
+        assert_local_only(profile, manifest_payload)
+    except LocalOnlyViolationError as exc:
+        raise PredictError(str(exc)) from exc
 
 
 # --------------------------------------------------------------------------- #
@@ -134,7 +160,10 @@ def _data_version(key: str) -> dict[str, Any] | None:
     lock_path = PROCESSED_ROOT / key / LOCK_NAME
     if not lock_path.is_file():
         return None
-    return json.loads(lock_path.read_text(encoding="utf-8"))
+    payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise PredictError(f"Lock d'ingestion invalide pour {key!r} : mapping attendu")
+    return {str(name): value for name, value in payload.items()}
 
 
 def _build_lock(
@@ -216,6 +245,7 @@ def cmd_predict(
         docs = docs[:limit]
 
     loaded = load_runtime_profile(profile)
+    _assert_local_only_for_dataset(loaded.profile, key)
     pipe = Pipeline(loaded.profile, policy_id=policy)
 
     if out is not None:

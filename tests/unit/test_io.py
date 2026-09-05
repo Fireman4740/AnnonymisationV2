@@ -116,7 +116,7 @@ class TestWriteJsonl:
         assert raw.endswith(b"\n")
         # ensure_ascii=False : les caractères accentués restent en UTF-8, pas
         # échappés en \uXXXX.
-        assert "café à Nantes".encode("utf-8") in raw
+        assert "café à Nantes".encode() in raw
 
     def test_sort_keys_for_reproducibility(self, tmp_path: Path) -> None:
         path = tmp_path / "documents.jsonl"

@@ -45,7 +45,8 @@ from anonymisation.datasets.base import AcquisitionReport, DatasetAdapter
 from anonymisation.datasets.ingest import IngestionError
 from anonymisation.datasets.registry import UnmappedLabelError, register
 from anonymisation.schema.io import write_json
-from anonymisation.schema.models import Annotation, Document, Domain, ExpressionMode
+from anonymisation.schema.models import Annotation, Document, Domain
+from anonymisation.schema.taxonomy import ExpressionMode
 
 ACQUISITION_NAME = ".acquisition.json"
 
