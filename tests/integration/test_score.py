@@ -142,11 +142,19 @@ def score_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_score_is_offline_and_never_imports_detector() -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO_ROOT / "src")
+    # `systems` est ajouté à la liste interdite : il importe `detect` via le
+    # système déterministe. Si `metrics` ou `score` venaient à en dépendre —
+    # par exemple pour lire le vocabulaire de capacités — le scoring
+    # chargerait un détecteur et cesserait d'être rejouable hors ligne. C'est
+    # la raison d'être de `anonymisation.capabilities`, qui n'importe rien.
+    forbidden = ("anonymisation.detect", "anonymisation.systems", "anonymisation.pipeline")
     code = (
         "import sys; "
         "from anonymisation.cli.main import main; "
-        "assert not any(name == 'anonymisation.detect' or "
-        "name.startswith('anonymisation.detect.') for name in sys.modules); "
+        f"forbidden = {forbidden!r}; "
+        "leaked = sorted(n for n in sys.modules "
+        "if any(n == f or n.startswith(f + '.') for f in forbidden)); "
+        "assert not leaked, leaked; "
         "assert main(['score', '--run', '/does/not/exist', '--protocol', 'mini-v1']) == 2"
     )
     result = subprocess.run(

@@ -158,6 +158,7 @@ def test_prediction_line_shape(micro_pivot: Path, tmp_path: Path) -> None:
         assert set(rec) == {
             "doc_id",
             "status",
+            "system",
             "error",
             "annotations",
             "decisions",
@@ -166,6 +167,10 @@ def test_prediction_line_shape(micro_pivot: Path, tmp_path: Path) -> None:
             "runtime_ms",
         }
         assert isinstance(rec["error"], list)  # jamais absent, jamais null
+        # L'identité du système est obligatoire : sans elle le scorer ne sait
+        # pas quelles métriques sont applicables (capacités déclarées).
+        assert rec["system"]["system_id"] == "deterministic-v1"
+        assert rec["system"]["capabilities"] == sorted(rec["system"]["capabilities"])
         assert rec["status"] in ("ok", "partial", "error")
         assert rec["runtime_ms"] == 0.0  # strict (SPEC-10 §10)
 

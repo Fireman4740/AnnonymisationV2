@@ -26,6 +26,7 @@ import json
 import subprocess
 from collections import defaultdict
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 import yaml
@@ -39,7 +40,6 @@ from anonymisation.datasets.registry import (
     list_keys,
 )
 from anonymisation.pipeline.guards import LocalOnlyViolationError, assert_local_only
-from anonymisation.pipeline.orchestrator import Pipeline
 from anonymisation.pipeline.profiles import RuntimeProfile, load_runtime_profile
 from anonymisation.pipeline.traces import serialize_pipeline_result, serialize_stage_trace
 from anonymisation.schema.io import (
@@ -50,6 +50,7 @@ from anonymisation.schema.io import (
 )
 from anonymisation.schema.models import Annotation, Document
 from anonymisation.schema.taxonomy import TAXONOMY_VERSION
+from anonymisation.systems import SystemConfig, resolve_system
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[3]
 PROCESSED_ROOT = REPO_ROOT / "data" / "processed"
@@ -230,6 +231,8 @@ def cmd_predict(
     profile: str,
     out: str | None,
     limit: int | None,
+    system: str = "deterministic",
+    params: Mapping[str, Any] | None = None,
 ) -> int:
     """Exécute le pipeline sur le pivot du dataset et fige les artefacts.
 
@@ -246,12 +249,45 @@ def cmd_predict(
 
     loaded = load_runtime_profile(profile)
     _assert_local_only_for_dataset(loaded.profile, key)
-    pipe = Pipeline(loaded.profile, policy_id=policy)
+
+    # Résolution par le registre : c'est le seul point du harnais qui connaît
+    # une implémentation concrète. Tout le reste — scoring, métriques,
+    # comparaison — ne voit qu'un `PipelineResult` estampillé.
+    system_cls = resolve_system(system)
+    if system_cls.uses_policy and not policy:
+        raise PredictError(
+            f"Système {system_cls.system_id!r} : --policy est requis "
+            f"(ex. --policy P2)."
+        )
+    if policy and not system_cls.uses_policy:
+        # Jamais ignoré en silence : une politique acceptée puis sans effet
+        # laisserait croire que le run a été produit sous cette politique.
+        raise PredictError(
+            f"Système {system_cls.system_id!r} : --policy {policy!r} a été "
+            f"fourni alors que ce système ne consomme aucune politique. "
+            f"Retirez --policy."
+        )
+    effective_params = dict(params or {})
+    pipe = system_cls(
+        SystemConfig(
+            params=effective_params,
+            policy_id=policy,
+            profile=loaded.profile,
+            repo_root=REPO_ROOT,
+        )
+    )
+    identity = pipe.identity()
 
     if out is not None:
         out_dir = Path(out)
     else:
-        run_id = f"predict-{key}-{split}-{policy}-{loaded.profile.profile}"
+        # Le nom de run porte le système et l'empreinte de ses paramètres :
+        # sans eux, deux systèmes partageant un profil écriraient au même
+        # endroit et le second écraserait le premier.
+        run_id = (
+            f"{identity.system_id}-{key}-{split}-"
+            f"{policy or 'nopolicy'}-{identity.params_digest[:8]}"
+        )
         out_dir = REPO_ROOT / "runs" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -290,11 +326,15 @@ def cmd_predict(
         documents_total=len(docs),
         counts=counts,
     )
+    # Sans cette identité, le scorer ne saurait pas quelles métriques sont
+    # applicables et publierait des zéros là où la capacité est absente.
+    lock["system"] = pipe.describe().to_dict()
     write_json(out_dir / "manifest.lock.json", lock)
 
     print(
-        f"predict : {len(docs)} document(s) — dataset {key!r}, split {split!r}, "
-        f"politique {policy!r}, profil {loaded.profile.profile!r}"
+        f"predict : {len(docs)} document(s) — système {identity.system_id!r}, "
+        f"dataset {key!r}, split {split!r}, politique {policy!r}, "
+        f"profil {loaded.profile.profile!r}"
     )
     for status in ("ok", "partial", "error"):
         if counts.get(status):

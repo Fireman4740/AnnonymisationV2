@@ -358,10 +358,16 @@ def test_unimplemented_capability_refused_at_construction(
 # --------------------------------------------------------------------------- #
 # Déterminisme bit-à-bit du profil strict (SPEC-10 §10)
 # --------------------------------------------------------------------------- #
-def test_strict_serialization_is_bit_to_bit_deterministic(
-    micro: object,
-    pipeline: Pipeline,
-) -> None:
+def test_strict_serialization_is_bit_to_bit_deterministic(micro: object) -> None:
+    """La sérialisation passe par le **système**, pas par l'orchestrateur nu.
+
+    ``serialize_pipeline_result`` refuse un résultat non estampillé : c'est
+    ``SystemBase.run`` qui appose l'identité, et c'est bien cette frontière-là
+    qu'on doit éprouver, puisque c'est elle qui écrit ``predictions.jsonl``.
+    """
+    from anonymisation.systems import SystemConfig, resolve_system
+
+    pipeline = resolve_system("deterministic")(SystemConfig(policy_id="P2"))
     docs, gold = micro
     first = [
         json.dumps(

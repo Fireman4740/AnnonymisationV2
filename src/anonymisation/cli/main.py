@@ -518,6 +518,44 @@ def cmd_datasets_audit_licenses() -> int:
 # --- arborescence argparse --------------------------------------------------- #
 
 
+def _parse_params(raw: list[str]) -> dict[str, str]:
+    """Transforme les ``--param CLE=VALEUR`` en dictionnaire.
+
+    Aucune conversion de type ici : le modèle Pydantic du système s'en charge
+    et refuse ce qu'il ne connaît pas.
+    """
+    params: dict[str, str] = {}
+    for item in raw:
+        if "=" not in item:
+            raise ValueError(f"--param attend CLE=VALEUR, reçu : {item!r}")
+        key, _, value = item.partition("=")
+        key = key.strip()
+        if not key:
+            raise ValueError(f"--param : clé vide dans {item!r}")
+        params[key] = value
+    return params
+
+
+def cmd_systems_list() -> int:
+    """Liste les systèmes enregistrés, leurs capacités et leur résumé."""
+    from anonymisation.systems import SYSTEM_REGISTRY, list_systems
+
+    rows = []
+    for key in list_systems():
+        cls = SYSTEM_REGISTRY[key]
+        rows.append(
+            [
+                key,
+                ",".join(sorted(cls.aliases)) or "—",
+                ",".join(sorted(cls.capabilities)) or "—",
+                "oui" if cls.uses_policy else "non",
+                (cls.summary or "").split(".")[0][:60],
+            ]
+        )
+    _print_table(["CLÉ", "ALIAS", "CAPACITÉS", "POLITIQUE", "RÉSUMÉ"], rows)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="anonv2",
@@ -538,7 +576,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--split", required=True, help="Split du pivot (ex. train, validation)."
     )
     predict_p.add_argument(
-        "--policy", required=True, help="Identifiant de politique (P0-P4)."
+        "--policy",
+        default=None,
+        help=(
+            "Identifiant de politique (P0-P4). Requis par les systèmes qui en "
+            "consomment une ; fournir --policy à un système sans politique est "
+            "refusé, jamais ignoré en silence."
+        ),
+    )
+    predict_p.add_argument(
+        "--system",
+        default="deterministic",
+        help=(
+            "Système d'anonymisation à évaluer (défaut : deterministic). "
+            "Voir « anonv2 systems list »."
+        ),
+    )
+    predict_p.add_argument(
+        "--param",
+        action="append",
+        default=[],
+        metavar="CLE=VALEUR",
+        help=(
+            "Paramètre propre au système, répétable. Validé par le modèle "
+            "strict du système : une clé inconnue échoue en nommant les clés "
+            "attendues."
+        ),
     )
     predict_p.add_argument(
         "--profile",
@@ -556,6 +619,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Nombre de documents (le lock passe au statut « sampled »).",
     )
+
+    systems_p = sub.add_parser(
+        "systems",
+        help="Systèmes d'anonymisation enregistrés.",
+    )
+    systems_sub = systems_p.add_subparsers(dest="systems_command")
+    systems_sub.add_parser("list", help="Liste les systèmes et leurs capacités.")
 
     score_p = sub.add_parser(
         "score",
@@ -625,6 +695,9 @@ def main(argv: list[str] | None = None) -> int:
         from anonymisation.pipeline.profiles import ProfileError
         from anonymisation.policy.models import PolicyConfigError
 
+        from anonymisation.systems import UnknownSystemError
+        from anonymisation.systems.base import SystemError_
+
         try:
             return cmd_predict(
                 args.dataset,
@@ -633,10 +706,14 @@ def main(argv: list[str] | None = None) -> int:
                 args.profile,
                 args.out,
                 args.limit,
+                system=args.system,
+                params=_parse_params(args.param),
             )
         except (
             PredictError,
             UnknownDatasetError,
+            UnknownSystemError,
+            SystemError_,
             ProfileError,
             PolicyConfigError,
             PipelineCapabilityError,
@@ -644,6 +721,11 @@ def main(argv: list[str] | None = None) -> int:
         ) as exc:
             print(f"Erreur d'usage : {exc}", file=sys.stderr)
             return 2
+    if args.command == "systems":
+        if args.systems_command in (None, "list"):
+            return cmd_systems_list()
+        print(f"Sous-commande inconnue : {args.systems_command}", file=sys.stderr)
+        return 2
     if args.command == "score":
         from anonymisation.cli.score import ScoreError, cmd_score
 

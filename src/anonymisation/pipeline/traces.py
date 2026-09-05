@@ -182,6 +182,14 @@ class PipelineResult:
     status: str
     errors: tuple[str, ...] = ()
     runtime_ms: float = 0.0
+    #: Identité du système ayant produit ce résultat
+    #: (``anonymisation.systems.base.SystemIdentity``). Le défaut ``None``
+    #: n'est là que pour ne pas contraindre l'ordre des champs : la
+    #: sérialisation **refuse** un résultat non estampillé, car le scorer ne
+    #: saurait pas quelles métriques sont applicables. Typé ``Any`` pour ne
+    #: pas importer ``systems`` ici — ``pipeline`` ne doit pas dépendre des
+    #: implémentations qu'il sert.
+    identity: Any | None = None
 
 
 def serialize_annotation(annotation: Annotation) -> dict[str, Any]:
@@ -228,9 +236,17 @@ def serialize_pipeline_result(result: PipelineResult, *, strict: bool = False) -
     ``strict`` : profil déterministe strict (SPEC-10 §10) — ``runtime_ms``
     (horloge, non déterministe) est mis à zéro pour garantir un replay bit-à-bit.
     """
+    if result.identity is None:
+        raise ValueError(
+            f"Document {result.doc_id!r} : PipelineResult sans identité de "
+            f"système. Un résultat non estampillé ne peut pas être écrit dans "
+            f"predictions.jsonl — le scorer ne saurait pas quelles métriques "
+            f"sont applicables et publierait des zéros trompeurs."
+        )
     return {
         "doc_id": result.doc_id,
         "status": result.status,
+        "system": result.identity.to_dict(),
         "error": list(result.errors),
         "annotations": [serialize_annotation(a) for a in result.annotations],
         "decisions": [serialize_decision(d) for d in result.decisions],
