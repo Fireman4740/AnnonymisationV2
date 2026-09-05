@@ -46,7 +46,7 @@ from anonymisation.policy.engine import (
     _QiState,
 )
 from anonymisation.policy.models import load_policy_set
-from anonymisation.schema.models import Annotation, Document
+from anonymisation.schema.models import Annotation, Document, Domain
 from anonymisation.schema.taxonomy import (
     ExpressionMode,
     Granularity,
@@ -201,22 +201,19 @@ def test_micro_dataset_end_to_end(micro: object, pipeline: Pipeline) -> None:
         assert result.status in PIPELINE_STATUSES, result.errors
         assert len(result.traces) == 8
 
-    # d1-d4 : aucun constat de VALIDATE ; d5 : la fuite gold (email rejeté par
-    # le contexte du détecteur) est détectée PAR LE CONTRÔLE INDÉPENDANT —
-    # le document est « partial », jamais « ok ».
+    # Tous les identifiants DIRECT du micro sont désormais protégés : l'email
+    # `jean.dupont@example.com` l'est depuis que `deny_context` dégrade la
+    # confiance d'un candidat DIRECT au lieu de l'écarter (les domaines
+    # réservés RFC 2606 sont ceux des corpus synthétiques, donc des adresses
+    # à protéger). La détection de fuite est éprouvée séparément, sur un cas
+    # que le détecteur ne peut pas voir : voir
+    # `test_gold_leak_is_detected_independently_of_the_detector`.
     statuses = [pipeline.run(d, gold.get(d.doc_id)).status for d in docs]
-    assert statuses == ["ok", "ok", "ok", "ok", "partial"]
+    assert statuses == ["ok", "ok", "ok", "ok", "ok"]
 
     d5 = pipeline.run(docs[4], gold.get(docs[4].doc_id))
-    assert d5.errors and d5.errors[0].startswith("VALIDATE")
-    # L'email gold est réellement présent dans le texte anonymisé : la
-    # recherche exacte (indépendante du détecteur) est la seule à le voir.
-    assert "jean.dupont@example.com" in d5.anonymized_text
-    validate_trace = next(t for t in d5.traces if t.stage == "VALIDATE")
-    assert validate_trace.status == "ok"  # constat non fatal, le run continue
-    findings = validate_trace.decisions[0]
-    assert findings["kind"] == "findings"
-    assert findings["leaked_direct"] >= 1
+    assert "jean.dupont@example.com" not in d5.anonymized_text
+    assert d5.errors == ()
 
 
 # --------------------------------------------------------------------------- #
@@ -226,17 +223,63 @@ def test_fail_on_leak_interrupts_only_that_document(micro: object) -> None:
     profile = _profile_from_raw(lambda raw: _set(raw, ("stages", "validate", "fail_on_leak"), True))
     p = Pipeline(profile)
     docs, gold = micro
-    statuses = [p.run(d, gold.get(d.doc_id)).status for d in docs]
-    assert statuses == ["ok", "ok", "ok", "ok", "error"]
+    # Le micro ne fuit plus : tous ses documents restent « ok ».
+    assert [p.run(d, gold.get(d.doc_id)).status for d in docs] == ["ok"] * len(docs)
 
-    d5 = p.run(docs[4], gold.get(docs[4].doc_id))
-    validate_trace = next(t for t in d5.traces if t.stage == "VALIDATE")
+    # Seul le document qui fuit réellement bascule en « error ».
+    leak_doc, leak_gold = _leak_case()
+    leaked = p.run(leak_doc, leak_gold)
+    assert leaked.status == "error"
+    validate_trace = next(t for t in leaked.traces if t.stage == "VALIDATE")
     assert validate_trace.status == "error"
     assert "fail_on_leak" in (validate_trace.error or "")
     # Les étapes en aval restent tracées « skipped » — jamais une absence.
-    for trace in d5.traces[6:]:
+    for trace in leaked.traces[6:]:
         assert trace.status == "skipped", trace.stage
         assert "VALIDATE" in trace.decisions[0]["reason"]
+
+
+# --------------------------------------------------------------------------- #
+# Cas de fuite construit localement
+# --------------------------------------------------------------------------- #
+#: Un nom de personne est l'angle mort **permanent et légitime** d'un profil
+#: déterministe sans NER : le gold le déclare DIRECT, aucun motif ni aucune
+#: règle ne peut le trouver. C'est le seul cas de fuite honnête pour éprouver
+#: le contrôle indépendant du détecteur — s'appuyer sur un identifiant que le
+#: détecteur *devrait* trouver reviendrait à figer un défaut en test.
+_LEAK_TEXT = "Le dossier a ete transmis a Camille Berthier hier."
+_LEAK_NAME = "Camille Berthier"
+
+
+def _leak_case() -> tuple[Document, tuple[Annotation, ...]]:
+    start = _LEAK_TEXT.index(_LEAK_NAME)
+    doc = Document(
+        doc_id="leak:d1", dataset="leak", split="train", domain=Domain.HR,
+        language="fr", text=_LEAK_TEXT,
+    )
+    gold = Annotation(
+        annotation_id="leak:a1", doc_id="leak:d1",
+        start=start, end=start + len(_LEAK_NAME), span_text=_LEAK_NAME,
+        identifier_type=IdentifierType.DIRECT, qi_categories=("DIR_NAME",),
+        expression_mode=ExpressionMode.EXPLICIT,
+        granularity=Granularity.EXACT, stability=Stability.STABLE,
+    )
+    return doc, (gold,)
+
+
+def test_gold_leak_is_detected_independently_of_the_detector() -> None:
+    """Un nom que le détecteur ne sait pas voir doit quand même être signalé."""
+    doc, gold = _leak_case()
+    result = Pipeline("deterministic").run(doc, gold)
+
+    assert _LEAK_NAME in result.anonymized_text, "le détecteur ne peut pas le masquer"
+    assert result.status == "partial", "la fuite gold doit dégrader le statut"
+    assert result.errors and result.errors[0].startswith("VALIDATE")
+    trace = next(t for t in result.traces if t.stage == "VALIDATE")
+    assert trace.status == "ok", "constat non fatal : le run continue"
+    findings = trace.decisions[0]
+    assert findings["kind"] == "findings"
+    assert findings["leaked_direct"] >= 1
 
 
 # --------------------------------------------------------------------------- #

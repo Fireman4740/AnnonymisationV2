@@ -184,8 +184,15 @@ def test_resolve_v1_cache_none() -> None:
     assert resolve_v1_cache("") is None
 
 
-def test_resolve_v1_cache_without_env_is_relative() -> None:
-    """Sans variable : chemin relatif au répertoire courant (disposition du dépôt)."""
+def test_resolve_v1_cache_without_env_is_relative(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sans variable : chemin relatif au répertoire courant (disposition du dépôt).
+
+    La variable est retirée explicitement : sans cela le test dépendait de
+    l'environnement de la machine et échouait dès que ANONV2_V1_DATASETS était
+    défini — c'est-à-dire dès qu'on faisait tourner les tests sur données
+    réelles, précisément quand ils servent le plus.
+    """
+    monkeypatch.delenv("ANONV2_V1_DATASETS", raising=False)
     assert resolve_v1_cache("../Anonymisation/eval/datasets/TAB") == Path(
         "../Anonymisation/eval/datasets/TAB"
     )

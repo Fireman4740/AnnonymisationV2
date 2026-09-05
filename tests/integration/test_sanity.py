@@ -13,6 +13,7 @@ from anonymisation.pipeline.profiles import load_runtime_profile
 from anonymisation.schema.io import read_jsonl
 from anonymisation.schema.models import Annotation, Document
 from integration._micro import write_micro_pivot
+from integration._pivot import pivot_root, require_split
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,9 +32,10 @@ def _load_case(name: str, tmp_path: Path) -> CorpusCase:
         root = write_micro_pivot(tmp_path / "processed")
         base = root / "micro" / "train"
     else:
-        base = REPO_ROOT / "data" / "processed" / name / "train"
-        if not (base / "documents.jsonl").is_file():
-            pytest.skip(f"{name} absent : ingérez le corpus avant les tests de sanité")
+        # Le split est découvert sur le disque : le coder en dur à « train »
+        # faisait skipper ces contrôles en silence pour tout corpus nommant
+        # ses splits autrement (voir integration._pivot).
+        base = pivot_root(name) / require_split(name, prefer=("test", "dev", "train"))
 
     documents = tuple(read_jsonl(base / "documents.jsonl", Document))
     annotations = tuple(read_jsonl(base / "annotations.jsonl", Annotation))

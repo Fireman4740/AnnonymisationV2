@@ -130,11 +130,18 @@ def _merge_overlapping(
     imbriquées (I-ANN-5, ex. « infirmière au CHU de Lille ») peuvent
     produire des décisions non-KEEP sur des spans qui se chevauchent.
     Fusion par **union du span** : l'action retenue est la plus protectrice
-    (``SUPPRESS > PSEUDONYMIZE > MASK > GENERALIZE``), le remplacement est
-    une suppression pure (``""``) — la seule forme sûre pour un span
-    multi-catégories — et le ``reason`` documente la fusion (les membres
-    sont listés dans ``meta``). Le tri par offsets rend le résultat
-    déterministe.
+    (``SUPPRESS > PSEUDONYMIZE > MASK > GENERALIZE``) et le ``reason``
+    documente la fusion (les membres sont listés dans ``meta``). Le tri par
+    offsets rend le résultat déterministe.
+
+    Le remplacement est un **placeholder nommant les catégories fusionnées**,
+    et non la chaîne vide. Un placeholder ne divulgue rien de plus qu'une
+    suppression pure — il ne porte que des noms de catégories — mais il
+    évite trois effets de bord d'une suppression silencieuse : la perte de
+    l'indice qu'une information a été retirée, les artefacts de texte
+    (doubles espaces) et surtout la distorsion de la mesure d'utilité, une
+    chaîne vide et un placeholder ne coûtant pas la même distance au texte
+    original.
     """
     if not decisions:
         return []
@@ -158,12 +165,12 @@ def _merge_overlapping(
                     end=end,
                     original=text[start:end],
                     action=action,
-                    replacement="",
+                    replacement=f"[{'+'.join(categories)}_SUPPRIME]",
                     qi_category=buffer[0].qi_category,
                     reason=(
                         f"Fusion de {len(buffer)} décisions chevauchantes (catégories : "
                         f"{', '.join(categories)}) : suppression du span union — aucune "
-                        f"valeur n'est conservée."
+                        f"valeur d'origine n'est conservée."
                     ),
                     meta={
                         "merged_members": [

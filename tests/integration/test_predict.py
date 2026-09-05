@@ -170,22 +170,25 @@ def test_prediction_line_shape(micro_pivot: Path, tmp_path: Path) -> None:
         assert rec["runtime_ms"] == 0.0  # strict (SPEC-10 §10)
 
 
-def test_gold_leak_independent_of_detector_marks_partial(
-    micro_pivot: Path, tmp_path: Path
-) -> None:
-    """L'email refusé par le détecteur (``deny_context``) survit ; la
-    recherche exacte sur les valeurs gold le détecte → document ``partial``."""
+def test_micro_pivot_leaks_no_direct_identifier(micro_pivot: Path, tmp_path: Path) -> None:
+    """Aucun identifiant DIRECT du micro ne survit à l'anonymisation.
+
+    Ce test affirmait auparavant l'inverse : l'email ``jean.dupont@example.com``
+    survivait parce que ``deny_context`` écartait purement le candidat sur les
+    domaines réservés RFC 2606 — ceux-là mêmes qu'emploient les corpus
+    synthétiques pour des adresses **à protéger**. Le contrat est désormais que
+    ``deny_context`` dégrade la confiance d'un candidat DIRECT sans l'écarter.
+
+    La détection de fuite indépendante du détecteur reste éprouvée, sur un cas
+    honnête (un nom de personne, hors de portée d'un profil sans NER) :
+    ``tests/unit/test_orchestrator.py::test_gold_leak_is_detected_independently_of_the_detector``.
+    """
     out = tmp_path / "run1"
     assert _predict(out) == 0
     lines = _predictions(out)
-    d5 = lines["micro:d5"]
-    assert d5["status"] == "partial"
-    assert d5["error"], "la fuite gold est journalisée dans la ligne"
-    # Le détecteur n'a pas émis de décision pour cet email (deny_context) :
-    # le texte n'a donc pas été anonymisé — seule la validation lève l'alerte.
-    assert "jean.dupont@example.com" in d5["anonymized_text"]
-    for doc_id in ("micro:d1", "micro:d2", "micro:d3", "micro:d4"):
-        assert lines[doc_id]["status"] == "ok"
+    assert "jean.dupont@example.com" not in lines["micro:d5"]["anonymized_text"]
+    for doc_id in ("micro:d1", "micro:d2", "micro:d3", "micro:d5"):
+        assert lines[doc_id]["status"] == "ok", lines[doc_id]["error"]
         assert lines[doc_id]["error"] == []
 
 

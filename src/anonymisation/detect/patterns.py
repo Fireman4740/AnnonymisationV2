@@ -15,7 +15,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import yaml
 
@@ -32,6 +32,12 @@ from anonymisation.schema.taxonomy import (
 DEFAULT_PATTERNS_PATH: Path = (
     Path(__file__).resolve().parents[3] / "configs" / "detection" / "patterns.yaml"
 )
+
+
+#: Facteur appliqué à la confiance d'un candidat DIRECT dont le contexte
+#: correspond à un `deny_context`. Dégrader plutôt qu'écarter : un faux
+#: négatif de confidentialité est plus grave qu'un faux positif.
+_DENY_CONFIDENCE_FACTOR: Final[float] = 0.5
 
 
 class PatternConfigError(ValueError):
@@ -55,6 +61,11 @@ class CompiledPattern:
     context_boost: tuple[str, ...]
     deny_context: tuple[str, ...]
     context_window: int = 40
+    #: Sensibilité à la casse. Certains identifiants sont **définis**
+    #: en majuscules (BIC, IBAN) : les compiler en IGNORECASE faisait
+    #: matcher n'importe quel mot de 8 ou 11 lettres — « transmis »,
+    #: « derniere » — et produisait un sur-masquage massif du français.
+    ignore_case: bool = True
 
     def matches_language(self, language: str) -> bool:
         return "*" in self.languages or language in self.languages
@@ -128,7 +139,9 @@ def load_patterns(config_path: Path | None = None) -> tuple[list[CompiledPattern
 
         regex_str = _require(entry, "regex", entry_id)
         try:
-            regex = re.compile(regex_str, re.IGNORECASE | re.UNICODE)
+            ignore_case = bool(entry.get("ignore_case", True))
+            flags = re.UNICODE | (re.IGNORECASE if ignore_case else 0)
+            regex = re.compile(regex_str, flags)
         except re.error as exc:
             raise PatternConfigError(f"Motif {entry_id!r} : regex invalide : {exc}") from exc
 
@@ -161,6 +174,7 @@ def load_patterns(config_path: Path | None = None) -> tuple[list[CompiledPattern
                 confidence=confidence,
                 context_boost=tuple(entry.get("context_boost", [])),
                 deny_context=tuple(entry.get("deny_context", [])),
+                ignore_case=ignore_case,
             )
         )
 
@@ -213,14 +227,28 @@ def apply_patterns(
                 result = None
 
             window = _context_window(text, start, end, pattern.context_window)
-            if any(word.lower() in window for word in pattern.deny_context):
-                continue
-
             confidence = pattern.confidence
+            denied = any(word.lower() in window for word in pattern.deny_context)
+            if denied:
+                # Privacy-first (SPEC-07 §2) : un `deny_context` NE DOIT PAS
+                # faire disparaître un identifiant DIRECT. Les domaines
+                # réservés (RFC 2606 : example.com, exemple.fr) sont
+                # précisément ceux qu'emploient les corpus synthétiques pour
+                # des adresses **à protéger** : les écarter en silence
+                # produisait une perte de rappel systématique et invisible.
+                # On dégrade donc la confiance au lieu de jeter le candidat ;
+                # la fusion et la politique restent libres de l'écarter, mais
+                # de façon tracée.
+                if pattern.identifier_type is IdentifierType.DIRECT:
+                    confidence = round(confidence * _DENY_CONFIDENCE_FACTOR, 4)
+                else:
+                    continue
             if any(word.lower() in window for word in pattern.context_boost):
                 confidence = min(1.0, confidence + 0.05)
 
             meta: dict[str, Any] = {}
+            if denied:
+                meta["deny_context_hit"] = True
             if isinstance(result, dict):
                 meta["value_normalized"] = result
 

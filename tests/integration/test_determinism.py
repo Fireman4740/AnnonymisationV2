@@ -19,6 +19,7 @@ from anonymisation.datasets.registry import REGISTRY
 from anonymisation.schema.io import read_jsonl
 from anonymisation.schema.models import Document
 from integration._micro import write_micro_pivot
+from integration._pivot import pivot_splits, require_source, require_split
 from integration.test_ingest import _ingest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -41,33 +42,42 @@ def _dataset_param(name: str) -> Any:
 
 
 def _quasifr_available() -> bool:
-    return QUASIFR_CONFIG.is_file() and "quasifr" in REGISTRY and any(
-        (QUASIFR_PIVOT / split / "documents.jsonl").is_file()
-        for split in ("train", "dev", "test", "validation")
-    )
+    """Le corpus est-il réellement exploitable ?
+
+    Les splits sont lus **sur le disque** : une liste codée en dur rendait
+    cette condition structurellement fausse (les splits de quasifr sont
+    ``anonymization`` / ``hard_quasi_id`` / ``max_anonymization``) et ces tests
+    ne s'exécutaient jamais. Voir ``integration._pivot``.
+    """
+    return QUASIFR_CONFIG.is_file() and "quasifr" in REGISTRY and bool(pivot_splits("quasifr"))
 
 
-def _predict_case(dataset: str, root: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+def _predict_case(dataset: str, root: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+    """Prépare le pivot et renvoie ``(protocole, split réellement disponible)``."""
     if dataset == "micro":
         write_micro_pivot(root)
         monkeypatch.setattr(predict, "PROCESSED_ROOT", root)
-        return "micro-v1"
+        return "micro-v1", "train"
     if not _quasifr_available():
-        pytest.skip("quasifr absent : installez le corpus v1 et son adaptateur")
+        pytest.skip(
+            "quasifr non ingéré : lancez « anonv2 datasets ingest quasifr » "
+            "avec ANONV2_V1_DATASETS défini."
+        )
     monkeypatch.setattr(predict, "PROCESSED_ROOT", REPO_ROOT / "data" / "processed")
     raw = yaml.safe_load(QUASIFR_CONFIG.read_text(encoding="utf-8"))
-    return str(raw.get("evaluation", {}).get("protocol", "quasifr-v1"))
+    protocol = str(raw.get("evaluation", {}).get("protocol", "quasifr-v1"))
+    return protocol, require_split("quasifr", prefer=("train", "test", "dev"))
 
 
 def _run_predict(dataset: str, root: Path, out: Path, monkeypatch: pytest.MonkeyPatch) -> int:
-    _predict_case(dataset, root, monkeypatch)
+    _protocol, split = _predict_case(dataset, root, monkeypatch)
     return main(
         [
             "predict",
             "--dataset",
             dataset,
             "--split",
-            "train",
+            split,
             "--policy",
             "P2",
             "--profile",
@@ -92,7 +102,13 @@ def test_ingestion_tables_are_bit_identical(
         return
 
     if not _quasifr_available():
-        pytest.skip("quasifr absent : installez le corpus v1 et son adaptateur")
+        pytest.skip(
+            "quasifr non ingéré : lancez « anonv2 datasets ingest quasifr » "
+            "avec ANONV2_V1_DATASETS défini."
+        )
+    # Ré-ingérer exige la source brute, pas seulement le pivot : sur un clone
+    # sans corpus v1 ce test doit skipper, jamais échouer.
+    require_source("quasifr")
     snapshots: list[dict[str, str]] = []
     for index in (1, 2):
         output = tmp_path / f"processed-{index}"
@@ -120,14 +136,14 @@ def test_scorecards_are_identical_without_timestamp_fields(
 ) -> None:
     """Le scoring rejoué ne dépend ni d'une horloge ni d'un nouvel appel modèle."""
     run = tmp_path / "run"
-    protocol = _predict_case(dataset, tmp_path / "processed", monkeypatch)
+    protocol, split = _predict_case(dataset, tmp_path / "processed", monkeypatch)
     assert main(
         [
             "predict",
             "--dataset",
             dataset,
             "--split",
-            "train",
+            split,
             "--policy",
             "P2",
             "--profile",
