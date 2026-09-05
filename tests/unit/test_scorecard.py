@@ -87,7 +87,22 @@ def _prediction(doc_id: str, annotations: list[Annotation]) -> dict:
     }
 
 
+#: Système de référence des tests : déclare toutes les capacités, pour que le
+#: portillon laisse passer les métriques de l'axe A. Les tests de dégradation
+#: passent explicitement un système sans capacités.
+_SYSTEM = {
+    "system_id": "test-v1",
+    "system_version": "1",
+    "capabilities": [
+        "decisions", "gold_aware", "policy", "risk", "spans", "traces",
+    ],
+    "params_digest": "0" * 64,
+    "oracle": False,
+}
+
+
 def _build(documents, gold_by_doc, predictions, **kwargs) -> dict:
+    kwargs.setdefault("system", _SYSTEM)
     return build_scorecard(
         run_id="run-1",
         dataset="mini",
@@ -192,12 +207,25 @@ def test_scorecard_survives_a_json_round_trip() -> None:
     assert reloaded["publishable"] is True
     assert reloaded["error_rate"] == 0.0
 
-def test_primary_proxy_risk_is_rejected_even_if_metric_is_forced() -> None:
+def test_primary_proxy_is_rejected_only_on_an_official_scorecard() -> None:
+    """Un PROXY dans ``primary`` n'est interdit que si la carte se dit OFFICIAL.
+
+    C'est le mélange d'un chiffre approché et d'un chiffre officiel que
+    SPEC-07 §9 proscrit, pas l'usage d'un proxy correctement étiqueté. CPR,
+    IPR et TRIR sont nécessairement PROXY tant que l'adversaire est littéral :
+    les interdire en bloc viderait ``primary`` et ramènerait le F1 de spans au
+    premier plan, exactement ce que SPEC-07 v2.0 cherche à éviter.
+    """
     documents = {"d1": _document("d1", "Alice travaille.")}
     annotation = _annotation("d1", 0, 5, span_text="Alice")
     card = _build(documents, {"d1": (annotation,)}, [_prediction("d1", [annotation])])
     card["primary"]["naive_risk"] = {"status": MetricStatus.PROXY}
 
+    # Carte DIAGNOSTIC : le proxy est admis, correctement étiqueté.
+    validate_scorecard(card)
+
+    # Carte OFFICIAL : refusé.
+    card["status"] = MetricStatus.OFFICIAL.value
     with pytest.raises(ScorecardError, match="PROXY"):
         validate_scorecard(card)
 
@@ -219,5 +247,6 @@ def test_naive_risk_cannot_produce_official_scorecard() -> None:
             gold_by_doc={"d1": (annotation,)},
             documents_by_doc=documents,
             reproducibility=LOCK,
+            system=_SYSTEM,
             requested_status=MetricStatus.OFFICIAL,
         )

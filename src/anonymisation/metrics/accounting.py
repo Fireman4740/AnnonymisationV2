@@ -83,6 +83,9 @@ class RunAccounting:
     error_rate: float
     errors_by_stage: dict[str, int]
     errors_by_type: dict[str, int]
+    #: Documents scorés mais porteurs d'un constat (``status="partial"``).
+    #: Ce sont des résultats, pas des pannes : ils comptent dans les métriques.
+    documents_with_findings: int = 0
 
     def __post_init__(self) -> None:
         if self.documents_total < 0:
@@ -99,11 +102,21 @@ class RunAccounting:
     def from_predictions(cls, predictions: Iterable[Any]) -> RunAccounting:
         """Construit la comptabilité depuis des lignes JSON ou des résultats.
 
-        ``status != "ok"`` est la règle d'exclusion normative. Une ligne non-ok
-        sans champ d'erreur reçoit une catégorie ``UNKNOWN`` plutôt qu'une
-        disparition silencieuse.
+        Seul ``status == "error"`` exclut du scoring. ``partial`` est un
+        **résultat**, pas une panne : le pipeline est allé au bout, VALIDATE a
+        simplement constaté quelque chose (une fuite gold, typiquement). Ces
+        documents portent des prédictions valides et **doivent être scorés**.
+
+        Les exclure était un biais grave : les documents qui fuient sont
+        précisément les plus mauvais, et les retirer des métriques faisait
+        paraître le système meilleur qu'il n'est — tout en rendant les runs
+        incomparables entre eux, puisque la proportion de documents retenus
+        variait d'un système à l'autre.
+
+        Une ligne non-ok sans champ d'erreur reçoit une catégorie ``UNKNOWN``
+        plutôt qu'une disparition silencieuse.
         """
-        total = scored = errored = 0
+        total = scored = errored = findings = 0
         by_stage: Counter[str] = Counter()
         by_type: Counter[str] = Counter()
         for record in predictions:
@@ -111,6 +124,10 @@ class RunAccounting:
             status = str(_value(record, "status", "error")).lower()
             if status == "ok":
                 scored += 1
+                continue
+            if status == "partial":
+                scored += 1
+                findings += 1
                 continue
             errored += 1
             errors = _error_list(record)
@@ -139,6 +156,7 @@ class RunAccounting:
             error_rate=rate,
             errors_by_stage=dict(sorted(by_stage.items())),
             errors_by_type=dict(sorted(by_type.items())),
+            documents_with_findings=findings,
         )
 
     @classmethod
@@ -181,6 +199,7 @@ class RunAccounting:
             "error_rate": self.error_rate,
             "errors_by_stage": dict(self.errors_by_stage),
             "errors_by_type": dict(self.errors_by_type),
+            "documents_with_findings": self.documents_with_findings,
             "publishable": self.publishable,
             "warning": self.warning,
         }

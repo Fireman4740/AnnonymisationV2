@@ -213,11 +213,18 @@ def _build_lock(
         # 6. Prompts d'attaque versionnés — v1 : aucun (pas d'étape LLM).
         "prompts": [],
         # 7. Politique effective.
-        "policy": {
-            "id": policy_id,
-            "source": str(POLICY_FILE.relative_to(REPO_ROOT)),
-            "sha256": sha256_file(POLICY_FILE),
-        },
+        "policy": (
+            {
+                "id": policy_id,
+                "source": str(POLICY_FILE.relative_to(REPO_ROOT)),
+                "sha256": sha256_file(POLICY_FILE),
+            }
+            if policy_id
+            # Absence DÉCLARÉE, jamais déduite du silence : sans `reason`, on
+            # ne distinguerait pas « ce système n'a pas de politique » d'un
+            # lock tronqué.
+            else {"id": None, "reason": "système sans politique"}
+        ),
     }
 
 

@@ -19,7 +19,17 @@ from anonymisation.metrics.entities import (
     field_value,
     same_identifier_type,
 )
+from anonymisation.metrics.gating import gate
+from anonymisation.metrics.leakage import aggregate_leak_counts, gold_leak_counts
+from anonymisation.metrics.protection import (
+    LITERAL_ADVERSARY,
+    collective_protection_rate,
+    individual_protection_rate,
+    subject_outcomes_from_run,
+)
 from anonymisation.metrics.spans import span_metrics, weighted_token_precision
+from anonymisation.metrics.tria import TRIARecord, evaluate_trir
+from anonymisation.metrics.utility import rouge_l
 from anonymisation.schema.taxonomy import IdentifierType
 
 SCORECARD_SCHEMA_VERSION = "2.0"
@@ -205,6 +215,26 @@ def _expression_rows(
     return output
 
 
+def _subject_of(
+    record: Mapping[str, Any],
+    gold_by_doc: Mapping[str, Sequence[Any]],
+    documents_by_doc: Mapping[str, Any],
+    strategy: str,
+) -> str:
+    """Clé sujet d'un document, selon la stratégie retenue pour le corpus."""
+    doc_id = str(record.get("doc_id"))
+    if strategy == "subject_id":
+        for annotation in gold_by_doc.get(doc_id, ()):
+            value = field_value(annotation, "subject_id", None)
+            if value:
+                return str(value)
+    if strategy == "author_id":
+        value = field_value(documents_by_doc.get(doc_id), "author_id", None)
+        if value:
+            return str(value)
+    return doc_id
+
+
 def build_scorecard(
     *,
     run_id: str,
@@ -216,12 +246,14 @@ def build_scorecard(
     gold_by_doc: Mapping[str, Sequence[Any]],
     documents_by_doc: Mapping[str, Any],
     reproducibility: Mapping[str, Any],
+    system: Mapping[str, Any],
     requested_status: MetricStatus | str = MetricStatus.DIAGNOSTIC,
     match: str = "partial",
 ) -> dict[str, Any]:
     """Agrège un run figé en scorecard SPEC-07 §10.
 
-    Seules les lignes ``status == "ok"`` alimentent les TP/FP/FN. Toutes les
+    Les lignes ``ok`` et ``partial`` alimentent les TP/FP/FN ; seules les
+    lignes ``error`` en sont exclues. Toutes les
     lignes sont toutefois comptées par :class:`RunAccounting` et leur taux
     d'erreur est exposé au premier niveau.
     """
@@ -230,7 +262,9 @@ def build_scorecard(
     runtimes: list[float] = []
     scored_predictions: list[Mapping[str, Any]] = []
     for record in predictions:
-        if str(record.get("status", "error")).lower() != "ok":
+        # `partial` est scoré : le pipeline est allé au bout, il porte des
+        # prédictions valides. Seul `error` est exclu (SPEC-10 C4).
+        if str(record.get("status", "error")).lower() not in ("ok", "partial"):
             continue
         doc_id = str(record.get("doc_id", ""))
         document = documents_by_doc.get(doc_id)
@@ -279,41 +313,140 @@ def build_scorecard(
         is not None
     ]
     token_precision = sum(token_scores) / len(token_scores) if token_scores else None
+    # ------------------------------------------------------------------ #
+    # Axes B/C/D — mesurés sur le TEXTE : applicables à tout système,
+    # boîte noire comprise (aucune capacité requise).
+    # ------------------------------------------------------------------ #
+    scored = [
+        record for record in predictions
+        if str(record.get("status", "error")).lower() in ("ok", "partial")
+    ]
+
+    leak_counts = aggregate_leak_counts(
+        [
+            gold_leak_counts(
+                str(record.get("anonymized_text") or ""),
+                gold_by_doc.get(str(record.get("doc_id")), ()),
+            )
+            for record in scored
+        ]
+    )
+
+    outcomes, subject_key = subject_outcomes_from_run(
+        predictions, gold_by_doc, documents_by_doc
+    )
+    cpr = collective_protection_rate(outcomes)
+    ipr = individual_protection_rate(outcomes)
+    protection_details = {
+        "adversary": LITERAL_ADVERSARY,
+        "subject_key": subject_key,
+        "subjects": len(outcomes),
+        # Écrit dans la métrique, pas seulement dans la documentation : un
+        # adversaire littéral ne fait AUCUNE inférence, il constate une
+        # présence verbatim. Il surestime donc la protection.
+        "limitation": (
+            "borne inférieure de l'inférabilité : ne capture ni la paraphrase "
+            "ni l'inférence — un adversaire LLM retrouverait davantage"
+        ),
+    }
+
+    rouge_scores = [
+        rouge_l(
+            str(field_value(documents_by_doc.get(str(record.get("doc_id"))), "text", "")),
+            str(record.get("anonymized_text") or ""),
+        )
+        for record in scored
+    ]
+    rouge_mean = sum(rouge_scores) / len(rouge_scores) if rouge_scores else None
+
+    trir_result = None
+    trir_details: dict[str, Any] = {}
+    try:
+        trir_records = [
+            TRIARecord(
+                doc_id=str(record.get("doc_id")),
+                subject_id=_subject_of(record, gold_by_doc, documents_by_doc, subject_key),
+                text=str(field_value(documents_by_doc.get(str(record.get("doc_id"))), "text", "")),
+            )
+            for record in scored
+        ]
+        anonymized = {
+            str(record.get("doc_id")): str(record.get("anonymized_text") or "")
+            for record in scored
+        }
+        trir_result = evaluate_trir(trir_records, anonymized_texts=anonymized)
+        trir_details = trir_result.to_dict()
+    except Exception as exc:  # noqa: BLE001 — TRIR reste facultatif
+        trir_details = {"reason": f"TRIR non calculable : {exc}"}
+
     diagnostic_status = MetricStatus.DIAGNOSTIC
+    capabilities = frozenset(str(c) for c in (system.get("capabilities") or ()))
+
+    def _gate(name: str, value: float | None, **kwargs: Any) -> dict[str, Any]:
+        """Publie une métrique sous portillon de capacité."""
+        return gate(
+            name, value, capabilities=capabilities, protocol=protocol,
+            protocol_version=protocol_version, **kwargs,
+        )
+
     diagnostic = {
-        "span_precision": _metric_dict(
-            "span_precision", overall["precision"], protocol=protocol,
-            protocol_version=protocol_version, status=diagnostic_status,
+        "span_precision": _gate(
+            "span_precision", overall["precision"], status=diagnostic_status,
             direction=MetricDirection.MAXIMIZE, details={"match": match},
         ),
-        "span_recall": _metric_dict(
-            "span_recall", overall["recall"], protocol=protocol,
-            protocol_version=protocol_version, status=diagnostic_status,
+        "span_recall": _gate(
+            "span_recall", overall["recall"], status=diagnostic_status,
             direction=MetricDirection.MAXIMIZE, details={"match": match},
         ),
-        "span_f1": _metric_dict(
-            "span_f1", overall["f1"], protocol=protocol,
-            protocol_version=protocol_version, status=diagnostic_status,
+        "span_f1": _gate(
+            "span_f1", overall["f1"], status=diagnostic_status,
             direction=MetricDirection.MAXIMIZE, details={"match": match},
         ),
-        "weighted_token_precision": _metric_dict(
-            "weighted_token_precision", token_precision, protocol=protocol,
-            protocol_version=protocol_version, status=diagnostic_status,
+        "weighted_token_precision": _gate(
+            "weighted_token_precision", token_precision, status=diagnostic_status,
             direction=MetricDirection.MAXIMIZE, details={"weight": "token_length_proxy"},
         ),
-        "entity_recall_direct": _metric_dict(
-            "entity_recall_direct", direct_recall,
-            protocol=protocol, protocol_version=protocol_version,
+        # Noms normatifs de SPEC-07 §2, avec les anciennes clés en alias.
+        "ER_di": _gate(
+            "ER_di", direct_recall,
             status=diagnostic_status if direct_total else MetricStatus.UNAVAILABLE,
             direction=MetricDirection.MAXIMIZE,
-            details={"entities": direct_total},
+            details={"entities": direct_total, "level": "entity"},
         ),
-        "entity_recall_quasi": _metric_dict(
+        "entity_recall_direct": _gate(
+            "entity_recall_direct", direct_recall,
+            status=diagnostic_status if direct_total else MetricStatus.UNAVAILABLE,
+            direction=MetricDirection.MAXIMIZE,
+            details={"entities": direct_total, "alias_of": "ER_di"},
+        ),
+        "ER_qi": _gate(
+            "ER_qi", quasi_recall,
+            status=diagnostic_status if quasi_total else MetricStatus.UNAVAILABLE,
+            direction=MetricDirection.MAXIMIZE,
+            details={"entities": quasi_total, "level": "entity"},
+        ),
+        "entity_recall_quasi": _gate(
             "entity_recall_quasi", quasi_recall,
-            protocol=protocol, protocol_version=protocol_version,
             status=diagnostic_status if quasi_total else MetricStatus.UNAVAILABLE,
             direction=MetricDirection.MAXIMIZE,
             details={"entities": quasi_total},
+        ),
+        # Axe C — utilité textuelle, universelle (aucune capacité requise).
+        # ROUGE-L PÉNALISE les reformulations légitimes : généraliser
+        # « 28 ans » en « fin de vingtaine » la dégrade alors que c'est une
+        # bonne anonymisation. C'est un proxy, jamais la référence d'utilité.
+        "rouge_l": _gate(
+            "rouge_l", rouge_mean, status=diagnostic_status,
+            direction=MetricDirection.MAXIMIZE,
+            details={
+                "documents": len(rouge_scores),
+                "limitation": "métrique de surface : pénalise la généralisation",
+            },
+        ),
+        # Fuite gold : recherche exacte, indépendante du détecteur.
+        "gold_leak_rate": _gate(
+            "gold_leak_rate", leak_counts.direct_rate, status=diagnostic_status,
+            direction=MetricDirection.MINIMIZE, details=leak_counts.to_dict(),
         ),
         "counts": overall,
     }
@@ -392,8 +525,11 @@ def build_scorecard(
     scorecard = {
         "run_id": run_id,
         "schema_version": SCORECARD_SCHEMA_VERSION,
+        # Identité RÉELLE du système, lue dans le lock : sans elle, deux
+        # systèmes différents produiraient la même valeur et la comparaison
+        # serait impossible.
         "system": {
-            "detector": "deterministic",
+            **{k: v for k, v in system.items() if k != "prompts"},
             "policy": run_info.get("policy"),
             "profile": run_info.get("profile"),
         },
@@ -408,7 +544,24 @@ def build_scorecard(
         "publishable": accounting.publishable,
         "error_rate": accounting.error_rate,
         "accounting": accounting.to_dict(),
+        # SPEC-07 v2.0 : CPR et IPR sont les métriques principales, devant
+        # R_succ. Elles sortent en PROXY tant que l'adversaire est littéral.
         "primary": {
+            "cpr": _gate(
+                "cpr", cpr, status=MetricStatus.PROXY,
+                direction=MetricDirection.MAXIMIZE, details=protection_details,
+            ),
+            "ipr": _gate(
+                "ipr", ipr, status=MetricStatus.PROXY,
+                direction=MetricDirection.MAXIMIZE, details=protection_details,
+            ),
+            "trir": _gate(
+                "trir",
+                trir_result.trir if trir_result is not None else None,
+                status=MetricStatus.PROXY if trir_result is not None
+                else MetricStatus.UNAVAILABLE,
+                direction=MetricDirection.MINIMIZE, details=trir_details,
+            ),
             "reid_success_rate": _metric_dict(
                 "reid_success_rate", None, protocol=protocol,
                 protocol_version=protocol_version, status=MetricStatus.UNAVAILABLE,
@@ -419,7 +572,10 @@ def build_scorecard(
                 "utility_retention", None, protocol=protocol,
                 protocol_version=protocol_version, status=MetricStatus.UNAVAILABLE,
                 direction=MetricDirection.MAXIMIZE,
-                details={"reason": "aucune tâche downstream déclarée"},
+                details={
+                    "reason": "aucune tâche downstream déclarée ; "
+                    "voir `rouge_l` pour un proxy d'utilité textuelle"
+                },
             ),
         },
         "diagnostic": diagnostic,
@@ -472,8 +628,18 @@ def validate_reproducibility(lock: Mapping[str, Any]) -> None:
         if lock.get(key) is None:
             raise ScorecardError(f"Lock de reproductibilité sans élément `{key}`")
     policy = lock.get("policy")
-    if not isinstance(policy, Mapping) or not policy.get("id"):
+    if not isinstance(policy, Mapping):
         raise ScorecardError("Lock de reproductibilité sans politique")
+    if not policy.get("id"):
+        # Un système sans politique (boîte noire, passe-plat) est légitime,
+        # mais l'absence doit être **déclarée**, jamais déduite du silence :
+        # sans `reason`, on ne distingue pas « aucune politique » d'un lock
+        # tronqué.
+        if not str(policy.get("reason", "")).strip():
+            raise ScorecardError(
+                "Lock sans politique : un `policy.id` vide exige un "
+                "`policy.reason` explicite (ex. « système sans politique »)."
+            )
 
 
 def validate_scorecard(scorecard: Mapping[str, Any]) -> None:
@@ -483,12 +649,25 @@ def validate_scorecard(scorecard: Mapping[str, Any]) -> None:
         raise ScorecardError("Scorecard incomplète : champs manquants : " + ", ".join(missing))
     if "error_rate" not in scorecard or "error_rate" not in scorecard["accounting"]:
         raise ScorecardError("Scorecard sans error_rate au premier niveau")
-    for name, metric in scorecard["primary"].items():
-        if (
-            isinstance(metric, Mapping)
-            and _status_label(metric.get("status")) == MetricStatus.PROXY.value
-        ):
-            raise ScorecardError(f"Métrique PROXY interdite dans primary : {name}")
+    # Un PROXY dans `primary` n'est interdit que si la scorecard se présente
+    # comme OFFICIAL : c'est le mélange d'un chiffre approché et d'un chiffre
+    # officiel que SPEC-07 §9 proscrit, pas l'usage d'un proxy correctement
+    # étiqueté. CPR/IPR/TRIR sont nécessairement PROXY tant que l'adversaire
+    # est littéral ; les interdire viderait `primary` de toute substance et
+    # ramènerait le F1 de spans au premier plan — exactement ce que SPEC-07
+    # v2.0 cherche à éviter.
+    card_status = _status_label(scorecard.get("status"))
+    if card_status == MetricStatus.OFFICIAL.value:
+        for name, metric in scorecard["primary"].items():
+            if (
+                isinstance(metric, Mapping)
+                and _status_label(metric.get("status")) == MetricStatus.PROXY.value
+            ):
+                raise ScorecardError(
+                    f"Scorecard OFFICIAL : métrique PROXY interdite dans primary "
+                    f"({name}). Dégradez le statut du run, ou remplacez "
+                    f"l'estimation approchée par une mesure officielle."
+                )
     reproducibility = dict(scorecard.get("reproducibility") or {})
     for key in _REQUIRED_REPRODUCIBILITY:
         if key not in reproducibility and key in scorecard:

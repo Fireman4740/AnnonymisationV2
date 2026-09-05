@@ -34,14 +34,28 @@ def test_ten_percent_errors_degrade_official_to_sampled() -> None:
     assert accounting.warning is not None
 
 
-def test_partial_status_is_not_counted_as_scored() -> None:
+def test_partial_is_scored_and_is_not_an_error() -> None:
+    """Un ``partial`` est un RÉSULTAT, pas une panne : il doit être scoré.
+
+    Ce test affirmait l'inverse, et c'était un biais grave : un document
+    ``partial`` a traversé tout le pipeline et porte des prédictions valides —
+    VALIDATE a simplement constaté une fuite gold. Les exclure retirait des
+    métriques les documents **les plus mauvais**, faisait paraître le système
+    meilleur qu'il n'est, et rendait deux runs incomparables dès que leur
+    proportion de constats différait.
+
+    Mesuré sur quasifr : l'exclusion faisait passer ER_di de 0,522 à 1,000 et
+    le taux de fuite de 0,484 à 0,000, en ne scorant que 7 documents sur 31.
+    """
     accounting = RunAccounting.from_predictions(
         [{"status": "partial", "error": ["VALIDATE: fuite gold"]}]
     )
-    assert accounting.documents_scored == 0
-    assert accounting.documents_errored == 1
-    assert accounting.errors_by_stage == {"VALIDATE": 1}
-    assert accounting.errors_by_type == {"validation_leak": 1}
+    assert accounting.documents_scored == 1
+    assert accounting.documents_errored == 0
+    assert accounting.documents_with_findings == 1
+    assert accounting.error_rate == 0.0
+    # Un constat n'empêche pas de publier ; une panne d'exécution, si.
+    assert accounting.publishable
 
 
 def test_empty_run_has_zero_error_rate() -> None:

@@ -100,6 +100,17 @@ def _build_run(root: Path) -> Path:
         "seeds": {"determinism": 42},
         "prompts": [],
         "policy": {"id": "P2", "source": "policies.yaml", "sha256": "a" * 64},
+        # L'identité du système est désormais requise : elle commande quelles
+        # métriques sont applicables (portillon de capacités).
+        "system": {
+            "system_id": "test-v1",
+            "system_version": "1",
+            "capabilities": [
+                "decisions", "gold_aware", "policy", "risk", "spans", "traces",
+            ],
+            "params_digest": "0" * 64,
+            "oracle": False,
+        },
     }
     (run / "manifest.lock.json").write_text(
         json.dumps(lock, sort_keys=True, indent=2) + "\n", encoding="utf-8"

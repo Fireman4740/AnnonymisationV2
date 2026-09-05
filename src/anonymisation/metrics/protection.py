@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from math import isfinite
-from typing import Any, TypeAlias
+from typing import Any, Final, TypeAlias
 
 from anonymisation.metrics.contracts import MetricContractError
 
@@ -215,3 +215,117 @@ __all__ = [
     "collective_protection_rate",
     "individual_protection_rate",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# Construction des SubjectOutcome depuis un run — adversaire littéral
+# --------------------------------------------------------------------------- #
+#: Protocole de l'adversaire hors ligne utilisé par défaut. Il ne fait
+#: **aucune inférence** : il constate qu'une surface gold est encore
+#: littéralement présente dans le texte anonymisé. Il fournit donc une **borne
+#: inférieure de l'inférabilité**, et surestime la protection : un attaquant
+#: LLM retrouverait des attributs paraphrasés que celui-ci déclare protégés.
+#: C'est écrit dans `details.limitation` de chaque métrique, pas seulement
+#: dans la documentation.
+LITERAL_ADVERSARY: Final[str] = "exact-match"
+LITERAL_ADVERSARY_PROTOCOL: Final[str] = "cpr-exactmatch"
+LITERAL_ADVERSARY_VERSION: Final[str] = "1"
+
+
+def _subject_key_of(annotation: Any, document: Any, doc_id: str, strategy: str) -> str:
+    if strategy == "subject_id":
+        value = _read(annotation, "subject_id")
+    elif strategy == "author_id":
+        value = _read(document, "author_id")
+    else:
+        value = doc_id
+    if value is None or not str(value).strip():
+        raise ValueError(
+            f"Document {doc_id!r} : stratégie de clé sujet {strategy!r} retenue "
+            f"pour le corpus mais absente sur cet enregistrement. Une clé "
+            f"manquante fusionnerait deux sujets en un seul et fausserait IPR."
+        )
+    return str(value)
+
+
+def _read(item: Any, name: str) -> Any:
+    if item is None:
+        return None
+    if isinstance(item, Mapping):
+        return item.get(name)
+    return getattr(item, name, None)
+
+
+def choose_subject_key(
+    gold_by_doc: Mapping[str, Sequence[Any]],
+    documents_by_doc: Mapping[str, Any],
+) -> str:
+    """Stratégie de clé sujet la plus spécifique **uniformément** disponible.
+
+    Pas de repli au cas par cas : mélanger les stratégies au sein d'un même
+    corpus produirait des sujets incohérents. On retient une stratégie unique
+    pour tout le corpus, et un enregistrement qui en manque fait lever.
+    """
+    docs = list(gold_by_doc)
+    if docs and all(
+        all(_read(a, "subject_id") for a in gold_by_doc[d]) for d in docs if gold_by_doc[d]
+    ):
+        return "subject_id"
+    if docs and all(_read(documents_by_doc.get(d), "author_id") for d in docs):
+        return "author_id"
+    return "doc_id"
+
+
+def subject_outcomes_from_run(
+    predictions: Sequence[Mapping[str, Any]],
+    gold_by_doc: Mapping[str, Sequence[Any]],
+    documents_by_doc: Mapping[str, Any],
+) -> tuple[tuple[SubjectOutcome, ...], str]:
+    """Construit les ``SubjectOutcome`` d'un run et renvoie la stratégie retenue.
+
+    ``O_i`` = surfaces gold testables du sujet ``i`` ; ``A_i`` = celles encore
+    littéralement présentes dans le texte anonymisé de leur document.
+    """
+    strategy = choose_subject_key(gold_by_doc, documents_by_doc)
+    totals: dict[str, int] = {}
+    inferable: dict[str, int] = {}
+    by_category: dict[str, dict[str, list[int]]] = {}
+
+    for record in predictions:
+        if str(record.get("status", "error")).lower() not in ("ok", "partial"):
+            continue  # seul un document en ERREUR est exclu du scoring (C-4)
+        doc_id = str(record.get("doc_id"))
+        text = str(record.get("anonymized_text") or "")
+        document = documents_by_doc.get(doc_id)
+        for annotation in gold_by_doc.get(doc_id, ()):
+            surface = _read(annotation, "span_text")
+            if not isinstance(surface, str) or not surface.strip():
+                continue
+            key = _subject_key_of(annotation, document, doc_id, strategy)
+            present = int(surface in text)
+            totals[key] = totals.get(key, 0) + 1
+            inferable[key] = inferable.get(key, 0) + present
+            # Une annotation multi-label (I-ANN-5) compte pour UNE PII, pas
+            # une par catégorie : sommer chaque catégorie double-compterait et
+            # ferait diverger la ventilation de O_i / A_i. On l'impute à sa
+            # première catégorie triée — choix arbitraire mais déterministe,
+            # et sans effet sur le CPR/IPR uniformes publiés par SPIA.
+            categories = sorted(str(c) for c in (_read(annotation, "qi_categories") or ()))
+            if categories:
+                slot = by_category.setdefault(key, {}).setdefault(categories[0], [0, 0])
+                slot[0] += 1
+                slot[1] += present
+
+    outcomes = tuple(
+        SubjectOutcome(
+            subject_id=key,
+            pii_total=totals[key],
+            pii_still_inferable=inferable.get(key, 0),
+            pii_by_category={
+                category: (counts[0], counts[1])
+                for category, counts in sorted(by_category.get(key, {}).items())
+            },
+        )
+        for key in sorted(totals)
+    )
+    return outcomes, strategy

@@ -8,6 +8,7 @@ des métriques peut donc être rejouée sans campagne de prédiction.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +146,18 @@ def cmd_score(run: str | Path, protocol: str) -> int:
     documents, gold = _load_gold(dataset, split)
     protocol_name, protocol_version, default_status = _protocol_info(dataset, protocol)
     try:
+        # L'identité du système commande quelles métriques sont applicables.
+        # On refuse plutôt que de supposer : supposer la détection produirait
+        # des zéros sur les boîtes noires, supposer l'inverse ferait
+        # disparaître l'axe A des pipelines riches.
+        system_block = lock.get("system")
+        if not isinstance(system_block, Mapping):
+            raise ScoreError(
+                "Lock de run sans bloc « system » : run produit avant "
+                "l'introduction de l'identité de système. Relancez "
+                "« anonv2 predict »."
+            )
+
         scorecard = build_scorecard(
             run_id=run_dir.name,
             dataset=dataset,
@@ -155,6 +168,7 @@ def cmd_score(run: str | Path, protocol: str) -> int:
             gold_by_doc=gold,
             documents_by_doc=documents,
             reproducibility=lock,
+            system=system_block,
             requested_status=default_status,
         )
     except (TypeError, ValueError) as exc:
