@@ -15,13 +15,14 @@ from typing import Any
 import yaml
 
 from anonymisation.metrics.contracts import MetricStatus
+from anonymisation.metrics.downstream import evaluate_downstream_task
 from anonymisation.metrics.scorecard import (
     ScorecardError,
     build_scorecard,
     validate_reproducibility,
 )
 from anonymisation.schema.io import read_jsonl, write_json
-from anonymisation.schema.models import Annotation, Document
+from anonymisation.schema.models import Annotation, Document, TaskLabel
 from anonymisation.schema.taxonomy import TAXONOMY_VERSION
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -30,6 +31,8 @@ DATASETS_CONFIG = REPO_ROOT / "configs" / "datasets"
 LOCK_NAME = "manifest.lock.json"
 PREDICTIONS_NAME = "predictions.jsonl"
 SCORECARD_NAME = "scorecard.json"
+TASKS_NAME = "tasks.jsonl"
+DOCUMENTS_NAME = "documents.jsonl"
 
 
 class ScoreError(ValueError):
@@ -117,6 +120,38 @@ def _load_gold(
     return documents, {doc_id: tuple(values) for doc_id, values in grouped.items()}
 
 
+def _load_tasks(dataset: str, split: str) -> list[TaskLabel]:
+    """Labels de tâche aval du split, ou liste vide si le fichier n'existe pas.
+
+    L'absence de fichier est un cas légitime (corpus sans tâche aval) ; un
+    fichier illisible ne l'est pas : le confondre avec l'absence ferait
+    rapporter « aucune tâche downstream déclarée » sur des données corrompues.
+    """
+    tasks_path = PROCESSED_ROOT / dataset / split / TASKS_NAME
+    if not tasks_path.is_file():
+        return []
+    try:
+        return list(read_jsonl(tasks_path, TaskLabel))
+    except (OSError, ValueError) as exc:
+        raise ScoreError(f"Tâches aval illisibles ({tasks_path}) : {exc}") from exc
+
+
+def _load_train_data(dataset: str) -> tuple[list[Document], list[TaskLabel]]:
+    """Corpus d'entraînement de la tâche aval, ou ``([], [])`` s'il est absent."""
+    train_dir = PROCESSED_ROOT / dataset / "train"
+    docs_path = train_dir / DOCUMENTS_NAME
+    tasks_path = train_dir / TASKS_NAME
+    if not docs_path.is_file() or not tasks_path.is_file():
+        return [], []
+    try:
+        docs = list(read_jsonl(docs_path, Document))
+        tasks = list(read_jsonl(tasks_path, TaskLabel))
+    except (OSError, ValueError) as exc:
+        raise ScoreError(
+            f"Corpus d'entraînement aval illisible ({train_dir}) : {exc}"
+        ) from exc
+    return docs, tasks
+
 def cmd_score(run: str | Path, protocol: str) -> int:
     """Calcule ``scorecard.json`` depuis un run figé, sans modèle.
 
@@ -141,10 +176,39 @@ def cmd_score(run: str | Path, protocol: str) -> int:
         split = str(run_info["split"])
     except (KeyError, TypeError, ScorecardError) as exc:
         raise ScoreError(f"Lock de run invalide : {exc}") from exc
-
+    protocol_name, protocol_version, default_status = _protocol_info(dataset, protocol)
     predictions = _read_predictions(run_dir / PREDICTIONS_NAME)
     documents, gold = _load_gold(dataset, split)
-    protocol_name, protocol_version, default_status = _protocol_info(dataset, protocol)
+    eval_tasks = _load_tasks(dataset, split)
+    # Le classifieur aval s'entraîne sur `train` : évaluer sur ce même split
+    # reviendrait à mesurer la rétention d'utilité en train-sur-test, ce qui
+    # gonfle mécaniquement `score_original` et donc `utility_retention`.
+    downstream_eligible = bool(eval_tasks) and split != "train"
+    train_docs, train_tasks = _load_train_data(dataset) if downstream_eligible else ([], [])
+
+    downstream_results = []
+    if downstream_eligible and train_docs and train_tasks:
+        # Un document sans prédiction n'a PAS été anonymisé : le comparer à
+        # lui-même le ferait passer pour parfaitement préservé et gonflerait
+        # la rétention. On l'exclut de l'évaluation aval.
+        anon_by_doc = {
+            str(record.get("doc_id")): str(record.get("anonymized_text") or "")
+            for record in predictions
+            if record.get("anonymized_text") is not None
+        }
+        eval_docs_orig = [doc for doc in documents.values() if doc.doc_id in anon_by_doc]
+        eval_docs_anon = [anon_by_doc[doc.doc_id] for doc in eval_docs_orig]
+        for t_name in sorted({t.task for t in eval_tasks}):
+            downstream_results.append(
+                evaluate_downstream_task(
+                    task_name=t_name,
+                    train_docs=train_docs,
+                    train_tasks=train_tasks,
+                    eval_docs_orig=eval_docs_orig,
+                    eval_docs_anon=eval_docs_anon,
+                    eval_tasks=eval_tasks,
+                )
+            )
     try:
         # L'identité du système commande quelles métriques sont applicables.
         # On refuse plutôt que de supposer : supposer la détection produirait
@@ -170,6 +234,7 @@ def cmd_score(run: str | Path, protocol: str) -> int:
             reproducibility=lock,
             system=system_block,
             requested_status=default_status,
+            downstream_results=downstream_results if downstream_results else None,
         )
     except (TypeError, ValueError) as exc:
         raise ScoreError(f"Scorecard impossible à calculer : {exc}") from exc

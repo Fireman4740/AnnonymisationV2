@@ -3,18 +3,9 @@
 Scripts d'acquisition et de maintenance. La logique métier vit dans
 `src/anonymisation/` ; ces scripts ne sont que des points d'entrée.
 
-| Script | Rôle | Lot |
-|--------|------|-----|
-| `download_openpii.py` | Acquisition OpenPII depuis Hugging Face | L2 |
-| `download_synthpai.py` | Acquisition SynthPAI | L2 |
-| `download_tab.py` | Acquisition TAB | L2 |
-| `download_ratbench.py` | Acquisition RAT-Bench (dépôt à identifier) | L2 |
-| `download_multiconer.py` | Acquisition MultiCoNER II | L2 |
-| `download_meddocan.py` | Acquisition MEDDOCAN (Zenodo) | L2 |
-| `build_population_fr.py` | Construction de `fr-hr-2026` / `fr-general-2026` | L3 |
-| `build_population_parc.py` | Parc synthétique support, avec queue longue | L3 |
-| `generate_corpus.py` | Génération HR / support / forums (SPEC-05) | L4 |
+| Script | Rôle |
+|--------|------|
+| `check_no_data_committed.py` | Contrôle d'intégrité CI interdisant la version de données brutes ou de secrets |
 
-Préférer `anonv2 datasets download <key>` quand l'adaptateur existe : les
-scripts sont réservés aux acquisitions qui ne rentrent pas dans le contrat
-d'adaptateur.
+Pour l'acquisition et l'ingestion des jeux de données, utiliser directement la CLI :
+`anonv2 datasets ingest <key>` ou `anonv2 datasets download <key>`.

@@ -15,15 +15,18 @@ env:
 
 jobs:
   ci-1-static:
-    name: CI-1 statique
+    name: CI-1 statique (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - name: Installer les dépendances de développement
-        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev,datasets]'
       - name: Ruff
         run: ruff check src tests scripts
       - name: Mypy strict
@@ -32,19 +35,21 @@ jobs:
         run: python scripts/check_no_data_committed.py
 
   ci-2-unit:
-    name: CI-2 unitaire
+    name: CI-2 unitaire (py${{ matrix.python-version }})
     needs: ci-1-static
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - name: Installer les dépendances de développement
-        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev,datasets]'
       - name: Tests sans données externes
         run: pytest -m "not requires_data and not slow"
-
   ci-3-integration:
     name: CI-3 intégration
     needs: ci-2-unit
@@ -55,8 +60,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Installer les dépendances de développement
-        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+      - name: Installer les dépendances de développement et datasets
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev,datasets]'
       - name: Ingérer les corpus disponibles
         run: anonv2 datasets ingest --all --skip-missing
       - name: Valider les corpus effectivement ingérés

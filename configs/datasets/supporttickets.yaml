@@ -1,0 +1,63 @@
+# Manifeste — SupportTicketsReal
+# Fiche : documentation/datasets/supporttickets.md
+
+key: supporttickets
+name: "SupportTicketsReal"
+description: "61 765 tickets de support client réels avec métadonnées de routage, priorité et type"
+doc: "documentation/datasets/supporttickets.md"
+aliases: ["support-tickets-real", "support_tickets"]
+
+source:
+  kind: local
+  path: "SupportTicketsReal"
+  path_env: ANONV2_V1_DATASETS
+  files: ["train.parquet"]
+  repo: null
+  revision: "v1"
+  paper: null
+  instructions: >
+    Définir ANONV2_V1_DATASETS sur la racine des jeux de données V1.
+    Le fichier requis est SupportTicketsReal/train.parquet.
+
+license:
+  spdx: "UNKNOWN"
+  redistribution: false
+  restricted: true
+  citation: null
+  notes: "Tickets de support réels : confidentialité stricte, redistribution interdite."
+
+integrity:
+  sha256: null
+  expected_documents: 61765
+  expected_profiles: 0
+
+structure:
+  domain: support
+  languages: ["de", "en", "es", "fr", "it", "nl", "pl", "pt", "ru", "tr"]
+  synthetic: false
+  has_profiles: false
+  has_combinations: false
+  has_organizations: false
+  has_tasks: true
+  split_by: document
+  splits: ["train", "dev", "test"]
+
+annotation:
+  split_seed: 42
+  split_ratios: {train: 0.8, dev: 0.1, test: 0.1}
+tasks:
+  - {id: "ticket_routing", type: "classification", description: "Routage du ticket (queue)"}
+  - {id: "ticket_priority", type: "classification", description: "Priorité du ticket"}
+  - {id: "ticket_type", type: "classification", description: "Type de ticket"}
+
+evaluation:
+  protocol: "supporttickets-v1"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "DIAGNOSTIC"
+  granularities: ["document"]
+  report_by: ["language", "ticket_type"]
+
+population:
+  population_id: null
+  k_computable: false

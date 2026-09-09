@@ -114,7 +114,7 @@ def write_jsonl(path: Path, records: Iterable[BaseModel]) -> int:
     return count
 
 
-def write_json(path: Path, payload: Mapping[str, Any]) -> None:
+def write_json(path: Path, payload: Any) -> None:
     """Écrit un document JSON indenté de façon atomique et reproductible.
 
     Même contrat que :func:`write_jsonl` (SPEC-04 §6/§9) pour les fichiers

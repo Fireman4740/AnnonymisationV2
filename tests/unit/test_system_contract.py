@@ -40,6 +40,7 @@ _CONFIGS: dict[str, SystemConfig] = {
     "passthrough-v1": SystemConfig(),
     "redact-all-v1": SystemConfig(params={"replacement": ""}),
     "deterministic-v1": SystemConfig(policy_id="P2"),
+    "regex-only-v1": SystemConfig(),
 }
 
 

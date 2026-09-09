@@ -9,6 +9,10 @@ scoring doit rester hors ligne et sans modèle. Le vocabulaire partagé avec les
 métriques vit dans ``anonymisation.capabilities``, qui n'importe rien.
 """
 
+# --- Systèmes enregistrés (import explicite = enregistrement) --------------- #
+from anonymisation.systems import bounds as _bounds  # noqa: F401,E402
+from anonymisation.systems import deterministic as _deterministic  # noqa: F401,E402
+from anonymisation.systems import regex_only as _regex_only  # noqa: F401,E402
 from anonymisation.systems.base import (
     ModelRef,
     SystemBase,
@@ -27,10 +31,6 @@ from anonymisation.systems.registry import (
     register_system,
     resolve_system,
 )
-
-# --- Systèmes enregistrés (import explicite = enregistrement) --------------- #
-from anonymisation.systems import bounds as _bounds  # noqa: F401,E402
-from anonymisation.systems import deterministic as _deterministic  # noqa: F401,E402
 
 __all__ = [
     "ALIASES",

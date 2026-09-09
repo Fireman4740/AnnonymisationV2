@@ -1,0 +1,42 @@
+# Population de référence — RAT-Bench US PUMS 2022
+# Fiche : documentation/datasets/rat-bench.md
+
+population_id: ratbench-us
+name: "Population US Census PUMS 2022 (ACS 1-Year)"
+size: 309349689
+geography: US
+year: 2022
+kind: sample
+
+attributes:
+  CIT:
+    column: "citizenship status"
+    spec_code: GEN_ORIGIN_BELIEF
+  DOB:
+    column: null
+    spec_code: GEN_AGE
+  MAR:
+    column: "marital status"
+    spec_code: GEN_FAMILY
+  SEX:
+    column: "sex"
+    spec_code: GEN_GENDER
+  ST:
+    column: "state of residence"
+    spec_code: GEN_GEO
+  SCHL:
+    column: "educational attainment"
+    spec_code: GEN_EDUCATION
+  OCCP:
+    column: "occupation"
+    spec_code: GEN_OCCUPATION
+  ESR:
+    column: "employment status"
+    spec_code: HR_CONTRACT
+  RAC2P:
+    column: "race"
+    spec_code: GEN_ORIGIN_BELIEF
+
+notes: >
+  Population américaine ACS 2022. La somme des poids PWGTP projette la taille
+  d'équivalence k_true sur la population américaine totale (~309 M).

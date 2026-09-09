@@ -39,10 +39,9 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Final
 
-from anonymisation.detect.base import Candidate, candidates_to_annotations
+from anonymisation.detect.base import Candidate, Detector, candidates_to_annotations
 from anonymisation.detect.fusion import fuse
-from anonymisation.detect.patterns import apply_patterns, load_patterns
-from anonymisation.detect.rules import apply_rules
+from anonymisation.detect.patterns import load_patterns
 from anonymisation.pipeline.profiles import FUSE_STRATEGIES, RuntimeProfile, _repo_root
 from anonymisation.pipeline.traces import (
     LLM_STAGES,
@@ -56,13 +55,11 @@ from anonymisation.pipeline.validate_stage import validate_anonymization
 from anonymisation.policy.engine import (
     NaiveRiskEstimator,
     PolicyEngine,
-)
-from anonymisation.policy.engine import (
-    _QiState as _EngineQiState,
+    QiState,
+    build_qi_states,
 )
 from anonymisation.policy.models import load_policy_set
 from anonymisation.schema.models import Annotation, Document
-from anonymisation.schema.taxonomy import IdentifierType
 from anonymisation.transform.apply import apply_decisions
 from anonymisation.transform.decisions import Action, AnonymizationDecision
 from anonymisation.transform.pseudonymize import PseudoMapper
@@ -215,6 +212,7 @@ class Pipeline:
         *,
         config_path: Path | None = None,
         policy_id: str | None = None,
+        detector: Detector | None = None,
     ) -> None:
         if not isinstance(profile, RuntimeProfile):
             from anonymisation.pipeline.profiles import load_runtime_profile
@@ -300,9 +298,15 @@ class Pipeline:
                 f"{stages.transform.masking.mode!r} — valeurs : 'full' | 'partial'."
             )
 
-        # --- Résolution des références de configuration.
+        # --- Résolution des références de configuration et détecteur.
         patterns_path = self._resolve_reference(stages.detect.deterministic.patterns)
         self._patterns, self._lexicons = load_patterns(patterns_path)
+        if detector is not None:
+            self._detector = detector
+        else:
+            from anonymisation.detect import DeterministicDetector
+
+            self._detector = DeterministicDetector(config_path=patterns_path)
 
         policies_path = self._resolve_reference(stages.plan.policy_set)
         policy_set = load_policy_set(policies_path)
@@ -512,8 +516,16 @@ class Pipeline:
     # ------------------------------------------------------------------ #
     def _stage_detect(self, state: _RunState) -> StageTrace:
         spec = self._profile.stages.detect.deterministic
-        candidates = apply_patterns(state.doc.text, state.doc.language, self._patterns)
-        candidates.extend(apply_rules(state.doc.text, state.doc.language, self._lexicons))
+        # DETECT ne fusionne pas : la fusion est l'étape 2, pilotée par
+        # ``stages.fuse.strategy`` du profil, et ses décisions doivent
+        # apparaître dans la trace FUSE. Un détecteur qui n'expose pas de
+        # sortie brute est fusionné par ses soins ; FUSE devient alors un
+        # passe-plat, mais on ne perd rien de plus qu'aujourd'hui.
+        detect_raw = getattr(self._detector, "detect_raw", None)
+        if detect_raw is None:
+            candidates = list(self._detector.detect(state.doc.text, state.doc.language))
+        else:
+            candidates = list(detect_raw(state.doc.text, state.doc.language))
         # Privacy-first (SPEC-07 §2) : on filtre par seuil de confiance
         # déclaré, on ne pénalise jamais l'absence de contexte.
         kept = [c for c in candidates if c.confidence >= spec.min_confidence]
@@ -575,17 +587,9 @@ class Pipeline:
         # Un état de QI par annotation quasi-identifiante (catégorie
         # primaire, niveau 0), comme le fait le moteur de politique dans
         # PLAN : mêmes états, même sémantique du risque.
-        states: list[_EngineQiState] = []
-        by_category: dict[str, list[_EngineQiState]] = {}
-        for ann in state.annotations:
-            if ann.identifier_type is not IdentifierType.QUASI:
-                continue
-            state_qi = _EngineQiState(
-                annotation_id=ann.annotation_id,
-                qi_category=ann.qi_categories[0],
-                level=0,
-            )
-            states.append(state_qi)
+        states = build_qi_states(state.annotations)
+        by_category: dict[str, list[QiState]] = {}
+        for state_qi in states:
             by_category.setdefault(state_qi.qi_category, []).append(state_qi)
 
         k_hat = self._estimator.estimate_k(states)
@@ -740,12 +744,14 @@ class Pipeline:
     # ------------------------------------------------------------------ #
     def _stage_validate(self, state: _RunState) -> StageTrace:
         checks = self._profile.stages.validation
+        patterns = getattr(self._detector, "patterns", self._patterns)
+        lexicons = getattr(self._detector, "lexicons", self._lexicons)
         outcome = validate_anonymization(
             anonymized_text=state.current_text,
             decisions=state.applied_decisions,
             gold_annotations=state.gold,
-            patterns=self._patterns,
-            lexicons=self._lexicons,
+            patterns=patterns,
+            lexicons=lexicons,
             language=state.doc.language,
             checks=checks,
         )

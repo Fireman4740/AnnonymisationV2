@@ -43,7 +43,7 @@ from anonymisation.policy.engine import (
     DEFAULT_UTILITY_COST,
     NaiveRiskEstimator,
     PolicyEngine,
-    _QiState,
+    QiState,
 )
 from anonymisation.policy.models import load_policy_set
 from anonymisation.schema.models import Annotation, Document, Domain
@@ -437,12 +437,11 @@ def _s3_annotations() -> list[Annotation]:
     ]
 
 
-def _s3_states() -> list[_QiState]:
+def _s3_states() -> list[QiState]:
     return [
-        _QiState(a.annotation_id, a.qi_categories[0], 0)
+        QiState(a.annotation_id, a.qi_categories[0], 0)
         for a in _s3_annotations()
     ]
-
 
 def _decision_cost(decision: AnonymizationDecision) -> float:
     """Coût utilitaire d'une décision (proxy, table du moteur) ; la

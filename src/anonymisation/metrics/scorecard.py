@@ -29,7 +29,7 @@ from anonymisation.metrics.protection import (
 )
 from anonymisation.metrics.spans import span_metrics, weighted_token_precision
 from anonymisation.metrics.tria import TRIARecord, evaluate_trir
-from anonymisation.metrics.utility import rouge_l
+from anonymisation.metrics.utility import mean_utility, rouge_l
 from anonymisation.schema.taxonomy import IdentifierType
 
 SCORECARD_SCHEMA_VERSION = "2.0"
@@ -235,6 +235,87 @@ def _subject_of(
     return doc_id
 
 
+def _mean_utility_over_documents(
+    *,
+    pairs: Sequence[tuple[str, str]],
+    rouge_scores: Sequence[float],
+    judge: Any,
+    judge_name: str | None,
+) -> MetricValue:
+    """Moyenne document par document de Mean Utility (SPEC-07).
+
+    Sans juge, la métrique reste ``UNAVAILABLE`` par définition (Readability et
+    Meaning sont indispensables) : on réutilise alors les ROUGE-L déjà calculés
+    plutôt que de relancer un LCS. Avec juge, chaque document est évalué
+    séparément puis moyenné — jamais le corpus concaténé.
+    """
+    rouge_mean = sum(rouge_scores) / len(rouge_scores) if rouge_scores else None
+    if judge is None:
+        return MetricValue(
+            name="mean_utility",
+            value=None,
+            protocol="mean-utility",
+            protocol_version="1",
+            status=MetricStatus.UNAVAILABLE,
+            direction=MetricDirection.MAXIMIZE,
+            details={
+                "components": {"readability": None, "meaning": None, "rouge_l": rouge_mean},
+                "judge": None,
+                "documents": len(rouge_scores),
+                "reason": "aucun juge Readability/Meaning configuré",
+            },
+        )
+
+    per_doc = [
+        mean_utility(original=original, anonymized=anonymized, judge=judge, judge_name=judge_name)
+        for original, anonymized in pairs
+    ]
+    values = [result.value for result in per_doc if result.value is not None]
+    if not values:
+        return MetricValue(
+            name="mean_utility",
+            value=None,
+            protocol="mean-utility",
+            protocol_version="1",
+            status=MetricStatus.UNAVAILABLE,
+            direction=MetricDirection.MAXIMIZE,
+            details={
+                "components": {"readability": None, "meaning": None, "rouge_l": rouge_mean},
+                "judge": judge_name,
+                "documents": 0,
+                "reason": "aucun document évaluable par le juge",
+            },
+        )
+
+    def _component(key: str) -> float | None:
+        scores = [
+            (result.details or {}).get("components", {}).get(key)
+            for result in per_doc
+            if result.value is not None
+        ]
+        usable = [float(s) for s in scores if s is not None]
+        return sum(usable) / len(usable) if usable else None
+
+    return MetricValue(
+        name="mean_utility",
+        value=sum(values) / len(values),
+        protocol="mean-utility",
+        protocol_version="1",
+        status=MetricStatus.DIAGNOSTIC,
+        direction=MetricDirection.MAXIMIZE,
+        details={
+            "components": {
+                "readability": _component("readability"),
+                "meaning": _component("meaning"),
+                "rouge_l": _component("rouge_l"),
+            },
+            "judge": judge_name or str(getattr(judge, "name", "unnamed-judge")),
+            "documents": len(values),
+            "aggregation": "moyenne par document",
+        },
+    )
+
+
 def build_scorecard(
     *,
     run_id: str,
@@ -249,11 +330,13 @@ def build_scorecard(
     system: Mapping[str, Any],
     requested_status: MetricStatus | str = MetricStatus.DIAGNOSTIC,
     match: str = "partial",
+    judge: Any = None,
+    judge_name: str | None = None,
+    downstream_results: Sequence[Any] | None = None,
 ) -> dict[str, Any]:
     """Agrège un run figé en scorecard SPEC-07 §10.
 
     Les lignes ``ok`` et ``partial`` alimentent les TP/FP/FN ; seules les
-    lignes ``error`` en sont exclues. Toutes les
     lignes sont toutefois comptées par :class:`RunAccounting` et leur taux
     d'erreur est exposé au premier niveau.
     """
@@ -359,6 +442,30 @@ def build_scorecard(
     ]
     rouge_mean = sum(rouge_scores) / len(rouge_scores) if rouge_scores else None
 
+    # Mean Utility est une moyenne PAR DOCUMENT : concaténer le corpus rendrait
+    # le LCS de ROUGE-L quadratique en la taille totale (minutes à heures dès
+    # quelques milliers de documents) tout en mesurant autre chose.
+    mean_util_result = _mean_utility_over_documents(
+        pairs=[
+            (
+                str(field_value(documents_by_doc.get(str(record.get("doc_id"))), "text", "")),
+                str(record.get("anonymized_text") or ""),
+            )
+            for record in scored
+        ],
+        rouge_scores=rouge_scores,
+        judge=judge,
+        judge_name=judge_name,
+    )
+    # Rétention d'utilité aval : moyenne des tâches qui ont pu être évaluées.
+    downstream_dicts = [r.to_dict() for r in downstream_results] if downstream_results else []
+    retentions = [
+        float(r.utility_retention)
+        for r in (downstream_results or ())
+        if r.utility_retention is not None
+    ]
+    retention_mean = sum(retentions) / len(retentions) if retentions else None
+
     trir_result = None
     trir_details: dict[str, Any] = {}
     try:
@@ -442,6 +549,13 @@ def build_scorecard(
                 "documents": len(rouge_scores),
                 "limitation": "métrique de surface : pénalise la généralisation",
             },
+        ),
+        "mean_utility": _gate(
+            "mean_utility",
+            mean_util_result.value,
+            status=mean_util_result.status,
+            direction=MetricDirection.MAXIMIZE,
+            details=mean_util_result.details,
         ),
         # Fuite gold : recherche exacte, indépendante du détecteur.
         "gold_leak_rate": _gate(
@@ -569,15 +683,26 @@ def build_scorecard(
                 details={"reason": "aucun attaquant exécuté par score"},
             ),
             "utility_retention": _metric_dict(
-                "utility_retention", None, protocol=protocol,
-                protocol_version=protocol_version, status=MetricStatus.UNAVAILABLE,
+                "utility_retention",
+                retention_mean,
+                protocol=protocol,
+                protocol_version=protocol_version,
+                status=(
+                    MetricStatus.DIAGNOSTIC if retention_mean is not None
+                    else MetricStatus.UNAVAILABLE
+                ),
                 direction=MetricDirection.MAXIMIZE,
-                details={
-                    "reason": "aucune tâche downstream déclarée ; "
-                    "voir `rouge_l` pour un proxy d'utilité textuelle"
-                },
+                details=(
+                    {"tasks": downstream_dicts}
+                    if downstream_dicts
+                    else {
+                        "reason": "aucune tâche downstream déclarée ; "
+                        "voir `rouge_l` pour un proxy d'utilité textuelle"
+                    }
+                ),
             ),
         },
+        "downstream_tasks": downstream_dicts,
         "diagnostic": diagnostic,
         "macro_f1": _metric_dict(
             "macro_f1", macro_f1, protocol=protocol,
@@ -630,16 +755,14 @@ def validate_reproducibility(lock: Mapping[str, Any]) -> None:
     policy = lock.get("policy")
     if not isinstance(policy, Mapping):
         raise ScorecardError("Lock de reproductibilité sans politique")
-    if not policy.get("id"):
-        # Un système sans politique (boîte noire, passe-plat) est légitime,
-        # mais l'absence doit être **déclarée**, jamais déduite du silence :
-        # sans `reason`, on ne distingue pas « aucune politique » d'un lock
-        # tronqué.
-        if not str(policy.get("reason", "")).strip():
-            raise ScorecardError(
-                "Lock sans politique : un `policy.id` vide exige un "
-                "`policy.reason` explicite (ex. « système sans politique »)."
-            )
+    # Un système sans politique (boîte noire, passe-plat) est légitime, mais
+    # l'absence doit être **déclarée**, jamais déduite du silence : sans
+    # `reason`, on ne distingue pas « aucune politique » d'un lock tronqué.
+    if not policy.get("id") and not str(policy.get("reason", "")).strip():
+        raise ScorecardError(
+            "Lock sans politique : un `policy.id` vide exige un "
+            "`policy.reason` explicite (ex. « système sans politique »)."
+        )
 
 
 def validate_scorecard(scorecard: Mapping[str, Any]) -> None:

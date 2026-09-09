@@ -40,6 +40,7 @@ from typing import Any
 
 from anonymisation.metrics.contracts import MetricStatus
 from anonymisation.policy.models import Policy
+from anonymisation.schema.taxonomy import IdentifierType
 from anonymisation.transform.decisions import (
     Action,
     AnnotationLike,
@@ -117,12 +118,27 @@ _LEVEL_WIDENING_FACTOR = 4.0
 
 
 @dataclass(frozen=True)
-class _QiState:
+class QiState:
     """État courant d'un QI observé, pour le calcul de risque proxy."""
 
     annotation_id: str
     qi_category: str
     level: int
+
+
+def build_qi_states(annotations: Sequence[AnnotationLike]) -> list[QiState]:
+    """Construit la liste des ``QiState`` pour les annotations quasi-identifiantes."""
+    states: list[QiState] = []
+    for index, ann in enumerate(annotations):
+        identifier_type = getattr(ann, "identifier_type", None)
+        if identifier_type is not None and identifier_type is not IdentifierType.QUASI:
+            continue
+        categories = getattr(ann, "qi_categories", ())
+        if not categories:
+            continue
+        aid = getattr(ann, "annotation_id", None) or f"anon-{index}"
+        states.append(QiState(annotation_id=aid, qi_category=categories[0], level=0))
+    return states
 
 
 class _NaiveRiskValue(float):
@@ -194,7 +210,7 @@ class NaiveRiskEstimator:
         base = self._selectivity.get(qi_category, _DEFAULT_UNKNOWN_SELECTIVITY)
         return min(1.0, base * (_LEVEL_WIDENING_FACTOR**level))
 
-    def estimate_k(self, states: Sequence[_QiState]) -> float:
+    def estimate_k(self, states: Sequence[QiState]) -> float:
         """Taille attendue de la classe d'équivalence."""
         if not states:
             return float(self._population_size)
@@ -203,7 +219,7 @@ class NaiveRiskEstimator:
             product *= self._prevalence_for(state.qi_category, state.level)
         return self._population_size * product
 
-    def __call__(self, states: Sequence[_QiState]) -> _NaiveRiskValue:
+    def __call__(self, states: Sequence[QiState]) -> _NaiveRiskValue:
         if not states:
             # Aucun QI observé : rien ne restreint la population, risque nul.
             return _NaiveRiskValue(0.0)
@@ -447,7 +463,7 @@ class PolicyEngine:
 
         def compute_risk(active_ids: list[str]) -> float:
             qi_states = [
-                _QiState(aid, self._category_of(by_id[aid]), state[aid].get("level", 0)) for aid in active_ids
+                QiState(aid, self._category_of(by_id[aid]), state[aid].get("level", 0)) for aid in active_ids
             ]
             return self._risk_fn(qi_states)
 

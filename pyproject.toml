@@ -3,7 +3,7 @@ name = "anonymisation-v2"
 version = "0.1.0"
 description = "Détection de quasi-identifiants indirects et anonymisation pilotée par le risque de ré-identification"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Mathis Carlesso" }]
 
@@ -63,13 +63,14 @@ packages = ["src/anonymisation"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 # E501 is retained as formatter guidance; UP042 would require Python 3.11
 # StrEnum and break the documented Python 3.10 compatibility.
 ignore = ["E501", "UP042", "SIM117"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
@@ -80,7 +81,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 strict = true
 ignore_missing_imports = true
 files = ["src/anonymisation"]

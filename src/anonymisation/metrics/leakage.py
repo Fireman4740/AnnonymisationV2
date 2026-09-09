@@ -35,7 +35,7 @@ def _identifier_type(item: Any) -> str | None:
     raw = _field(item, "identifier_type")
     if raw is None:
         return None
-    return getattr(raw, "value", raw)
+    return str(getattr(raw, "value", raw))
 
 
 def _surface(item: Any) -> str | None:

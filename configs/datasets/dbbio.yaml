@@ -62,8 +62,9 @@ annotation:
     localisation et offset validé ; le corpus source ne fournit pas de spans.
 
 tasks:
-  - {id: "occupation", type: "hierarchy", description: "Hiérarchie DBpedia l1/l2/l3"}
-
+  - {id: "occupation_l1", type: "classification", description: "DBpedia occupation niveau 1"}
+  - {id: "occupation_l2", type: "classification", description: "DBpedia occupation niveau 2"}
+  - {id: "occupation_l3", type: "classification", description: "DBpedia occupation niveau 3"}
 evaluation:
   protocol: "dbbio-v1"
   protocol_version: "1"

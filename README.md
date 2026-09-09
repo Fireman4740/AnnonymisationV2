@@ -117,19 +117,48 @@ AnnonymisationV2/
 └── tests/
 ```
 
-## 6. État d'avancement
+## 6. Utilisation et Harnais d'Évaluation
+
+### Environnement de développement (WSL2 / Linux)
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev,datasets]'
+export PYTHONPATH=src
+export ANONV2_V1_DATASETS=/chemin/vers/Anonymisation/eval/datasets
+```
+
+### Commandes principales CLI (`anonv2`)
+```bash
+# Ingestion des jeux de données
+anonv2 datasets ingest tab --split test --limit 100
+anonv2 datasets ingest supporttickets --limit 100
+anonv2 datasets ingest ratbench
+
+# Prédiction multi-systèmes
+anonv2 predict --dataset tab --split test --system passthrough --out runs/run_passthrough
+anonv2 predict --dataset tab --split test --system redact-all --param replacement="" --out runs/run_redact
+anonv2 predict --dataset tab --split test --system regex-only --out runs/run_regex
+anonv2 predict --dataset tab --split test --system deterministic --policy P2 --out runs/run_det
+
+# Scoring hors ligne
+anonv2 score --run runs/run_det --protocol tab-official
+
+# Comparaison inter-systèmes et rapport Markdown
+anonv2 compare --runs runs/run_passthrough runs/run_redact runs/run_regex runs/run_det --out runs/comparison.md
+```
+
+## 7. État d'avancement
 
 | Lot | Sujet | État |
 |-----|-------|------|
 | L0  | Cadrage, état de l'art, spécifications | ✅ fait |
-| L1  | Schéma de données + taxonomie QI (code) | ⬜ à faire |
-| L2  | Registre + adaptateurs P0 (OpenPII, TAB, SynthPAI, RAT-Bench) | ⬜ à faire |
-| L3  | Moteur de risque + populations de référence | ⬜ à faire |
-| L4  | Corpus internes RH / support / forums | ⬜ à faire |
-| L5  | Attaquants + boucle end-to-end | ⬜ à faire |
+| L1  | Schéma de données + taxonomie QI (code) | ✅ fait |
+| L2  | Registre + adaptateurs locaux (TAB, SupportTickets, Bitext, RAT-Bench, DB-bio, CoNLL) | ✅ fait |
+| L3  | Contrat système, baselines (passthrough, redact-all, regex-only, deterministic), PUMS k_true | ✅ fait |
+| L4  | Évaluation utilité aval, scorecards, comparaison inter-systèmes | ✅ fait |
 
 Voir [`documentation/roadmap.md`](documentation/roadmap.md).
-
 ## 7. Rapport à la V1
 
 La V1 (`../Anonymisation`) fournit un pipeline LangGraph regex + NER + LLM et des

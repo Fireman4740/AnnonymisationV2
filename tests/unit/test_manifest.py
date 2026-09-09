@@ -82,7 +82,7 @@ def _write(tmp_path: Path, data: dict[str, Any], name: str = "tst.yaml") -> Path
 
 
 def test_repo_manifests_all_load() -> None:
-    """Les 10 manifestes du dépôt se chargent tels quels (jeu A-1/G-6)."""
+    """Les manifestes du dépôt se chargent tous tels quels."""
     loaded = load_all_manifests(REPO_ROOT / "configs" / "datasets")
     assert set(loaded) == {
         "openpii",
@@ -95,6 +95,9 @@ def test_repo_manifests_all_load() -> None:
         "personalreddit",
         "quasifr",
         "dbbio",
+        "supporttickets",
+        "bitextsupport",
+        "conll2003",
     }
 
 

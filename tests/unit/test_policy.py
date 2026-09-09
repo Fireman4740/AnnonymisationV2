@@ -224,10 +224,10 @@ def test_monotonic_suppression_count_across_policies(policy_set):
 
 def test_generalize_reduces_risk_via_naive_estimator():
     estimator = NaiveRiskEstimator()
-    from anonymisation.policy.engine import _QiState
+    from anonymisation.policy.engine import QiState
 
-    exact = [_QiState("a", "GEN_AGE", 0)]
-    generalized = [_QiState("a", "GEN_AGE", 2)]
+    exact = [QiState("a", "GEN_AGE", 0)]
+    generalized = [QiState("a", "GEN_AGE", 2)]
     assert estimator(generalized) < estimator(exact)
 
 def test_naive_risk_output_status_is_immutable():

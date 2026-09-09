@@ -634,6 +634,13 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
     score_p.add_argument("--protocol", required=True, help="Protocole d'évaluation.")
 
+    compare_p = sub.add_parser(
+        "compare",
+        help="Compare les scorecards de plusieurs runs et génère un rapport Markdown.",
+    )
+    compare_p.add_argument("--runs", nargs="+", required=True, help="Répertoires de runs à comparer.")
+    compare_p.add_argument("--out", default=None, help="Chemin du rapport Markdown de sortie.")
+
     datasets_p = sub.add_parser(
         "datasets",
         help="Acquisition, ingestion et validation des jeux de données.",
@@ -732,6 +739,14 @@ def main(argv: list[str] | None = None) -> int:
         try:
             return cmd_score(args.run, args.protocol)
         except ScoreError as exc:
+            print(f"Erreur d'usage : {exc}", file=sys.stderr)
+            return 2
+    if args.command == "compare":
+        from anonymisation.cli.compare import CompareError, cmd_compare
+
+        try:
+            return cmd_compare(args.runs, args.out)
+        except CompareError as exc:
             print(f"Erreur d'usage : {exc}", file=sys.stderr)
             return 2
     if args.command != "datasets":

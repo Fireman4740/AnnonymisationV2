@@ -1,0 +1,63 @@
+# Manifeste — BitextSupportSynthetic
+# Fiche : documentation/datasets/bitextsupport.md
+
+key: bitextsupport
+name: "BitextSupportSynthetic"
+description: "26 872 instructions et réponses de support client synthétiques avec intention et catégorie"
+doc: "documentation/datasets/bitextsupport.md"
+aliases: ["bitext-support-synthetic", "bitext_support", "bitext"]
+
+source:
+  kind: local
+  path: "BitextSupportSynthetic"
+  path_env: ANONV2_V1_DATASETS
+  files: ["train.parquet"]
+  repo: null
+  revision: "v1"
+  paper: null
+  instructions: >
+    Définir ANONV2_V1_DATASETS sur la racine des jeux de données V1.
+    Le fichier requis est BitextSupportSynthetic/train.parquet.
+
+license:
+  spdx: "UNKNOWN"
+  redistribution: false
+  restricted: true
+  citation: null
+  notes: "Données synthétiques d'assistance client Bitext."
+
+integrity:
+  sha256: null
+  expected_documents: 26872
+  expected_profiles: 0
+
+structure:
+  domain: support
+  languages: ["en"]
+  synthetic: true
+  has_profiles: false
+  has_combinations: false
+  has_organizations: false
+  has_tasks: true
+  split_by: document
+  splits: ["train", "dev", "test"]
+
+annotation:
+  split_seed: 42
+  split_ratios: {train: 0.8, dev: 0.1, test: 0.1}
+
+tasks:
+  - {id: "intent", type: "classification", description: "Intention de la requête"}
+  - {id: "category", type: "classification", description: "Catégorie de la requête"}
+
+evaluation:
+  protocol: "bitextsupport-v1"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "DIAGNOSTIC"
+  granularities: ["document"]
+  report_by: ["category"]
+
+population:
+  population_id: null
+  k_computable: false

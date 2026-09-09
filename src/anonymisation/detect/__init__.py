@@ -12,6 +12,7 @@ entièrement hors ligne et reproductible.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from anonymisation.detect.base import Candidate, Detector, candidates_to_annotations
@@ -28,6 +29,7 @@ __all__ = [
     "fuse",
     "CompiledPattern",
     "DeterministicDetector",
+    "PatternDetector",
 ]
 
 
@@ -39,9 +41,30 @@ class DeterministicDetector:
     ``configs/detection/patterns.yaml`` à la racine du dépôt.
     """
 
+    name: str = "deterministic_detector"
+
     def __init__(self, config_path: Path | None = None, strategy: str = "priority_longest") -> None:
         self._patterns, self._lexicons = load_patterns(config_path)
         self._strategy = strategy
+
+    @property
+    def patterns(self) -> Sequence[CompiledPattern]:
+        return self._patterns
+
+    @property
+    def lexicons(self) -> dict[str, list[str]]:
+        return self._lexicons
+
+    def detect_raw(self, text: str, language: str = "fr") -> list[Candidate]:
+        """Candidats bruts, AVANT fusion.
+
+        Les appelants qui pilotent eux-mêmes la fusion (l'orchestrateur, dont
+        le profil déclare ``stages.fuse.strategy``) doivent passer par ici :
+        ``detect`` applique déjà la stratégie propre au détecteur.
+        """
+        raw = list(apply_patterns(text, language, self._patterns))
+        raw.extend(apply_rules(text, language, self._lexicons))
+        return raw
 
     def detect(self, text: str, language: str = "fr") -> list[Candidate]:
         """Détecte les candidats QI dans ``text``, fusionnés et triés par position.
@@ -49,20 +72,54 @@ class DeterministicDetector:
         Les offsets retournés réfèrent toujours à ``text`` tel que passé en
         argument (invariant documenté dans ``detect/base.py``).
         """
-        raw: list[Candidate] = []
-        raw.extend(apply_patterns(text, language, self._patterns))
-        raw.extend(apply_rules(text, language, self._lexicons))
-        fused, _decisions = fuse(raw, strategy=self._strategy)
+        fused, _decisions = fuse(self.detect_raw(text, language), strategy=self._strategy)
         return fused
 
     def detect_with_trace(
         self, text: str, language: str = "fr"
     ) -> tuple[list[Candidate], list[FusionDecision]]:
         """Variante de ``detect`` qui expose aussi les décisions de fusion."""
-        raw: list[Candidate] = []
-        raw.extend(apply_patterns(text, language, self._patterns))
-        raw.extend(apply_rules(text, language, self._lexicons))
-        return fuse(raw, strategy=self._strategy)
+        return fuse(self.detect_raw(text, language), strategy=self._strategy)
+
+    def detect_annotations(
+        self, text: str, doc_id: str, language: str = "fr"
+    ) -> list[Annotation]:
+        """Détecte puis convertit directement en ``Annotation`` SPEC-02."""
+        candidates = self.detect(text, language)
+        return candidates_to_annotations(candidates, doc_id, text)
+
+
+class PatternDetector:
+    """Détecteur par motifs déclaratifs seuls (regex sans règles contextuelles) + fusion."""
+
+    name: str = "pattern_detector"
+
+    def __init__(self, config_path: Path | None = None, strategy: str = "priority_longest") -> None:
+        self._patterns, self._lexicons = load_patterns(config_path)
+        self._strategy = strategy
+
+    @property
+    def patterns(self) -> Sequence[CompiledPattern]:
+        return self._patterns
+
+    @property
+    def lexicons(self) -> dict[str, list[str]]:
+        return self._lexicons
+
+    def detect_raw(self, text: str, language: str = "fr") -> list[Candidate]:
+        """Candidats bruts, AVANT fusion (cf. ``DeterministicDetector.detect_raw``)."""
+        return list(apply_patterns(text, language, self._patterns))
+
+    def detect(self, text: str, language: str = "fr") -> list[Candidate]:
+        """Détecte les candidats en appliquant UNIQUEMENT les motifs déclaratifs."""
+        fused, _decisions = fuse(self.detect_raw(text, language), strategy=self._strategy)
+        return fused
+
+    def detect_with_trace(
+        self, text: str, language: str = "fr"
+    ) -> tuple[list[Candidate], list[FusionDecision]]:
+        """Variante de ``detect`` qui expose aussi les décisions de fusion."""
+        return fuse(self.detect_raw(text, language), strategy=self._strategy)
 
     def detect_annotations(
         self, text: str, doc_id: str, language: str = "fr"
