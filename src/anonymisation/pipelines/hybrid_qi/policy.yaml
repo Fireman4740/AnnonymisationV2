@@ -1,0 +1,83 @@
+# Politiques propres au pipeline hybride — points de fonctionnement P0–P4
+#
+# Spécifications : SPEC-06 §9 (seuils), SPEC-07 §7 (courbe).
+#
+# Ce fichier est spécifique au paquet hybrid_qi (pipelines/hybrid_qi/) : le
+# fichier partagé configs/policy/policies.yaml (deterministic-v1) n'est pas
+# modifié. Le format est le format partagé (anonymisation/policy/models.py :
+# PolicySet) — un bloc ``defaults`` + des politiques nommées — validé par
+# ``anonymisation.policy.models.load_policy_set`` au chargement.
+#
+# Ces seuils sont des valeurs EXPÉRIMENTALES, pas une norme juridique. Ce qu'ils
+# définissent est la courbe confidentialité/utilité publiée par le projet —
+# la livraison est la courbe, pas un point unique.
+#
+# La décision est prise sur la borne haute calibrée du risque copule
+# (``use_upper_bound: true``) : c'est pourquoi P1–P3 ont des ``keep_below`` bas.
+# P0 (``keep_below: 1.0``, ``QUASI: KEEP``) ne planifie jamais de généralisation
+# de QI ; P4 (``keep_below: 0.0``, ``QUASI: SUPPRESS``,
+# ``SENSITIVE_ONLY: SUPPRESS``) supprime tout QI. ``DIRECT: SUPPRESS`` vaut
+# pour P0–P4.
+
+defaults:
+  risk_model: "copula"
+  scope: "document"
+  use_upper_bound: true
+  k_seuil_at_risk: 10
+  sensitive_hardening: true
+  action_selection: "max_risk_reduction_per_utility_loss"
+
+policies:
+
+  P0:
+    label: "Permissive — identifiants directs uniquement"
+    description: "Point de référence sans anonymisation des QI ; plancher de la courbe comparative."
+    thresholds:
+      keep_below: 1.00
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: KEEP
+
+  P1:
+    label: "Prudent"
+    thresholds:
+      keep_below: 0.10
+      generalize_below: 0.10
+      suppress_above: 1.00
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: GENERALIZE
+    max_generalization_steps: 1
+
+  P2:
+    label: "Équilibré — défaut recommandé"
+    thresholds:
+      keep_below: 0.02
+      generalize_below: 0.02
+      suppress_above: 1.00
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: GENERALIZE
+    max_generalization_steps: 2
+
+  P3:
+    label: "Strict"
+    thresholds:
+      keep_below: 0.01
+      generalize_below: 0.01
+      suppress_above: 1.00
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: GENERALIZE
+    max_generalization_steps: 3
+
+  P4:
+    label: "Protection maximale"
+    thresholds:
+      keep_below: 0.00
+      generalize_below: 0.00
+      suppress_above: 1.00
+    actions:
+      DIRECT: SUPPRESS
+      QUASI: SUPPRESS
+      SENSITIVE_ONLY: SUPPRESS

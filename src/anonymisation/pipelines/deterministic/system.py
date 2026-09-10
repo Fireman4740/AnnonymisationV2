@@ -61,6 +61,11 @@ class DeterministicSystem(SystemBase):
     )
     Params: ClassVar[type[BaseModel] | None] = _DeterministicParams
 
+    @classmethod
+    def contract_config(cls) -> SystemConfig:
+        # Ce système consomme une politique : sans elle il est inconstructible.
+        return SystemConfig(policy_id="P2")
+
     def __init__(self, config: SystemConfig | None = None) -> None:
         super().__init__(config)
         profile = self.config.profile or str(self._params["runtime_profile"])

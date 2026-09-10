@@ -8,6 +8,17 @@ Date de référence de l'état de l'art : **30 août 2026**.
 
 ---
 
+## 0. Guides pratiques (point d'entrée pour contribuer)
+
+| Guide | Quand le lire |
+|-------|---------------|
+| [`guides/creer-un-pipeline.md`](guides/creer-un-pipeline.md) | **Avant d'ajouter tout système d'anonymisation** : où créer les fichiers, le contrat `SystemBase`, les capacités et ce qu'elles débloquent à l'évaluation, les invariants, le branchement obligatoire, la checklist de revue |
+
+Les instructions courtes chargées automatiquement par les agents vivent dans
+[`../CLAUDE.md`](../CLAUDE.md) à la racine ; ce guide en est la version détaillée.
+
+---
+
 ## 1. Rapport scientifique
 
 | Document | Contenu |
@@ -16,6 +27,7 @@ Date de référence de l'état de l'art : **30 août 2026**.
 | [`rapport/02-etat-de-l-art.md`](rapport/02-etat-de-l-art.md) | État de l'art complet : datasets, métriques, systèmes existants (TAB, IPI, SynthPAI, RAT-Bench, PETRE, ARX, Tau-Eval, SEAL, AURA, InferLink) |
 | [`rapport/03-lacunes-et-contribution.md`](rapport/03-lacunes-et-contribution.md) | Ce qui existe / ce qui manque, positionnement de la contribution, protocole expérimental en 3 contributions mesurables |
 | [`rapport/04-datasets-et-metriques-2026.md`](rapport/04-datasets-et-metriques-2026.md) | **Révision d'avril 2026** : les 4 axes d'évaluation, SPIA/PANORAMA, CPR/IPR, TRIA/TRIR, AAC, Mean Utility. Preuve empirique ER_di 0,997 / CPR 0,330 |
+| [`rapport/05-evaluation-llm-full-v1.md`](rapport/05-evaluation-llm-full-v1.md) | Première campagne du système `llm-full-v1` (anonymisation intégrale par LLM) vs `regex-only-v1`, sur openpii/tab/quasifr — CPR/IPR, fuite gold, limites découvertes |
 | [`rapport/references.bib`](rapport/references.bib) | Bibliographie BibTeX |
 
 ## 2. Jeux de données

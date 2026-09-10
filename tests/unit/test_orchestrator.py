@@ -59,7 +59,9 @@ from anonymisation.transform.generalize import generalize
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _MICRO = REPO_ROOT / "tests" / "fixtures" / "micro"
 POLICIES = REPO_ROOT / "configs" / "policy" / "policies.yaml"
-DETERMINISTIC_YAML = REPO_ROOT / "configs" / "runtime" / "deterministic.yaml"
+DETERMINISTIC_YAML = (
+    REPO_ROOT / "src" / "anonymisation" / "pipelines" / "deterministic" / "profile.yaml"
+)
 
 #: Rang de protection croissante des actions (plus grand = plus protectrice).
 _ACTION_RANK = {

@@ -1,0 +1,77 @@
+# Profil d'exécution du pipeline hybride (SPEC-10 §8, profil versionné
+# ``hybrid_qi``).
+#
+# Noyau (C1) : détecteur déterministe natif + fusion + risque copule
+# (population synthétique ``hybrid-diagnostic-v1``) + planning P0–P4 local
+# + validation hors-ligne. Aucune de ces étapes n'ouvre de socket.
+#
+# Options LLM (C2) : désactivées ici ; elles s'activent exclusivement par
+# paramètres explicites de ``HybridQiSystem`` (``--param llm_enabled=true``
+# & co), jamais par le profil. ``llm.mode: local`` et
+# ``allow_remote: false`` gardent la garde réseau : sur corpus réel, seul
+# un serveur local est admissible.
+profile: hybrid_qi
+schema_version: "2.0"
+
+stages:
+  detect:
+    enabled: true
+    deterministic:
+      enabled: true
+      patterns: configs/detection/patterns.yaml
+      min_confidence: 0.30
+    ner:
+      enabled: false
+    llm_reviewer:
+      enabled: false
+  fuse:
+    enabled: true
+    strategy: priority_longest
+    keep_multilabel_overlap: true
+  assess:
+    enabled: true
+    estimator: hybrid_copula
+    risk_model: copula
+    population_id: hybrid-diagnostic-v1
+    use_upper_bound: true
+  plan:
+    enabled: true
+    policy_set: policy.yaml
+    policy: P2
+  transform:
+    enabled: true
+    pseudonymization:
+      secret_env: ANONV2_PSEUDO_SECRET
+      scope: doc
+      length: 12
+    masking:
+      mode: full
+  validate:
+    enabled: true
+    check_placeholders: true
+    check_forbidden_patterns: true
+    check_gold_leakage: true
+    fail_on_leak: false
+  audit:
+    enabled: false
+  rewrite:
+    enabled: false
+
+llm:
+  mode: local
+  allow_remote: false
+
+budgets:
+  # Le budget d'appels couvre : 1 extraction QI + 1 audit + 2 réécritures.
+  per_document_timeout_s: 600.0
+  max_document_chars: 200000
+  max_calls_per_document: 5
+
+determinism:
+  seed: 42
+  strict: true
+
+output:
+  root: runs
+  write_traces: true
+  write_decisions: true

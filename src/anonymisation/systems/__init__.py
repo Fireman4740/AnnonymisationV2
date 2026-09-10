@@ -1,18 +1,22 @@
-"""Systèmes d'anonymisation évaluables (SPEC-10).
+"""Contrat des systèmes d'anonymisation évaluables (SPEC-10).
 
-La découverte se fait par **import explicite** ci-dessous, jamais par scan de
-répertoire : le comportement ne doit pas dépendre de l'ordre d'import.
+Ce paquet définit **le contrat** — ``SystemBase``, ``SystemConfig``,
+l'identité, le registre — et ne contient **aucune implémentation**. Les
+implémentations vivent dans ``anonymisation.pipelines/<nom>/``, un dossier
+autonome par architecture (code, profil, tests, notice).
 
-⚠️ Ce paquet importe ``detect/`` (via le système déterministe). Il ne doit
+L'import de ``anonymisation.pipelines`` ci-dessous déclenche l'enregistrement
+des pipelines livrés. Il est placé **après** les imports du contrat : les
+pipelines importent ``systems.base`` et ``systems.registry``, qui doivent donc
+être résolus d'abord.
+
+⚠️ Ce paquet importe les pipelines, donc ``detect/`` et ``llm/``. Il ne doit
 donc **jamais** être importé par ``metrics/`` ni par ``cli/score.py`` — le
-scoring doit rester hors ligne et sans modèle. Le vocabulaire partagé avec les
-métriques vit dans ``anonymisation.capabilities``, qui n'importe rien.
+scoring doit rester hors ligne et sans modèle (SPEC-10 C5). Le vocabulaire
+partagé avec les métriques vit dans ``anonymisation.capabilities``, qui
+n'importe rien.
 """
 
-# --- Systèmes enregistrés (import explicite = enregistrement) --------------- #
-from anonymisation.systems import bounds as _bounds  # noqa: F401,E402
-from anonymisation.systems import deterministic as _deterministic  # noqa: F401,E402
-from anonymisation.systems import regex_only as _regex_only  # noqa: F401,E402
 from anonymisation.systems.base import (
     ModelRef,
     SystemBase,
@@ -31,6 +35,9 @@ from anonymisation.systems.registry import (
     register_system,
     resolve_system,
 )
+
+# --- Enregistrement des pipelines livrés (import explicite) ----------------- #
+from anonymisation import pipelines as _pipelines  # noqa: F401,E402
 
 __all__ = [
     "ALIASES",

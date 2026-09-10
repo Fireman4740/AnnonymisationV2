@@ -88,6 +88,11 @@ class LlmClient:
                 "client (backend de repli pour l'exécution sans LLM, jamais "
                 "appelé)."
             )
+        if backend.kind not in ("openai_compatible", "anthropic", "stub"):
+            raise LlmConfigError(
+                f"Backend {backend.name!r} : kind={backend.kind!r} non supporté "
+                "(valeurs : 'openai_compatible' | 'anthropic' | 'stub')."
+            )
         self._backend = backend
         self._cache_dir = Path(cache_dir) if cache_dir is not None else None
         self._cache_enabled = cache_enabled
@@ -231,6 +236,19 @@ class LlmClient:
         content = "".join(text_blocks)
         return content, getattr(response, "stop_reason", None)
 
+    def _call_stub(self, prompt: str, *, temperature: float | None) -> tuple[str, str | None]:
+        """Backend factice, sans réseau : réponse canned pour les tests.
+
+        Réservé au contrat de système inter-architectures
+        (``tests/unit/test_system_contract.py``) qui exécute TOUT système
+        enregistré sur un corpus réel : un système LLM ne peut pas satisfaire
+        ce contrat sans backend, et ne doit pas ouvrir de socket en test
+        unitaire. Jamais référencé par un profil de production
+        (aucun ``pipelines/*/profile.yaml`` n'y pointe).
+        """
+        content = str(self._backend.extra_body.get("stub_response", '{"entities": []}'))
+        return content, "stop"
+
     def complete(
         self,
         prompt: str,
@@ -265,6 +283,8 @@ class LlmClient:
             content, finish_reason = self._call_openai_compatible(prompt, temperature=temperature)
         elif backend.kind == "anthropic":
             content, finish_reason = self._call_anthropic(prompt, temperature=temperature)
+        elif backend.kind == "stub":
+            content, finish_reason = self._call_stub(prompt, temperature=temperature)
         else:  # pragma: no cover — déjà rejeté à la construction pour 'null'
             raise LlmConfigError(f"Backend {backend.name!r} : kind={backend.kind!r} non supporté.")
         latency_ms = (time.perf_counter() - started) * 1000.0

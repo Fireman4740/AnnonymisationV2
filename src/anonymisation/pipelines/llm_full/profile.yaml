@@ -1,0 +1,91 @@
+# Profil d'exécution du pipeline « llm_full » (architecture single-call)
+#
+# Spéc : documentation/specifications/SPEC-10-pipeline-anonymisation.md
+#
+# Ce profil sert uniquement à satisfaire la validation structurelle de
+# ``RuntimeProfile`` (schéma commun à tous les profils, SPEC-10 §8) : le
+# système ``llm-full-v1`` (pipelines/llm_full/system.py) ne lit AUCUN champ
+# de ``stages.*`` — il fait sa propre détection + décision en un appel LLM,
+# hors du pipeline à 8 étapes de SPEC-10. Les valeurs ci-dessous sont donc
+# des remplisseurs syntaxiquement valides, pas une configuration effective.
+#
+# `llm.allow_remote` reste `false` : le backend par défaut du système
+# (`qwen_local`, voir configs/llm/backends.yaml) est un serveur LOCAL — ce
+# n'est pas un accès distant au sens de la garde SPEC-10 §10 / SPEC-08 E2, qui
+# ne concerne que l'étape optionnelle `detect.llm_reviewer` du pipeline
+# déterministe. Le paramètre --param backend=sonnet appellerait, lui, un
+# fournisseur distant : à n'utiliser que sur des corpus synthétiques.
+
+profile: llm_full
+schema_version: "2.0"
+
+stages:
+  detect:
+    enabled: false
+    deterministic:
+      enabled: false
+      patterns: "configs/detection/patterns.yaml"
+      min_confidence: 0.30
+    ner:
+      enabled: false
+    llm_reviewer:
+      enabled: false
+
+  fuse:
+    enabled: false
+    strategy: priority_longest
+    keep_multilabel_overlap: true
+
+  assess:
+    enabled: false
+    estimator: naive
+    risk_model: prosecutor
+    population_id: null
+    use_upper_bound: true
+
+  plan:
+    enabled: false
+    policy_set: "configs/policy/policies.yaml"
+    policy: P2
+
+  transform:
+    enabled: false
+    pseudonymization:
+      secret_env: "ANONV2_PSEUDO_SECRET"
+      scope: "default"
+      length: 6
+    masking:
+      mode: full
+
+  validate:
+    enabled: false
+    check_placeholders: false
+    check_forbidden_patterns: false
+    check_gold_leakage: false
+    fail_on_leak: false
+
+  audit:
+    enabled: false
+
+  rewrite:
+    enabled: false
+
+llm:
+  mode: local
+  allow_remote: false
+
+budgets:
+  per_document_timeout_s: 90
+  max_document_chars: 20000
+
+determinism:
+  seed: 42
+  # La sortie d'un LLM n'est pas bit-à-bit reproductible même à température
+  # basse (routage d'experts, ordre de batch côté serveur) : contrairement au
+  # profil `deterministic`, `strict` reste informatif, pas une garantie.
+  strict: false
+
+output:
+  root: "runs"
+  write_traces: true
+  write_decisions: true

@@ -9,7 +9,7 @@ from anonymisation.detect import PatternDetector
 from anonymisation.schema.models import Document, Domain
 from anonymisation.systems import SystemConfig
 from anonymisation.systems.base import SystemError_
-from anonymisation.systems.regex_only import RegexOnlySystem
+from anonymisation.pipelines.regex_only.system import RegexOnlySystem
 
 
 def test_pattern_detector_uses_no_rules():

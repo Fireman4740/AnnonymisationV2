@@ -1,0 +1,80 @@
+# Population de référence du risque hybride (SYNTHETIQUE — SPEC-06 §6).
+#
+# Fichier versionné du pipeline : toute campagne qui publie un risque basé
+# sur cette population doit citer ``population_id`` dans son lock. Les
+# probabilités ordinales et la sélectivité par catégorie sont des
+# hypothèses du modèle, pas des mesures : le risque produit est marqué
+# ``DIAGNOSTIC`` tant qu'un étalonnage sur population réelle n'existe pas.
+#
+# ``category_selectivity`` est une copie figée de
+# ``policy/engine.py:DEFAULT_SELECTIVITY`` (valeurs exactes, niveau 0)
+# complétée par ``OTHER_QI`` explicite : aucun code **applicable** ne doit
+# rester sans probabilité, sinon le risque échoue (jamais de défaut
+# silencieux). Les codes hors périmètre v1 (``FOR_STYLE``, ``FOR_RELATION``,
+# SPEC-06 §10) sont volontairement absents : le pipeline ne les met pas en
+# risque et le validateur refuse qu'ils soient listés ici.
+population_id: hybrid-diagnostic-v1
+kind: synthetic
+size: 100000
+
+# Prior ordinaux (SPEC-06 §6) : la rareté d'une valeur telle que déclinée
+# par l'extracteur LLM se traduit en probabilité de la façon suivante.
+prior_probabilities:
+  rare: 0.01
+  uncommon: 0.10
+  common: 0.50
+
+# Sélectivité d'une valeur de niveau 0 par catégorie QI.
+category_selectivity:
+  GEN_AGE: 0.02
+  GEN_GEO: 0.005
+  GEN_OCCUPATION: 0.05
+  GEN_EDUCATION: 0.08
+  GEN_AFFILIATION: 0.10
+  GEN_FAMILY: 0.20
+  GEN_HEALTH_STATE: 0.10
+  GEN_SOCIOECON: 0.15
+  GEN_ORIGIN_BELIEF: 0.10
+  GEN_LIFESTYLE: 0.20
+  GEN_PHYSICAL: 0.20
+  GEN_GENDER: 0.50
+  GEN_DATE_EVENT: 0.10
+  HR_JOB_TITLE: 0.05
+  HR_SENIORITY: 0.20
+  HR_HIERARCHY: 0.20
+  HR_DEPARTMENT: 0.10
+  HR_CONTRACT: 0.30
+  HR_EMPLOYER_SIZE: 0.10
+  HR_WORKSITE: 0.05
+  HR_SALARY_BAND: 0.15
+  HR_CAREER_EVENT: 0.20
+  HR_ADMIN_PROCEDURE: 0.10
+  SUP_PRODUCT: 0.30
+  SUP_VERSION: 0.10
+  SUP_OS: 0.30
+  SUP_DEVICE: 0.20
+  SUP_ENVIRONMENT: 0.30
+  SUP_ROLE: 0.20
+  SUP_INCIDENT_TIME: 0.10
+  SUP_TIMEZONE: 0.30
+  SUP_ORG: 0.02
+  SUP_SCALE: 0.20
+  FOR_COMMUNITY: 0.10
+  FOR_ACTIVITY_PATTERN: 0.20
+  OTHER_QI: 0.05
+
+# Attributs corrélés de la copule gaussienne (SPEC-06 §7) : les six
+# dimensions les plus discriminantes en v1. Les autres catégories
+# entrent dans le produit comme indépendantes (bloc identité).
+correlated_attributes:
+  - GEN_AGE
+  - GEN_GEO
+  - GEN_EDUCATION
+  - GEN_OCCUPATION
+  - HR_SENIORITY
+  - HR_EMPLOYER_SIZE
+
+# Coefficient hors-diagonale de la matrice de corrélation 6×6 (diagonale
+# 1). La définie-positivité est vérifiée au chargement : une matrice
+# invalide est une erreur de configuration, jamais un avertissement.
+correlation_off_diagonal: 0.20

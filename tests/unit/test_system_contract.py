@@ -32,18 +32,6 @@ from anonymisation.systems import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _MICRO = REPO_ROOT / "tests" / "fixtures" / "micro"
 
-#: Paramètres minimaux pour construire chaque système. Un système dont la
-#: construction exige des paramètres doit figurer ici — sinon le test de
-#: conformité échoue, ce qui est le comportement voulu : un système
-#: inconstructible n'est pas évaluable.
-_CONFIGS: dict[str, SystemConfig] = {
-    "passthrough-v1": SystemConfig(),
-    "redact-all-v1": SystemConfig(params={"replacement": ""}),
-    "deterministic-v1": SystemConfig(policy_id="P2"),
-    "regex-only-v1": SystemConfig(),
-}
-
-
 def _micro() -> tuple[list[Document], dict[str, tuple[Annotation, ...]]]:
     documents = [
         d for d in read_jsonl(_MICRO / "documents.jsonl", Document) if d.split == "train"
@@ -55,12 +43,15 @@ def _micro() -> tuple[list[Document], dict[str, tuple[Annotation, ...]]]:
 
 
 def _build(system_id: str):
-    config = _CONFIGS.get(system_id)
-    assert config is not None, (
-        f"Système {system_id!r} enregistré mais absent de _CONFIGS : ajoutez-y "
-        f"ses paramètres de construction pour qu'il soit soumis au contrat."
-    )
-    return resolve_system(system_id)(config)
+    """Construit un système depuis SA PROPRE configuration de contrat.
+
+    Chaque pipeline déclare ``contract_config()`` chez lui : ajouter une
+    architecture ne demande aucune édition de ce fichier partagé. Un système
+    dont la configuration déclarée ne suffit pas à le construire échoue ici,
+    ce qui est voulu — un système inconstructible n'est pas évaluable.
+    """
+    cls = resolve_system(system_id)
+    return cls(cls.contract_config())
 
 
 @pytest.mark.parametrize("system_id", list_systems())
@@ -151,9 +142,11 @@ def test_system_describes_itself(system_id: str) -> None:
     assert json.dumps(payload, sort_keys=True)
 
 
-def test_every_registered_system_is_covered_by_the_contract() -> None:
-    """Aucun système ne peut échapper au contrat en oubliant sa configuration."""
-    assert set(SYSTEM_REGISTRY) <= set(_CONFIGS), (
-        f"Systèmes enregistrés sans configuration de test : "
-        f"{sorted(set(SYSTEM_REGISTRY) - set(_CONFIGS))}"
-    )
+def test_every_registered_system_is_constructible_from_its_own_contract() -> None:
+    """Aucun système ne peut échapper au contrat : il déclare comment le bâtir."""
+    for system_id, cls in sorted(SYSTEM_REGISTRY.items()):
+        config = cls.contract_config()
+        assert isinstance(config, SystemConfig), (
+            f"{system_id} : contract_config() doit renvoyer un SystemConfig."
+        )
+        cls(config)  # doit se construire sans réseau ni paramètre externe

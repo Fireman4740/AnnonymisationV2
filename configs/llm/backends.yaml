@@ -48,6 +48,17 @@ backends:
     kind: null
     model: null
 
+  # --- Réponse canned, sans réseau : contrat de système inter-architectures #
+  # Utilisé UNIQUEMENT par tests/unit/test_system_contract.py (--param
+  # backend=stub) pour que llm-full-v1 satisfasse le même contrat que les
+  # systèmes hors ligne sans jamais ouvrir de socket en test unitaire.
+  # Jamais référencé par un profil de production ni par `roles`.
+  stub:
+    kind: stub
+    model: "stub-no-network"
+    extra_body:
+      stub_response: '{"entities": []}'
+
 # Rôles : un backend différent peut être affecté à chaque rôle.
 # Contrainte méthodologique (SPEC-05 §7) : le modèle GÉNÉRATEUR ne doit pas être
 # un modèle évalué comme détecteur, sinon le détecteur reconnaît son propre style.

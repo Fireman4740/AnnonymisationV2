@@ -210,6 +210,22 @@ class SystemBase(ABC):
     def from_config(cls, config: SystemConfig) -> SystemBase:
         return cls(config)
 
+    @classmethod
+    def contract_config(cls) -> SystemConfig:
+        """Configuration **minimale** permettant de construire ce système.
+
+        Utilisée par le contrat de test transverse
+        (``tests/unit/test_system_contract.py``), qui exécute tout système
+        enregistré. Chaque pipeline la déclare **chez lui** : ajouter une
+        architecture ne doit pas obliger à éditer un fichier de test partagé.
+
+        Un système dont la construction exige des paramètres (``Params`` sans
+        défaut), une politique, ou un backend sans réseau DOIT la surcharger —
+        sinon le contrat échoue à la construction, ce qui est le comportement
+        voulu : un système inconstructible n'est pas évaluable.
+        """
+        return SystemConfig()
+
     # --- identité --------------------------------------------------------- #
     def identity(self) -> SystemIdentity:
         return SystemIdentity(

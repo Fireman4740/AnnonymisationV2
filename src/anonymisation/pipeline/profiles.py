@@ -266,24 +266,49 @@ def _repo_root(start: Path) -> Path | None:
     return None
 
 
+#: Racine des pipelines : chaque architecture livre son profil chez elle,
+#: dans ``pipelines/<nom>/profile.yaml``. Résolu relativement au paquet, pas au
+#: répertoire courant : un profil livré doit se charger quel que soit le cwd.
+_PIPELINES_ROOT: Final[Path] = Path(__file__).resolve().parents[1] / "pipelines"
+
+
 def load_runtime_profile(source: str | Path) -> LoadedProfile:
     """Charge un profil d'exécution.
 
-    ``source`` est soit un chemin vers un fichier YAML, soit le *nom* d'un
-    profil livré (``"deterministic"`` → ``configs/runtime/<nom>.yaml`` de la
-    racine du dépôt).
+    ``source`` est résolu dans cet ordre :
+
+    1. un **chemin** vers un fichier YAML existant ;
+    2. le **nom d'un pipeline livré** → ``pipelines/<nom>/profile.yaml`` (le
+       profil vit dans le dossier autonome du pipeline) ;
+    3. un **profil partagé** → ``configs/runtime/<nom>.yaml`` à la racine du
+       dépôt, pour les profils qui n'appartiennent à aucun pipeline.
+
+    Le message d'erreur liste **tous** les emplacements essayés : un profil
+    introuvable ne doit pas laisser deviner où il aurait dû être.
     """
     path = Path(source)
     if not path.is_file():
+        attempted: list[Path] = []
+
+        pipeline_profile = _PIPELINES_ROOT / str(source) / "profile.yaml"
+        attempted.append(pipeline_profile)
+
         root = _repo_root(Path.cwd())
-        if root is None:
+        shared_profile: Path | None = None
+        if root is not None:
+            shared_profile = root / "configs" / "runtime" / f"{source}.yaml"
+            attempted.append(shared_profile)
+
+        if pipeline_profile.is_file():
+            path = pipeline_profile
+        elif shared_profile is not None and shared_profile.is_file():
+            path = shared_profile
+        else:
+            essais = ", ".join(str(candidate) for candidate in attempted)
             raise ProfileError(
                 f"Profil introuvable : {source!r} — ni fichier existant, ni profil "
-                "livré (pas de racine de dépôt détectable non plus)."
+                f"livré. Essayé : {essais}."
             )
-        path = root / "configs" / "runtime" / f"{source}.yaml"
-        if not path.is_file():
-            raise ProfileError(f"Profil introuvable : {source!r} (essayé {path}).")
 
     raw: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):

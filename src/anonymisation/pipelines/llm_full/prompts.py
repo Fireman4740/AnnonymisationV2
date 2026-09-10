@@ -1,6 +1,6 @@
 """Prompt et parseur de la tâche « anonymisation complète par LLM ».
 
-Le système ``llm-full-v1`` (``anonymisation.systems.llm_full``) délègue au LLM
+Le système ``llm-full-v1`` (``anonymisation.pipelines.llm_full.system``) délègue au LLM
 la détection ET la décision d'action en un seul appel : ce module construit ce
 prompt et parse la réponse JSON attendue. La localisation des offsets sur le
 texte original, elle, reste du code déterministe (``llm_full._locate``) — on
