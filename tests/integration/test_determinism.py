@@ -18,7 +18,7 @@ from anonymisation.cli.main import main
 from anonymisation.datasets.registry import REGISTRY
 from anonymisation.schema.io import read_jsonl
 from anonymisation.schema.models import Document
-from integration._micro import write_micro_pivot
+from integration._micro import write_micro_manifest, write_micro_pivot
 from integration._pivot import pivot_splits, require_source, require_split
 from integration.test_ingest import _ingest
 
@@ -156,9 +156,12 @@ def test_scorecards_are_identical_without_timestamp_fields(
     ) in (0, 1)
     if dataset == "micro":
         monkeypatch.setattr(score, "PROCESSED_ROOT", tmp_path / "processed")
+        monkeypatch.setattr(
+            score, "DATASETS_CONFIG", write_micro_manifest(tmp_path / "configs")
+        )
     else:
         monkeypatch.setattr(score, "PROCESSED_ROOT", REPO_ROOT / "data" / "processed")
-    monkeypatch.setattr(score, "DATASETS_CONFIG", REPO_ROOT / "configs" / "datasets")
+        monkeypatch.setattr(score, "DATASETS_CONFIG", REPO_ROOT / "configs" / "datasets")
 
     assert score.cmd_score(run, protocol) in (0, 1)
     first = (run / "scorecard.json").read_bytes()

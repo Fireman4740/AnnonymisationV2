@@ -44,6 +44,18 @@ metrics_text = [
   "scikit-learn>=1.5",
   "bert-score>=0.3.13",
 ]
+# Étape figée d'attaque RAT-Bench (anonv2 attack) : attaquant LLM via OpenRouter,
+# jugement par Jaro-Winkler, risque CorrectMatch (Julia, installé au premier
+# appel par juliacall). Jamais requise par predict ni score (C1, C5).
+attack = [
+  "openai>=1.0",
+  "rapidfuzz>=3.0",
+  "rouge-score>=0.1.2",
+  # correctmatch n'existe que pour Python >= 3.11 : le noyau reste 3.10.
+  "correctmatch>=1.4.1; python_version >= '3.11'",
+  "pandas>=2.2",
+  "pyarrow>=15.0",
+]
 # Pipelines d'anonymisation pilotés par un LLM (anonymisation.pipelines.llm_*).
 llm = [
   "openai>=1.0",

@@ -610,18 +610,27 @@ def ingest(
 
     status = _determine_status(manifest, volumetry=volumetry, limit=limit)
 
+    # PUBLISH en zone de transit puis remplacement du répertoire du corpus :
+    # écrire directement dans `base` laissait sur disque les splits d'une
+    # ingestion précédente, absents du nouveau lock (constaté sur `tab` :
+    # train/dev présents, lock limité à test). Le pivot publié contient
+    # désormais EXACTEMENT les splits ingérés, comme en mode streaming, et un
+    # échec en cours d'écriture ne laisse jamais un corpus à moitié réécrit.
+    Path(output_root).mkdir(parents=True, exist_ok=True)
+    transit = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=output_root))
+    staging = transit / key
     files: dict[str, str] = {}
     for s in sorted(per_split):
         for table in TABLES:
             records = per_split[s][table]
             if not records:
                 continue  # les tables vides ne sont pas écrites
-            path = base / s / f"{table}.jsonl"
+            path = staging / s / f"{table}.jsonl"
             write_jsonl(path, records)
             files[f"{s}/{table}.jsonl"] = sha256_file(path)
 
     validation_payload = report.to_dict()
-    write_json(base / VALIDATION_NAME, validation_payload)
+    write_json(staging / VALIDATION_NAME, validation_payload)
 
     lock = {
         "manifest": manifest.model_dump(mode="json"),
@@ -641,8 +650,17 @@ def ingest(
         "date": date.today().isoformat(),
         "status": status,
     }
+    write_json(staging / LOCK_NAME, lock)
+    try:
+        if base.exists():
+            if base.is_dir():
+                shutil.rmtree(base)
+            else:
+                base.unlink()
+        shutil.move(str(staging), str(base))
+    finally:
+        shutil.rmtree(transit, ignore_errors=True)
     lock_path = base / LOCK_NAME
-    write_json(lock_path, lock)
 
     return IngestionResult(
         dataset=key,

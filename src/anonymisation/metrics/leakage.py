@@ -1,7 +1,8 @@
 """Fuite de valeurs gold — mesure **indépendante du détecteur**.
 
 Le seul contrôle de l'étape VALIDATE qui ne suppose rien de l'implémentation :
-une recherche exacte des surfaces gold dans le texte anonymisé. Il fonctionne
+une recherche littérale (normalisée, bornée aux mots) des surfaces gold dans
+le texte anonymisé. Il fonctionne
 donc pour **tout** système, boîte noire comprise, et c'est ce qui en fait le
 socle des mesures de protection (CPR / IPR).
 
@@ -17,6 +18,8 @@ Ce module n'importe que ``schema.taxonomy`` : aucune dépendance à ``detect``,
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -36,6 +39,46 @@ def _identifier_type(item: Any) -> str | None:
     if raw is None:
         return None
     return str(getattr(raw, "value", raw))
+
+
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _normalise(text: str) -> str:
+    """NFC + casse repliée + espaces fusionnés : forme de comparaison."""
+    return _WHITESPACE.sub(" ", unicodedata.normalize("NFC", text).casefold())
+
+
+def surface_present(surface: str, text: str) -> bool:
+    """La surface apparaît-elle dans le texte comme **mot(s) entier(s)** ?
+
+    La recherche en sous-chaîne brute (v1) se trompait dans les deux sens :
+
+    * faux positifs : une surface courte (« 28 », « Li ») trouvée à
+      l'intérieur d'un autre mot (« 1928 », « Lille ») comptait comme fuite ;
+    * faux négatifs : une simple variation de casse ou d'espacement
+      (« DUPONT », « Jean  Dupont ») comptait comme protection.
+
+    On compare donc des formes normalisées et on exige qu'une surface
+    commençant (resp. finissant) par un caractère de mot ne soit pas collée à
+    un autre caractère de mot. Cela reste une recherche **littérale** : une
+    paraphrase ou une inférence n'est jamais détectée.
+    """
+    needle = _normalise(surface).strip()
+    haystack = _normalise(text)
+    if not needle:
+        return False
+    check_left = needle[0].isalnum()
+    check_right = needle[-1].isalnum()
+    start = haystack.find(needle)
+    while start != -1:
+        end = start + len(needle)
+        left_ok = not check_left or start == 0 or not haystack[start - 1].isalnum()
+        right_ok = not check_right or end == len(haystack) or not haystack[end].isalnum()
+        if left_ok and right_ok:
+            return True
+        start = haystack.find(needle, start + 1)
+    return False
 
 
 def _surface(item: Any) -> str | None:
@@ -86,14 +129,14 @@ class LeakCounts:
 
 
 def gold_leak_counts(anonymized_text: str, gold: Sequence[Any]) -> LeakCounts:
-    """Compte les surfaces gold encore littéralement présentes dans le texte."""
+    """Compte les surfaces gold encore présentes (voir :func:`surface_present`)."""
     leaked = testable = leaked_direct = testable_direct = 0
     for annotation in gold:
         surface = _surface(annotation)
         if surface is None:
             continue
         is_direct = _identifier_type(annotation) == IdentifierType.DIRECT.value
-        present = surface in anonymized_text
+        present = surface_present(surface, anonymized_text)
         testable += 1
         leaked += int(present)
         if is_direct:

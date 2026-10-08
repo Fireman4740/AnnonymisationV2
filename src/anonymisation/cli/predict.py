@@ -42,6 +42,11 @@ from anonymisation.datasets.registry import (
 from anonymisation.pipeline.guards import LocalOnlyViolationError, assert_local_only
 from anonymisation.pipeline.profiles import RuntimeProfile, load_runtime_profile
 from anonymisation.pipeline.traces import serialize_pipeline_result, serialize_stage_trace
+from anonymisation.schema.integrity import (
+    DataIntegrityError,
+    locked_files,
+    verify_pivot_files,
+)
 from anonymisation.schema.io import (
     atomic_write,
     read_jsonl,
@@ -109,42 +114,45 @@ def _resolve_dataset(key: str) -> str:
 
 
 def _load_pivot(
-    key: str, split: str
+    key: str, split: str, *, has_annotations: bool
 ) -> tuple[list[Document], dict[str, tuple[Annotation, ...]]]:
     """Charge le pivot ingéré (documents + annotations groupées par doc_id).
 
     Les annotations du pivot sont la vérité terrain : l'étape VALIDATE les
     utilise pour le contrôle de fuite par recherche exacte (indépendant du
     détecteur).
+
+    ``has_annotations`` vient du lock d'ingestion : un corpus d'utilité pure
+    (SupportTickets, Bitext) n'a **aucune** annotation, et le lock le déclare
+    en ne listant pas ``<split>/annotations.jsonl``. L'absence n'est donc
+    jamais devinée : si le lock annonce des annotations, le fichier doit
+    exister (vérifié par empreinte avant cet appel).
     """
     base = PROCESSED_ROOT / key / split
     docs_path = base / "documents.jsonl"
     anns_path = base / "annotations.jsonl"
-    if not docs_path.is_file() or not anns_path.is_file():
+    if not docs_path.is_file():
         raise PredictError(
             f"Pivot ingéré absent pour le dataset {key!r} / split {split!r} "
-            f"(attendu : {docs_path} et {anns_path}). "
+            f"(attendu : {docs_path}). "
             f"Exécute d'abord : anonv2 datasets ingest {key} --split {split}"
         )
     docs = list(read_jsonl(docs_path, Document))
     gold: dict[str, list[Annotation]] = defaultdict(list)
-    for ann in read_jsonl(anns_path, Annotation):
-        gold[ann.doc_id].append(ann)
+    if has_annotations:
+        for ann in read_jsonl(anns_path, Annotation):
+            gold[ann.doc_id].append(ann)
     return docs, {k: tuple(v) for k, v in gold.items()}
 
 
 # --------------------------------------------------------------------------- #
 # Lock de reproductibilité (SPEC-09 §5)
 # --------------------------------------------------------------------------- #
-def _git_commit(root: Path) -> str | None:
-    """Commit courant (élément 3 de SPEC-09 §5) ; ``None`` hors dépôt git.
-
-    Un lock sans commit n'est **pas publiable** (SPEC-09 §5) — le champ
-    reste présent pour que la détection le soit.
-    """
+def _git(root: Path, *args: str) -> str | None:
+    """Sortie d'une commande git, ou ``None`` hors dépôt / git absent."""
     try:
         proc = subprocess.run(
-            ("git", "rev-parse", "HEAD"),
+            ("git", *args),
             cwd=root,
             capture_output=True,
             text=True,
@@ -153,18 +161,67 @@ def _git_commit(root: Path) -> str | None:
         )
     except (OSError, subprocess.SubprocessError):
         return None
-    return proc.stdout.strip() if proc.returncode == 0 else None
+    return proc.stdout if proc.returncode == 0 else None
 
 
-def _data_version(key: str) -> dict[str, Any] | None:
-    """Lock d'ingestion du pivot (SHA-256 par table + révision source)."""
+def _git_commit(root: Path) -> str | None:
+    """Commit courant (élément 3 de SPEC-09 §5) ; ``None`` hors dépôt git.
+
+    Un lock sans commit n'est **pas publiable** (SPEC-09 §5) — le champ
+    reste présent pour que la détection le soit.
+    """
+    out = _git(root, "rev-parse", "HEAD")
+    return out.strip() if out is not None else None
+
+
+def _git_dirty(root: Path) -> bool | None:
+    """Vrai si l'arbre de travail diffère du commit enregistré.
+
+    Un commit seul ne suffit pas à rejouer un run : des modifications non
+    commitées du code ou d'une configuration changent le résultat sans changer
+    le hash. ``runs/`` et ``data/`` sont ignorés par git, donc absents d'ici.
+    ``None`` = état inconnu (hors dépôt), traité comme non publiable par le
+    scorer — jamais présumé propre.
+    """
+    out = _git(root, "status", "--porcelain")
+    return bool(out.strip()) if out is not None else None
+
+
+def _data_version(key: str) -> dict[str, Any]:
+    """Lock d'ingestion du pivot (SHA-256 par table + révision source).
+
+    Absent = pivot non produit par ``ingest`` : on refuse plutôt que d'écrire
+    un run dont la vérité terrain ne serait vérifiable par personne.
+    """
     lock_path = PROCESSED_ROOT / key / LOCK_NAME
     if not lock_path.is_file():
-        return None
-    payload = json.loads(lock_path.read_text(encoding="utf-8"))
+        raise PredictError(
+            f"Lock d'ingestion absent pour {key!r} : {lock_path}. Le pivot n'est "
+            f"pas vérifiable — exécute « anonv2 datasets ingest {key} »."
+        )
+    try:
+        payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PredictError(f"Lock d'ingestion illisible : {lock_path} ({exc})") from exc
     if not isinstance(payload, dict):
         raise PredictError(f"Lock d'ingestion invalide pour {key!r} : mapping attendu")
     return {str(name): value for name, value in payload.items()}
+
+
+def _verify_pivot(key: str, split: str, data_version: Mapping[str, Any]) -> None:
+    """Refuse un pivot dont le contenu ne correspond plus au lock d'ingestion."""
+    context = f"Pivot {key!r} / split {split!r}"
+    try:
+        verify_pivot_files(
+            PROCESSED_ROOT / key,
+            split,
+            ("documents.jsonl", "annotations.jsonl"),
+            locked_files(data_version, context=context),
+            context=context,
+            required=("documents.jsonl",),
+        )
+    except DataIntegrityError as exc:
+        raise PredictError(str(exc)) from exc
 
 
 def _build_lock(
@@ -176,6 +233,7 @@ def _build_lock(
     limit: int | None,
     documents_total: int,
     counts: dict[str, int],
+    data_version: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Les sept éléments de reproductibilité (SPEC-09 §5), en ordre stable.
 
@@ -197,13 +255,14 @@ def _build_lock(
             "documents_error": counts.get("error", 0),
         },
         # 1. Version des données (lock d'ingestion : sha256 + révision source).
-        "data_version": _data_version(key),
+        "data_version": dict(data_version),
         # 2. Version de la taxonomie (SPEC-01).
         "taxonomy_version": TAXONOMY_VERSION,
         # 3. Version du code : commit git (+ version du paquet).
         "code": {
             "anonymisation_version": __version__,
             "git_commit": _git_commit(REPO_ROOT),
+            "git_dirty": _git_dirty(REPO_ROOT),
         },
         # 4. Modèles utilisés + quantification — v1 : aucun (détecteur
         #    déterministe, pas de NER/LLM).
@@ -250,7 +309,17 @@ def cmd_predict(
         raise PredictError("--limit doit être un entier strictement positif.")
 
     key = _resolve_dataset(dataset)
-    docs, gold = _load_pivot(key, split)
+    if not (PROCESSED_ROOT / key / split / "documents.jsonl").is_file():
+        raise PredictError(
+            f"Pivot ingéré absent pour le dataset {key!r} / split {split!r} "
+            f"(attendu : {PROCESSED_ROOT / key / split / 'documents.jsonl'}). "
+            f"Exécute d'abord : anonv2 datasets ingest {key} --split {split}"
+        )
+    # Lock vérifié AVANT lecture : il décide aussi si des annotations existent.
+    data_version = _data_version(key)
+    _verify_pivot(key, split, data_version)
+    has_annotations = f"{split}/annotations.jsonl" in (data_version.get("files") or {})
+    docs, gold = _load_pivot(key, split, has_annotations=has_annotations)
     if limit is not None:
         docs = docs[:limit]
 
@@ -332,7 +401,12 @@ def cmd_predict(
         limit=limit,
         documents_total=len(docs),
         counts=counts,
+        data_version=data_version,
     )
+    # Empreinte des sorties : `score` refuse un run édité après coup.
+    lock["outputs"] = {
+        name: sha256_file(out_dir / name) for name in ("predictions.jsonl", "traces.jsonl")
+    }
     # Sans cette identité, le scorer ne saurait pas quelles métriques sont
     # applicables et publierait des zéros là où la capacité est absente.
     lock["system"] = pipe.describe().to_dict()

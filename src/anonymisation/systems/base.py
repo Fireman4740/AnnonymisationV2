@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, final
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from anonymisation.capabilities import (
     CAP_DECISIONS,
@@ -203,7 +203,20 @@ class SystemBase(ABC):
                     f"alors que ce système n'en accepte aucun."
                 )
             return {}
-        model = self.Params.model_validate(dict(raw))
+        try:
+            model = self.Params.model_validate(dict(raw))
+        except ValidationError as exc:
+            # Une trace Pydantic brute n'est pas actionnable en CLI : on nomme
+            # le système, le champ fautif et la syntaxe attendue.
+            problems = "; ".join(
+                f"{'.'.join(str(p) for p in err['loc']) or '<racine>'} : {err['msg']}"
+                for err in exc.errors()
+            )
+            raise SystemError_(
+                f"Système {self.system_id!r} : paramètres invalides ({problems}). "
+                f"Fournir chaque paramètre avec --param clé=valeur "
+                f"(voir le README du pipeline)."
+            ) from exc
         return model.model_dump(mode="json")
 
     @classmethod

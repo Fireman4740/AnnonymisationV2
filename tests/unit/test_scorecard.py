@@ -31,7 +31,7 @@ LOCK = {
     },
     "data_version": {"source": "fixture"},
     "taxonomy_version": "1.0",
-    "code": {"git_commit": "fixture-commit"},
+    "code": {"git_commit": "fixture-commit", "git_dirty": False},
     "models": [],
     "seeds": {"determinism": 42},
     "prompts": [],
@@ -250,3 +250,51 @@ def test_naive_risk_cannot_produce_official_scorecard() -> None:
             system=_SYSTEM,
             requested_status=MetricStatus.OFFICIAL,
         )
+
+
+# --------------------------------------------------------------------------- #
+# EPIC-H : TRIR sans repli doc_id, contrat du texte anonymisé, intervalles
+# --------------------------------------------------------------------------- #
+def test_trir_is_unavailable_without_cross_document_identity() -> None:
+    """Sans author_id ni sujet, TRIR n'est pas défini — la v1 publiait 1.0."""
+    documents = {
+        f"d{i}": _document(f"d{i}", f"Texte {i} sur Alice") for i in range(3)
+    }
+    predictions = [{**_prediction(doc_id, []), "anonymized_text": doc.text}
+                   for doc_id, doc in documents.items()]
+    card = _build(documents, {}, predictions)
+    trir = card["primary"]["trir"]
+    assert trir["value"] is None
+    assert trir["status"] == "unavailable"
+    assert "identité inter-documents" in trir["details"]["reason"]
+
+
+def test_scored_prediction_without_anonymized_text_is_rejected() -> None:
+    documents = {"d1": _document("d1", "Alice travaille.")}
+    prediction = _prediction("d1", [])
+    del prediction["anonymized_text"]
+    with pytest.raises(ScorecardError, match="anonymized_text"):
+        _build(documents, {}, [prediction])
+
+
+def test_point_estimates_fall_inside_their_intervals() -> None:
+    texts = ["Alice travaille.", "Bob travaille.", "Carole travaille.", "David travaille."]
+    documents = {f"d{i}": _document(f"d{i}", text) for i, text in enumerate(texts)}
+    gold = {
+        f"d{i}": (_annotation(f"d{i}", 0, len(text.split()[0]), span_text=text.split()[0]),)
+        for i, text in enumerate(texts)
+    }
+    # Deux documents détectés et masqués, deux manqués et laissés en clair.
+    predictions = [
+        {**_prediction(f"d{i}", list(gold[f"d{i}"]) if i < 2 else []),
+         "anonymized_text": "<PERSON> travaille." if i < 2 else texts[i]}
+        for i in range(4)
+    ]
+    card = _build(documents, gold, predictions)
+    for block, name in (("diagnostic", "span_recall"), ("diagnostic", "ER_di"),
+                        ("primary", "cpr"), ("primary", "ipr")):
+        metric = card[block][name]
+        ci = metric["details"]["ci95"]
+        assert ci["low"] <= metric["value"] <= ci["high"], name
+        assert ci["seed"] and ci["replicates"] == 1000
+    assert card["primary"]["cpr"]["details"]["ci95"]["unit"] == "subject"

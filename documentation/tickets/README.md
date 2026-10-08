@@ -54,6 +54,7 @@
 | E — Fiabilité | [`EPIC-E-fiabilite.md`](EPIC-E-fiabilite.md) | 5 | ~2 j |
 | F — Dettes | [`EPIC-F-dettes.md`](EPIC-F-dettes.md) | 5 | ~2 j |
 | **G — Révision 2026** | [`EPIC-G-revision-2026.md`](EPIC-G-revision-2026.md) | **6** | **~4 j** |
+| **H — Fiabilité de l'évaluation** | [`EPIC-H-fiabilite-evaluation.md`](EPIC-H-fiabilite-evaluation.md) | **10** | **~15–18 j** |
 
 **Hors périmètre de ce backlog** : moteur de risque calibré (SPEC-06, lot L4),
 génération des corpus internes (SPEC-05, lot L5), attaquants et LLM (SPEC-08,

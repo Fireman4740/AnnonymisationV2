@@ -388,3 +388,69 @@ def test_openpii_validation_sample_zero_error(tmp_path: Path) -> None:
     assert lock["run"]["documents_error"] == 0
     assert lock["run"]["status"] == "sampled"
     assert lock["data_version"]["files"]["train/documents.jsonl"]
+
+
+# --------------------------------------------------------------------------- #
+# Reproductibilité (EPIC-H) : le pivot doit correspondre au lock d'ingestion
+# --------------------------------------------------------------------------- #
+def test_predict_refuses_pivot_without_ingestion_lock(
+    micro_pivot: Path, tmp_path: Path, capsys
+) -> None:
+    (micro_pivot / "micro" / predict.LOCK_NAME).unlink()
+    assert _predict(tmp_path / "run") == 2
+    assert "Lock d'ingestion absent" in capsys.readouterr().err
+    assert not (tmp_path / "run" / "predictions.jsonl").exists()
+
+
+def test_predict_refuses_pivot_modified_after_ingestion(
+    micro_pivot: Path, tmp_path: Path, capsys
+) -> None:
+    documents = micro_pivot / "micro" / "train" / "documents.jsonl"
+    documents.write_text(documents.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert _predict(tmp_path / "run") == 2
+    assert "empreinte divergente" in capsys.readouterr().err
+
+
+def test_lock_fingerprints_outputs_and_records_tree_state(
+    micro_pivot: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "run"
+    assert _predict(out) == 0
+    lock = _lock(out)
+    assert lock["outputs"]["predictions.jsonl"] == _sha(out / "predictions.jsonl")
+    assert lock["outputs"]["traces.jsonl"] == _sha(out / "traces.jsonl")
+    assert isinstance(lock["code"]["git_dirty"], bool)
+
+
+def test_utility_only_corpus_without_annotations_is_predicted(
+    micro_pivot: Path, tmp_path: Path
+) -> None:
+    """Corpus d'utilité pure : le lock ne déclare aucune annotation → gold vide, pas d'erreur."""
+    root = micro_pivot / "micro"
+    (root / "train" / "annotations.jsonl").unlink()
+    lock_path = root / predict.LOCK_NAME
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    del lock["files"]["train/annotations.jsonl"]
+    lock_path.write_text(json.dumps(lock, sort_keys=True), encoding="utf-8")
+    assert _predict(tmp_path / "run", "--limit", "2") in (0, 1)
+    assert (tmp_path / "run" / "predictions.jsonl").is_file()
+
+
+def test_locked_annotations_missing_on_disk_is_refused(
+    micro_pivot: Path, tmp_path: Path, capsys
+) -> None:
+    (micro_pivot / "micro" / "train" / "annotations.jsonl").unlink()
+    assert _predict(tmp_path / "run") == 2
+    assert "attendu absent" in capsys.readouterr().err
+
+
+def test_invalid_system_params_give_actionable_usage_error(
+    micro_pivot: Path, tmp_path: Path, capsys
+) -> None:
+    rc = main([
+        "predict", "--dataset", "micro", "--split", "train", "--system", "redact-all",
+        "--profile", "deterministic", "--out", str(tmp_path / "run"),
+    ])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "replacement" in err and "--param" in err

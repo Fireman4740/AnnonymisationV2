@@ -55,6 +55,31 @@ def _write_jsonl(path: Path, records: list[object]) -> None:
             handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def _sha(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _relock_outputs(run: Path) -> None:
+    """Réécrit l'empreinte des prédictions après une modification **voulue** par le test."""
+    lock_path = run / "manifest.lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["outputs"] = {"predictions.jsonl": _sha(run / "predictions.jsonl")}
+    lock_path.write_text(json.dumps(lock, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_manifest(config_dir: Path) -> None:
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "mini.yaml").write_text(
+        "evaluation:\n"
+        "  protocol: mini-v1\n"
+        "  protocol_version: '1'\n"
+        "  default_metric_status: DIAGNOSTIC\n",
+        encoding="utf-8",
+    )
+
+
 def _build_run(root: Path) -> Path:
     dataset = "mini"
     split = "train"
@@ -93,9 +118,15 @@ def _build_run(root: Path) -> Path:
             "limit": None,
             "status": "complete",
         },
-        "data_version": {"source": "fixture"},
+        "data_version": {
+            "source": "fixture",
+            "files": {
+                f"{split}/documents.jsonl": _sha(pivot / "documents.jsonl"),
+                f"{split}/annotations.jsonl": _sha(pivot / "annotations.jsonl"),
+            },
+        },
         "taxonomy_version": "1.0",
-        "code": {"git_commit": "fixture-commit"},
+        "code": {"git_commit": "fixture-commit", "git_dirty": False},
         "models": [],
         "seeds": {"determinism": 42},
         "prompts": [],
@@ -112,9 +143,6 @@ def _build_run(root: Path) -> Path:
             "oracle": False,
         },
     }
-    (run / "manifest.lock.json").write_text(
-        json.dumps(lock, sort_keys=True, indent=2) + "\n", encoding="utf-8"
-    )
     predictions = [
         {
             "doc_id": "mini:d1",
@@ -138,6 +166,10 @@ def _build_run(root: Path) -> Path:
         },
     ]
     _write_jsonl(run / "predictions.jsonl", predictions)
+    lock["outputs"] = {"predictions.jsonl": _sha(run / "predictions.jsonl")}
+    (run / "manifest.lock.json").write_text(
+        json.dumps(lock, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+    )
     return run
 
 
@@ -146,6 +178,7 @@ def score_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "workspace"
     run = _build_run(root)
     monkeypatch.setattr(score, "PROCESSED_ROOT", root / "processed")
+    _write_manifest(root / "configs")
     monkeypatch.setattr(score, "DATASETS_CONFIG", root / "configs")
     return run
 
@@ -258,8 +291,63 @@ def test_all_error_run_produces_unavailable_metrics(
         },
     ]
     _write_jsonl(predictions_path, records)
+    _relock_outputs(score_fixture)
     assert score.cmd_score(score_fixture, "mini-v1") == 1
     card = json.loads((score_fixture / "scorecard.json").read_text(encoding="utf-8"))
     assert card["accounting"]["documents_scored"] == 0
     assert card["diagnostic"]["span_f1"]["value"] is None
     assert card["diagnostic"]["span_f1"]["status"] == "unavailable"
+
+
+# --------------------------------------------------------------------------- #
+# Reproductibilité (EPIC-H) : le score lit exactement les octets du run
+# --------------------------------------------------------------------------- #
+def test_score_refuses_gold_modified_after_predict(score_fixture: Path) -> None:
+    annotations = score_fixture.parent / "processed" / "mini" / "train" / "annotations.jsonl"
+    annotations.write_text(annotations.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    with pytest.raises(score.ScoreError, match="empreinte divergente"):
+        score.cmd_score(score_fixture, "mini-v1")
+
+
+def test_score_refuses_predictions_edited_after_predict(score_fixture: Path) -> None:
+    predictions = score_fixture / "predictions.jsonl"
+    predictions.write_text(predictions.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    with pytest.raises(score.ScoreError, match="modifié après"):
+        score.cmd_score(score_fixture, "mini-v1")
+
+
+def test_score_requires_declared_protocol(
+    score_fixture: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(score, "DATASETS_CONFIG", tmp_path / "nowhere")
+    with pytest.raises(score.ScoreError, match="Manifeste absent"):
+        score.cmd_score(score_fixture, "mini-v1")
+
+
+def test_score_rejects_unknown_default_status(score_fixture: Path) -> None:
+    config = score_fixture.parent / "configs" / "mini.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8").replace("DIAGNOSTIC", "MAYBE"), encoding="utf-8"
+    )
+    with pytest.raises(score.ScoreError, match="default_metric_status"):
+        score.cmd_score(score_fixture, "mini-v1")
+
+
+def test_scorecard_records_input_hashes_and_intervals(score_fixture: Path) -> None:
+    score.cmd_score(score_fixture, "mini-v1")
+    card = json.loads((score_fixture / "scorecard.json").read_text(encoding="utf-8"))
+    assert set(card["inputs"]["pivot"]) == {"train/annotations.jsonl", "train/documents.jsonl"}
+    assert set(card["inputs"]["run"]) == {"predictions.jsonl"}
+    # Un seul document scoré : intervalle non défini, et dit comme tel.
+    assert "reason" in card["diagnostic"]["span_f1"]["details"]["ci95"]
+
+
+def test_dirty_tree_blocks_publication(score_fixture: Path) -> None:
+    lock_path = score_fixture / "manifest.lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock["code"]["git_dirty"] = True
+    lock_path.write_text(json.dumps(lock, sort_keys=True), encoding="utf-8")
+    score.cmd_score(score_fixture, "mini-v1")
+    card = json.loads((score_fixture / "scorecard.json").read_text(encoding="utf-8"))
+    assert card["publishable"] is False
+    assert any("non commitées" in reason for reason in card["publication_blockers"])

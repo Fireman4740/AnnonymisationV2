@@ -103,7 +103,7 @@ population:
 
     docs = list(adapter.iter_documents("eval"))
     assert len(docs) == 1
-    assert docs[0].doc_id == "ratbench:0"
+    assert docs[0].doc_id == "ratbench:L1:0"
 
     anns = list(adapter.iter_annotations("eval"))
     assert len(anns) >= 2
@@ -115,10 +115,23 @@ population:
     # Le téléphone n'est pas localisé -> mode IMPLICIT
     phone_ann = next(a for a in anns if a.meta.get("source_key") == "phone number")
     assert phone_ann.expression_mode.value.upper() == "IMPLICIT"
-    # Combinaisons avec PUMS
-    combs = list(adapter.iter_combinations("eval"))
-    assert len(combs) == 1
-    comb = combs[0]
-    assert comb.k_true == 42
-    assert comb.risk_true == pytest.approx(1.0 / 42.0)
-    assert comb.at_risk is False
+    # Pas de combinaison k : le risque RAT-Bench est CorrectMatch, à l'attaque.
+    assert list(adapter.iter_combinations("eval")) == []
+    # Profil gold complet, réservé à l'attaque figée.
+    (profile,) = adapter.iter_profiles("eval")
+    assert profile.person_id == "ratbench:L1:0"
+    assert profile.meta["direct_identifiers"]["email"] == "john.doe@example.com"
+    assert profile.meta["indirect_identifiers"]["SEX"] == "Male"
+    assert profile.meta["scenario"] == "interview"
+
+
+def test_find_occurrences_is_word_bounded_and_exhaustive():
+    """Correctif EPIC-H : « male » n'est pas dans « female » ; toutes les mentions sont gold."""
+    from anonymisation.datasets.ratbench import _find_occurrences
+
+    text = "Female applicant, male partner. John met John. Email: a@b.com"
+    assert [text[s:e] for s, e in _find_occurrences(text, "male")] == ["male"]
+    assert [text[s:e] for s, e in _find_occurrences(text, "female")] == ["Female"]
+    assert len(_find_occurrences(text, "John")) == 2
+    assert _find_occurrences(text, "MALE") == [(18, 22)]  # repli insensible à la casse
+    assert _find_occurrences(text, "absent") == []

@@ -91,7 +91,12 @@ Ici `anonv2` n'est pas installé : préfixer par
 `PYTHONPATH=src python -m anonymisation.cli.main …`.
 
 Tests : `python -m pytest tests src/anonymisation/pipelines -q` (doit être **intégralement vert** avant de
-rendre ; aucun test ne doit ouvrir de socket).
+rendre ; aucun test ne doit ouvrir de socket). Environnement reproductible :
+`uv run --locked --extra dev --extra datasets --extra metrics python -m pytest`
+(`uv.lock` doit rester cohérent : `uv lock --check`).
+
+Un run n'est publiable que s'il a été produit depuis un arbre git **propre**
+(`publication_blockers` de la scorecard) : commiter avant `predict`.
 
 ## Conventions
 

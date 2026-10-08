@@ -27,6 +27,26 @@ def _backend(name: str = "stub") -> BackendSpec:
     )
 
 
+def test_cache_separates_system_prompts_and_generation_parameters(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    first = LlmClient(_backend(), cache_dir=tmp_path, cache_enabled=True)
+    calls = []
+
+    def call(prompt, *, temperature, system=None):
+        calls.append(system)
+        return str(len(calls)), "stop"
+
+    monkeypatch.setattr(first, "_call_openai_compatible", call)
+    first.complete("p", system="s1")
+    assert first.complete("p", system="s1").cached
+    assert not first.complete("p", system="s2").cached
+    second = LlmClient(replace(_backend(), extra_body={"seed": 42}), cache_dir=tmp_path)
+    monkeypatch.setattr(second, "_call_openai_compatible", call)
+    assert not second.complete("p", system="s1").cached
+    assert len(calls) == 3
+
+
 def test_complete_caches_identical_prompts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     client = LlmClient(_backend(), cache_dir=tmp_path / "cache", cache_enabled=True)
     calls = {"n": 0}

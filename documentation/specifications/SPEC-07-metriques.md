@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Statut** | Stable |
-| **Version** | **2.0** |
+| **Version** | **2.1** |
 | **Date** | 2026-08-30 |
 | **Dépend de** | SPEC-02, SPEC-06 |
 | **Source** | [`04-datasets-et-metriques-2026.md`](../rapport/04-datasets-et-metriques-2026.md) |
@@ -223,6 +223,24 @@ $$
 
 avec $B$ bacs d'équi-effectif (défaut $B = 10$).
 
+**Précisions normatives (v2.1)** — implémentation unique :
+`src/anonymisation/metrics/calibration.py`, importée par tout producteur.
+
+- $MALE_k$ utilise **exclusivement** $|\ln(\hat{k}+1) - \ln(k+1)|$. Les
+  variantes $|\ln(\hat k / k)|$ ou en $\log_2$ sur le $k$ non calibré sont
+  proscrites : trois formules sous un même nom rendaient les chiffres
+  incomparables.
+- La cible $y_i$ de Brier et d'ECE est le **risque gold** $R_i = 1/k_i$
+  (modèle prosecutor), et non un événement binaire : les $k$ gold de
+  RAT-Bench/PUMS sont des tailles de classe, pas des ré-identifications
+  observées. Le rapport le DOIT préciser à côté du chiffre.
+- L'ECE dépend du nombre de bacs : tout ECE publié DOIT être accompagné de
+  sa valeur pour $B \in \{5, 10, 15, 20\}$ (`ece_by_bins`).
+- Des statistiques calculées sur les points mêmes qui ont servi à ajuster la
+  calibration sont des **erreurs d'ajustement** (`fit_*`), pas des métriques
+  de calibration. Seule une évaluation sur un split distinct (SPEC-06 §8)
+  peut porter le nom ECE/Brier/MALE-k.
+
 **Cible : ECE < 0.05 par domaine.** En dessous de cette qualité, la politique
 par seuils
 
@@ -279,16 +297,28 @@ C'est rédhibitoire ici : un ticket support mentionne presque toujours un client
 un agent et souvent un tiers ; un document RH mentionne un candidat et un
 référent. **Une métrique mono-sujet y serait systématiquement optimiste.**
 
-#### Un LLM local suffit comme adversaire
+#### Un LLM local comme adversaire — hypothèse à valider
 
 SPIA rapporte une corrélation de Spearman **ρ > 0,98** entre CPR/IPR calculés
 avec différents LLM adversaires. Le choix du modèle adversaire a donc **peu
 d'impact sur le classement des méthodes**.
 
-> Conséquence directe pour la contrainte « modèles locaux < 30 B » : un modèle
-> local peut servir d'adversaire d'évaluation **sans perdre en validité de
-> comparaison**. C'est ce qui rend l'axe D mesurable en continu, et non
-> seulement lors de campagnes coûteuses.
+> **Correction v2.1** : les trois adversaires comparés par SPIA (Annexe E.1,
+> Table 11) sont Claude-Sonnet-4.5, GPT-4.1 et Claude-Haiku-4.5 — **aucun
+> modèle local**. Que ρ > 0,98 tienne pour un modèle < 30 B est une
+> **hypothèse**, pas un résultat. Avant de publier un CPR/IPR obtenu avec un
+> adversaire local, il FAUT mesurer sur le sous-ensemble annoté humainement
+> de SPIA (295 documents) la corrélation de Spearman du classement des
+> méthodes et l'écart absolu avec les valeurs publiées (EPIC-H, H-3).
+
+#### Adversaire littéral (état actuel)
+
+Tant que l'adversaire d'inférence n'est pas implémenté, `score` calcule CPR et
+IPR avec un **adversaire littéral** : une PII est « encore inférable » si sa
+surface gold reste présente dans le texte anonymisé (forme normalisée NFC +
+casse repliée + espaces fusionnés, mots entiers). Ce n'est **ni une borne
+inférieure ni une borne supérieure** de l'inférabilité, et ce n'est pas
+comparable aux CPR/IPR de SPIA : ces valeurs sont publiées en `PROXY`.
 
 ### TRIR — le risque de ré-identification de référence
 
@@ -296,6 +326,27 @@ d'impact sur le classement des méthodes**.
 un document anonymisé parmi un ensemble candidat. **TRIR** (*Text
 Re-Identification Risk*) : la métrique de risque dérivée de l'accuracy de TRIA
 [@manzanares2024tria].
+
+#### Protocole TRIR (v2.1, `tria-tfidf-centroid-heldout` v2)
+
+L'attaquant ne voit **jamais** le texte original du document qu'il attaque :
+
+1. **Identité inter-documents** : `author_id` si tous les documents le
+   portent, sinon le sujet **unique** du document. Un document à plusieurs
+   sujets est exclu et compté (`excluded_multi_subject`). Sans identité
+   inter-documents, TRIR est `UNAVAILABLE` — jamais calculé en prenant
+   `doc_id` comme sujet (ce qui donnait TRIR = 1 par construction).
+2. **Validation croisée à K = 5 blocs groupée par sujet** : apprentissage
+   (IDF compris) sur les textes **originaux** hors bloc — la connaissance
+   auxiliaire —, prédiction sur les textes **anonymisés** du bloc. Un
+   document dont le sujet n'a aucun autre document n'est pas une cible
+   (`excluded_no_background`) mais sert de distracteur.
+3. **Égalités** résolues en espérance (crédit fractionnaire) ; top-1 et top-5.
+4. **Références publiées** : hasard uniforme **et** classe majoritaire.
+
+Le classifieur TF-IDF par centroïde est plus faible que l'encodeur fin-tuné
+de TRIA : TRIR reste `PROXY` (un attaquant plus fort ne ferait qu'augmenter
+le risque).
 
 ⚠️ **Distinction à ne pas manquer** : TRIA/TRIR (DMKD 2024) et PETRE (KBS 2025)
 sont deux travaux distincts de la même équipe. **TRIR est la métrique de risque,
@@ -350,8 +401,14 @@ $$
 $$
 
 *Readability* et *Meaning* sont jugés par un **LLM juge**, qui DOIT être
-documenté avec le score. C'est la métrique la plus directement réutilisable et
-la moins coûteuse à mettre en place avec un modèle local.
+documenté avec le score. Le protocole SPIA normalise chaque note 1–10 par
+division par 10 et utilise ROUGE-L F1 avec `rouge-score` et `use_stemmer=True`.
+Le juge est exécuté par `anonv2 judge` ; `score` relit ses sorties figées et
+vérifie les empreintes, les dénominateurs et la couverture exacte des documents.
+Une réponse invalide est une erreur, jamais une note par défaut. Un juge
+OpenRouter gratuit est une variante **DIAGNOSTIC**, tant que son accord avec
+des annotations humaines n'est pas établi. Le ROUGE-L interne sans stemmer
+reste un proxy séparé et ne remplace pas cette composante officielle.
 
 > ⚠️ **Piège des métriques de surface** : BLEU et ROUGE **pénalisent les
 > reformulations légitimes**. Généraliser « 28 ans » en « fin de vingtaine » est
@@ -389,6 +446,12 @@ tension. Une rétention élevée sur une tâche insensible aux QI ne prouve rien
 3. Évaluer le **même** classifieur (non réentraîné) sur le texte anonymisé.
 4. Publier aussi la variante réentraînée sur anonymisé — les deux chiffres ne
    disent pas la même chose (adaptation possible ou non côté aval).
+
+**État v2.1** : la rétention est calculée en **macro-F1** (l'accuracy, publiée
+en détail, masque l'effondrement des classes rares), avec un intervalle par
+bootstrap **apparié** sur les documents. Seule la variante figée (étape 3)
+est implémentée ; la variante réentraînée est déclarée `unavailable` tant que
+`predict` ne produit pas de split d'entraînement anonymisé.
 
 ---
 
@@ -492,6 +555,29 @@ l'agrégat seul serait trompeur.
 
 ---
 
+### Incertitude obligatoire (v2.1)
+
+Chaque métrique publiée avec une valeur porte `details.ci95` : intervalle
+percentile à 95 % par **bootstrap en grappes** (1 000 réplicats, graine fixe
+déclarée). L'unité rééchantillonnée est celle qui rend les observations
+indépendantes : le **document** (spans, entités, fuite, ROUGE-L), le
+**sujet** (CPR, IPR, TRIR). Moins de deux unités : l'intervalle est déclaré
+non défini, jamais omis. **Aucune comparaison de systèmes ne DOIT être
+conclue sur des valeurs ponctuelles** dont les intervalles se recouvrent.
+
+### Reproductibilité vérifiée (v2.1)
+
+- `predict` refuse un pivot sans lock d'ingestion ou dont un fichier diffère
+  de son empreinte SHA-256, recopie le lock dans `data_version`, et
+  enregistre l'empreinte de ses sorties (`outputs`) et l'état de l'arbre git
+  (`code.git_dirty`).
+- `score` revérifie pivot (y compris `train/` lu par l'évaluation aval) et
+  prédictions, et écrit les empreintes lues dans `inputs`. Le protocole
+  (nom, version, statut par défaut) DOIT être déclaré dans le manifeste.
+- `publishable` est faux, avec la raison dans `publication_blockers`, si le
+  taux d'erreur dépasse 5 % **ou** si le run vient d'un arbre git modifié ou
+  d'état inconnu.
+
 ## 11. Tests de sanité obligatoires
 
 Contrôles automatiques, qui attrapent les erreurs d'implémentation les plus
@@ -513,4 +599,5 @@ Un pipeline qui échoue S3 ou S5 a un bug, quelles que soient ses autres valeurs
 | Version | Date | Changement |
 |---------|------|-----------|
 | 1.0 | 2026-08-30 | Création. Cinq niveaux, QICR/RCR@k, garde-fou de circularité, format de rapport, six tests de sanité. |
+| **2.1** | 2026-10-02 | Audit EPIC-H. Protocole TRIR v2 (connaissance auxiliaire disjointe des cibles, plus de repli `doc_id`). Adversaire littéral normalisé et requalifié (ni borne inf. ni sup.). Hypothèse « LLM local » requalifiée. MALE-k unique ; cible de Brier/ECE précisée ; sensibilité de l'ECE aux bacs. Rétention en macro-F1. Intervalles de confiance et chaîne d'empreintes obligatoires. |
 | **2.0** | 2026-08-30 | Intégration de la revue d'avril 2026 ([04-datasets-et-metriques](../rapport/04-datasets-et-metriques-2026.md)). Hiérarchie à 7 rangs adossée aux 4 axes. **CPR/IPR deviennent les métriques principales** ; $R_{succ}$ devient dérivée. Ajout de TRIA/TRIR, de l'AAC et de sa limite mono-sujet, du partial-match `nervaluate` par défaut, d'ER_di/ER_qi, des trois limites chiffrées du F1, et de Mean Utility. |

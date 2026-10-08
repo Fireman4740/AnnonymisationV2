@@ -21,6 +21,12 @@ from anonymisation.metrics.scorecard import (
     build_scorecard,
     validate_reproducibility,
 )
+from anonymisation.schema.integrity import (
+    DataIntegrityError,
+    locked_files,
+    verify_pivot_files,
+    verify_run_outputs,
+)
 from anonymisation.schema.io import read_jsonl, write_json
 from anonymisation.schema.models import Annotation, Document, TaskLabel
 from anonymisation.schema.taxonomy import TAXONOMY_VERSION
@@ -72,28 +78,80 @@ def _read_predictions(path: Path) -> list[dict[str, Any]]:
 
 
 def _protocol_info(dataset: str, requested: str) -> tuple[str, str, MetricStatus]:
-    """Résout version/statut depuis le manifeste, sans charger le pipeline."""
+    """Résout version/statut depuis le manifeste, sans charger le pipeline.
+
+    Aucun repli : un manifeste absent, une version non déclarée ou un statut
+    inconnu font échouer le score. Un statut deviné (``DIAGNOSTIC`` par défaut)
+    ou une version supposée (``"1"``) rendraient deux scorecards en apparence
+    comparables alors qu'elles relèvent de protocoles différents.
+    """
     config = DATASETS_CONFIG / f"{dataset}.yaml"
     if not config.is_file():
-        return requested, "1", MetricStatus.DIAGNOSTIC
+        raise ScoreError(
+            f"Manifeste absent pour {dataset!r} : {config}. Le protocole "
+            "d'évaluation (nom, version, statut par défaut) doit être déclaré "
+            "dans `evaluation:` du manifeste."
+        )
     try:
         raw = yaml.safe_load(config.read_text(encoding="utf-8"))
-        evaluation = raw.get("evaluation", {}) if isinstance(raw, dict) else {}
     except (OSError, yaml.YAMLError) as exc:
         raise ScoreError(f"Manifeste illisible pour {dataset!r} : {config} ({exc})") from exc
+    evaluation = raw.get("evaluation") if isinstance(raw, dict) else None
+    if not isinstance(evaluation, dict):
+        raise ScoreError(f"{config} : bloc `evaluation:` absent ou invalide.")
     declared = evaluation.get("protocol")
     if declared and declared != requested:
         raise ScoreError(
             f"Protocole incompatible : le dataset {dataset!r} déclare {declared!r}, "
             f"pas {requested!r}"
         )
-    version = str(evaluation.get("protocol_version", "1"))
-    raw_status = str(evaluation.get("default_metric_status", "DIAGNOSTIC")).lower()
+    for field in ("protocol_version", "default_metric_status"):
+        if evaluation.get(field) in (None, ""):
+            raise ScoreError(f"{config} : `evaluation.{field}` non déclaré.")
+    version = str(evaluation["protocol_version"])
+    raw_status = str(evaluation["default_metric_status"]).lower()
     try:
         status = MetricStatus(raw_status)
-    except ValueError:
-        status = MetricStatus.DIAGNOSTIC
+    except ValueError as exc:
+        raise ScoreError(
+            f"{config} : `evaluation.default_metric_status` = {raw_status!r} "
+            f"inconnu ; valeurs admises : {[m.value for m in MetricStatus]}."
+        ) from exc
     return requested, version, status
+
+
+def _verify_inputs(
+    run_dir: Path, lock: Mapping[str, Any], dataset: str, split: str, *, with_train: bool
+) -> dict[str, Any]:
+    """Vérifie que gold et prédictions sont **ceux du run**, et renvoie leurs empreintes.
+
+    ``with_train`` ajoute les fichiers ``train/`` lus par l'évaluation aval :
+    eux aussi conditionnent un chiffre publié.
+    """
+    context = f"Run {run_dir}"
+    try:
+        files = locked_files(lock.get("data_version"), context=context)
+        root = PROCESSED_ROOT / dataset
+        pivot = verify_pivot_files(
+            root,
+            split,
+            (DOCUMENTS_NAME, "annotations.jsonl", TASKS_NAME),
+            files,
+            context=context,
+            required=(DOCUMENTS_NAME,),
+        )
+        if with_train and split != "train":
+            pivot.update(
+                verify_pivot_files(
+                    root, "train", (DOCUMENTS_NAME, TASKS_NAME), files, context=context
+                )
+            )
+        outputs = verify_run_outputs(
+            run_dir, lock.get("outputs"), (PREDICTIONS_NAME,), context=context
+        )
+    except DataIntegrityError as exc:
+        raise ScoreError(str(exc)) from exc
+    return {"pivot": dict(sorted(pivot.items())), "run": outputs}
 
 
 def _load_gold(
@@ -102,19 +160,23 @@ def _load_gold(
     base = PROCESSED_ROOT / dataset / split
     documents_path = base / "documents.jsonl"
     annotations_path = base / "annotations.jsonl"
-    if not documents_path.is_file() or not annotations_path.is_file():
+    if not documents_path.is_file():
         raise ScoreError(
             f"Pivot gold absent pour {dataset!r} / split {split!r} "
-            f"(attendus : {documents_path} et {annotations_path})"
+            f"(attendu : {documents_path})"
         )
+    # Annotations absentes = corpus d'utilité pure. C'est légitime seulement
+    # parce que `_verify_inputs` a déjà refusé un fichier annoncé par le lock
+    # mais manquant : l'absence ici est déclarée, jamais devinée.
     try:
         documents = {
             document.doc_id: document
             for document in read_jsonl(documents_path, Document)
         }
         grouped: dict[str, list[Annotation]] = {}
-        for annotation in read_jsonl(annotations_path, Annotation):
-            grouped.setdefault(annotation.doc_id, []).append(annotation)
+        if annotations_path.is_file():
+            for annotation in read_jsonl(annotations_path, Annotation):
+                grouped.setdefault(annotation.doc_id, []).append(annotation)
     except (OSError, ValueError) as exc:
         raise ScoreError(f"Pivot gold invalide : {base} ({exc})") from exc
     return documents, {doc_id: tuple(values) for doc_id, values in grouped.items()}
@@ -152,6 +214,65 @@ def _load_train_data(dataset: str) -> tuple[list[Document], list[TaskLabel]]:
         ) from exc
     return docs, tasks
 
+ATTACK_LOCK_NAME = "attack.lock.json"
+ATTACKS_NAME = "attacks.jsonl"
+JUDGE_LOCK_NAME = "judge.lock.json"
+JUDGMENTS_NAME = "judgments.jsonl"
+
+
+def _load_frozen(
+    run_dir: Path, predictions_sha256: str, lock_name: str, rows_name: str,
+    *, expected_doc_ids: set[str], expected_protocol: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    """Sorties figées d'une étape optionnelle (attaque, juge), vérifiées, ou ``None``.
+
+    Refuse une étape menée sur d'AUTRES prédictions que celles du run, ou dont
+    le fichier de sortie a été modifié : sinon la métrique décrirait un autre
+    texte que celui scoré.
+    """
+    lock_path = run_dir / lock_name
+    if not lock_path.is_file():
+        if (run_dir / rows_name).is_file():
+            raise ScoreError(f"{run_dir / rows_name} sans {lock_name} : sortie non vérifiable")
+        return None
+    lock = _read_json(lock_path)
+    if lock.get("protocol") != expected_protocol or str(lock.get("protocol_version")) != "1":
+        raise ScoreError(f"{lock_path} : protocole/version non pris en charge")
+    run_lock = _read_json(run_dir / LOCK_NAME)
+    split = str(run_lock["run"]["split"])
+    gold_name = "documents.jsonl" if lock_name == JUDGE_LOCK_NAME else "profiles.jsonl"
+    expected_gold = (run_lock.get("data_version", {}).get("files") or {}).get(f"{split}/{gold_name}")
+    if not expected_gold or (lock.get("inputs") or {}).get(gold_name) != expected_gold:
+        raise ScoreError(f"{lock_path} : empreinte gold `{gold_name}` divergente ou absente")
+    attacked = (lock.get("inputs") or {}).get("predictions.jsonl")
+    if attacked != predictions_sha256:
+        raise ScoreError(
+            f"{lock_path} : étape menée sur d'autres prédictions (empreinte "
+            f"{str(attacked)[:12]}… ≠ {predictions_sha256[:12]}…) — la relancer"
+        )
+    try:
+        verify_run_outputs(run_dir, lock.get("outputs"), (rows_name,), context=f"{lock_name} {run_dir}")
+    except DataIntegrityError as exc:
+        raise ScoreError(str(exc)) from exc
+    try:
+        rows = [json.loads(line) for line in (run_dir / rows_name).read_text(encoding="utf-8").splitlines()
+                if line.strip()]
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ScoreError(f"{rows_name} illisible : {exc}") from exc
+    if any(not isinstance(row, dict) or not isinstance(row.get("doc_id"), str)
+           or row.get("status") not in ("ok", "error") for row in rows):
+        raise ScoreError(f"{rows_name} : doc_id ou statut invalide")
+    ids = [row["doc_id"] for row in rows]
+    if len(set(ids)) != len(ids) or set(ids) != expected_doc_ids:
+        raise ScoreError(f"{rows_name} : couverture incomplète, étrangère ou dupliquée des documents")
+    errors = sum(row["status"] == "error" for row in rows)
+    rate = errors / len(rows) if rows else 1.0
+    if (lock.get("documents") != len(rows) or lock.get("documents_error") != errors
+            or lock.get("error_rate") != rate or lock.get("publishable") != (rate <= 0.05)):
+        raise ScoreError(f"{lock_path} : comptabilité divergente des sorties figées")
+    return rows, lock
+
+
 def cmd_score(run: str | Path, protocol: str) -> int:
     """Calcule ``scorecard.json`` depuis un run figé, sans modèle.
 
@@ -177,7 +298,14 @@ def cmd_score(run: str | Path, protocol: str) -> int:
     except (KeyError, TypeError, ScorecardError) as exc:
         raise ScoreError(f"Lock de run invalide : {exc}") from exc
     protocol_name, protocol_version, default_status = _protocol_info(dataset, protocol)
+    # Vérifié AVANT toute lecture : un gold ré-ingéré depuis le run ferait
+    # scorer les prédictions contre une autre vérité terrain.
+    # `train/` n'est lu (donc vérifié) que si le split évalué porte des tâches
+    # aval : vérifier des fichiers non lus bloquerait sans rien protéger.
+    reads_train = (PROCESSED_ROOT / dataset / split / TASKS_NAME).is_file()
+    inputs = _verify_inputs(run_dir, lock, dataset, split, with_train=reads_train)
     predictions = _read_predictions(run_dir / PREDICTIONS_NAME)
+    expected_doc_ids = {str(p["doc_id"]) for p in predictions if p.get("status") in ("ok", "partial")}
     documents, gold = _load_gold(dataset, split)
     eval_tasks = _load_tasks(dataset, split)
     # Le classifieur aval s'entraîne sur `train` : évaluer sur ce même split
@@ -235,17 +363,28 @@ def cmd_score(run: str | Path, protocol: str) -> int:
             system=system_block,
             requested_status=default_status,
             downstream_results=downstream_results if downstream_results else None,
+            attack=_load_frozen(run_dir, inputs["run"]["predictions.jsonl"],
+                                ATTACK_LOCK_NAME, ATTACKS_NAME,
+                                expected_doc_ids=expected_doc_ids,
+                                expected_protocol="ratbench-staab-correctmatch"),
+            judgments=_load_frozen(run_dir, inputs["run"]["predictions.jsonl"],
+                                   JUDGE_LOCK_NAME, JUDGMENTS_NAME,
+                                   expected_doc_ids=expected_doc_ids,
+                                   expected_protocol="mean-utility-spia"),
         )
     except (TypeError, ValueError) as exc:
         raise ScoreError(f"Scorecard impossible à calculer : {exc}") from exc
+    # Empreintes des entrées effectivement scorées : rejouer `score` doit
+    # pouvoir prouver qu'il a lu les mêmes octets.
+    scorecard["inputs"] = inputs
     write_json(run_dir / SCORECARD_NAME, scorecard)
     accounting = scorecard["accounting"]
     print(
         f"score : {accounting['documents_scored']} document(s) scoré(s), "
         f"taux d'erreur {accounting['error_rate']:.2%} — {run_dir / SCORECARD_NAME}"
     )
-    warning = accounting.get("warning")
-    if warning:
-        print(f"AVERTISSEMENT BLOQUANT : {warning}")
+    blockers = scorecard.get("publication_blockers") or []
+    if blockers:
+        print(f"AVERTISSEMENT BLOQUANT : {'; '.join(blockers)}")
         return 1
     return 0

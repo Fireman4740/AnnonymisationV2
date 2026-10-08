@@ -1,11 +1,11 @@
-# Population de référence — RAT-Bench US PUMS 2022
+# Population de référence — RAT-Bench US PUMS 2010
 # Fiche : documentation/datasets/rat-bench.md
 
-population_id: ratbench-us
-name: "Population US Census PUMS 2022 (ACS 1-Year)"
-size: 309349689
+population_id: ratbench-us-pums2010
+name: "Échantillon PUMS 2010 officiel RAT-Bench, rééchantillonné selon PWGTP"
+size: 306169200
 geography: US
-year: 2022
+year: 2010
 kind: sample
 
 attributes:
@@ -38,5 +38,9 @@ attributes:
     spec_code: GEN_ORIGIN_BELIEF
 
 notes: >
-  Population américaine ACS 2022. La somme des poids PWGTP projette la taille
-  d'équivalence k_true sur la population américaine totale (~309 M).
+  Source : imperial-aisp/rat-bench@8e9f03d00cb0559508d8ee86bc743875aa6bcf95.
+  Taille utilisée par compute_reid_risk, différente de la constante N inutilisée
+  dans ce chemin du code amont. Chaque ligne de l'échantillon officiel a déjà
+  été tirée selon PWGTP : ne pas repondérer. Codes et dates synthétiques des
+  tables officielles ; ne pas substituer une autre édition ACS. Le risque est
+  une estimation CorrectMatch, pas un risque gold observé ni un k_true.

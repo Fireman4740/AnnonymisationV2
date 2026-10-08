@@ -1,204 +1,101 @@
-# RAT-Bench
+# RAT-Bench — acquisition et évaluation reproductibles
 
-| | |
-|---|---|
-| **Clé interne** | `ratbench` |
-| **Priorité** | **P0** |
-| **Benchmark** | B3 (Risk Estimation), B4 (End-to-End) |
-| **Statut de la fiche** | Stable · v1.0 · 2026-08-30 |
+Le protocole anglais suit le papier [RAT-Bench](https://www.alphaxiv.org/pdf/2602.12806)
+et le [code officiel](https://github.com/imperial-aisp/rat-bench/tree/8e9f03d00cb0559508d8ee86bc743875aa6bcf95).
+Les révisions sont figées dans `scripts/fetch_ratbench.py` et les fichiers acquis
+sont identifiés par SHA-256 dans `RAT-Bench/SOURCES.json`.
 
----
+## Sources et emplacement
 
-## 1. Identité
+- Textes : `imperial-cpg/rat-bench@e439e9171dd43c5e26d91b678e3df6264fea5239`,
+  `benchmark/english/level_{1,2,3}.jsonl` : 300 documents et profils au total.
+- Population : échantillon **PUMS 2010 officiel** distribué par le lien Google Drive
+  du README amont, déjà rééchantillonné selon PWGTP. Chaque ligne a le même poids ;
+  réappliquer PWGTP compterait deux fois les poids. ACS 2022 et l'exemple de
+  100 lignes du dépôt amont ne conviennent pas à cette reproduction.
+- Tables : pickles officiels au commit figé, vérifiés **avant** désérialisation,
+  puis convertis en JSON en conservant l'ordre d'insertion des options.
+- Cache local recommandé : `data/raw/RAT-Bench/english.jsonl`,
+  `data/raw/RAT-Bench/cache/pums_pwgtp_sample_.csv`,
+  `data/raw/RAT-Bench/cache/pums_population.parquet`,
+  `data/raw/RAT-Bench/cache/maps/*.json`.
+- Pivot : `data/processed/ratbench/eval/`, produit exclusivement par ingestion.
+- Texte/code RAT-Bench : MIT ; PUMS : microdonnées publiques US Census.
+  CorrectMatch est une dépendance GPL-3.0 distincte.
 
-| Champ | Valeur |
-|-------|--------|
-| Nom complet | RAT-Bench: A Comprehensive Benchmark for Text Anonymization |
-| Référence | [@krco2026ratbench] — arXiv `2602.12806` `[à revérifier]` |
-| Année | 2026 |
-| Type | Synthétique, généré à partir de statistiques démographiques réelles |
-| Langues | Multilingue (liste exacte à confirmer à l'acquisition) |
-| Domaine | Généraliste, plusieurs scénarios |
+```bash
+export ANONV2_V1_DATASETS="$PWD/data/raw"
+uv run --isolated --no-project --with huggingface-hub --with gdown \
+  --with pandas --with pyarrow python scripts/fetch_ratbench.py --root "$ANONV2_V1_DATASETS"
+uv sync --locked --python 3.11 --extra datasets --extra metrics --extra attack --extra dev
+uv run --locked --extra datasets anonv2 datasets ingest ratbench --split eval
+```
 
-## 2. Rôle et priorité
+Une acquisition déjà complète est revérifiée sans retéléchargement. Aucun corpus
+brut, pivot ni secret n'est commité. Le noyau conserve Python ≥3.10 ; l'extra
+`attack` exige Python ≥3.11 pour CorrectMatch. Julia et ses paquets sont résolus
+par `juliapkg.json` dans l'environnement du worktree, au premier import.
 
-**Le dataset public le plus proche de l'objectif du projet** : « texte libre → QI
-→ risque de ré-identification ». C'est le seul benchmark public qui ferme la
-boucle complète en incluant un **attaquant** et une **population de référence**.
+## Chaîne d'évaluation
 
-Il sert de :
+```bash
+# Fournir OPENROUTER_API_KEY dans l'environnement, sans l'inscrire dans le YAML.
+uv run --locked anonv2 predict --dataset ratbench --split eval \
+  --system passthrough --profile deterministic --limit 2 --out runs/sanity-pass
+uv run --locked --extra attack anonv2 attack --run runs/sanity-pass \
+  --attacker ratbench --backend openrouter_gemma4_26b --workers 1
+uv run --locked --extra attack anonv2 judge --run runs/sanity-pass \
+  --backend openrouter_gemma4_26b --workers 1
+uv run --locked anonv2 score --run runs/sanity-pass --protocol ratbench-v1
+```
 
-- **référence externe** pour la Contribution B (estimation de risque calibrée) ;
-- **point de comparaison** obligatoire dans toute publication issue du projet ;
-- **modèle méthodologique** pour la construction des corpus internes
-  ([SPEC-05](../specifications/SPEC-05-generation-corpus-synthetiques.md)).
+L'attaquant ne reçoit que le texte anonymisé, les attributs demandés, le scénario
+et les options démographiques. Les profils gold ne servent qu'à juger ses
+réponses. Son prompt reproduit l'anglais officiel. Les règles de jugement
+Jaro-Winkler reprennent le code amont, y compris ses particularités CIT et OCCP,
+explicitement documentées dans `correctness.py`.
 
-## 3. Contenu et volumétrie
+Les QI correctement devinés alimentent CorrectMatch. Les codes des colonnes et de
+la cible subissent la même bijection ordonnée vers 1…K, nécessaire pour les trous
+de la colonne DOB. Une cible absente du support de l'échantillon est une erreur
+explicite ; aucun risque n'est inventé. Le calcul moyenne dix estimations finies
+par cible sur N = 306 169 200, constante du chemin `compute_reid_risk` officiel.
+Ce risque stochastique est figé dans `attacks.jsonl` : la relecture du score est
+reproductible, une nouvelle attaque n'est pas garantie identique.
 
-Le benchmark génère des textes depuis des profils démographiques, avec un
-contrôle explicite sur :
+Le succès RAT-Bench (`reid_success_rate`) vaut 1 si un identifiant direct est
+deviné ou si la correctness CorrectMatch atteint 0,2. Le bootstrap porte sur
+les documents ; il ne mesure pas l'incertitude des appels LLM et du modèle copule.
+Ce n'est pas un k_true, un risque observé ou une garantie opérationnelle.
 
-| Axe de contrôle | Valeurs |
-|-----------------|---------|
-| Nature de l'identifiant | direct / indirect |
-| Mode d'expression | explicite standard / **non standard** / **implicite** |
-| Difficulté | plusieurs régimes |
-| Langue | plusieurs |
-| Scénario | plusieurs |
+Le juge reprend le [prompt et la formule SPIA](https://github.com/maisonOP/spia/blob/3fa78a1b3c75788c6294f40024fc79e1ef42923f/src/evaluate/utility/utility_evaluator.py) :
+`(readability/10 + meaning/10 + ROUGE-L F1)/3`, avec stemmer de Porter.
+Les réponses et composants sont conservés dans `judgments.jsonl`.
+Le ROUGE-L interne sans stemmer reste un proxy lexical séparé.
 
-Volumétrie exacte : **à confirmer à l'acquisition** et à figer dans le manifeste
-(`expected_documents`, `sha256`).
+Les locks des deux étapes relient sorties, prédictions et gold par empreintes.
+`score` refuse les documents manquants/étrangers/dupliqués, les fichiers modifiés,
+les protocoles incompatibles et les dénominateurs divergents. Une panne LLM ou un
+JSON invalide est compté en erreur, jamais comme protection ni note par défaut.
+Au-delà de 5 % d'erreurs d'une étape, ses métriques deviennent indisponibles et
+la scorecard non publiable. `score` ne relance ni LLM ni CorrectMatch.
 
-### Résultat de référence à reproduire
+## Comparabilité et travaux restants
 
-Le papier rapporte un risque de ré-identification passant d'environ **44 % à
-69 %** lorsque les identifiants deviennent non standards, et conclut que
-l'information exprimée **implicitement** reste très difficile à anonymiser.
+Gemma 4 26B via OpenRouter est configuré en `:free`, avec prix maximum nul et
+sans changement automatique de modèle. Les quotas peuvent faire échouer le test.
+L'attaquant diffère de GPT-4.1 utilisé dans RAT-Bench : les résultats restent
+**DIAGNOSTIC**, même avec un protocole et des données fidèles. Le juge gratuit
+n'est pas encore validé contre des annotations humaines.
 
-> **Test de non-régression du projet** : reproduire l'ordre de grandeur de cet
-> écart avec notre propre pipeline d'attaque. Un écart nul indiquerait un bug
-> dans notre attaquant, pas une victoire.
+Le split `eval` conserve les trois niveaux officiels, sans prétendre disposer
+d'un split de calibration représentatif. La sélection `--limit 2` est un test de
+fonctionnement uniquement. Une campagne complète doit couvrir les niveaux,
+scénarios, langues, comparer les systèmes sur les mêmes documents et documenter
+les erreurs et intervalles d'incertitude.
 
-## 4. Structure brute
-
-À confirmer lors de l'acquisition. Les éléments attendus, d'après la
-description du benchmark :
-
-- des **profils** (attributs démographiques source) ;
-- des **documents** générés depuis ces profils ;
-- des **annotations** liant les spans du texte aux attributs du profil ;
-- des **métadonnées de difficulté** (mode d'expression, régime) ;
-- une **population de référence** (statistiques US) permettant le calcul du
-  risque.
-
-> Action d'implémentation n°1 : documenter la structure réelle dans cette section
-> dès le premier téléchargement, avec un exemple complet d'enregistrement.
-
-## 5. Accès et acquisition
-
-| | |
-|---|---|
-| Source primaire | arXiv `2602.12806` `[à revérifier]` |
-| Dépôt code/données | À identifier (GitHub et/ou Hugging Face) |
-| Méthode | Script `scripts/download_ratbench.py` |
-| Prérequis | Aucun a priori |
-| Cache local | `data/raw/ratbench/` |
-
-**Note V1** : le dépôt V1 (`../Anonymisation`) contient déjà
-`eval/core/ratbench.py`, `eval/core/loaders/ratbench.py` et
-`eval/core/dataset_adapters/ratbench.py`, ainsi qu'un cache
-`eval/datasets/RAT-Bench`. **Commencer par les lire** : ils documentent de facto
-le format réel et évitent une redécouverte.
-
-## 6. Licence et conformité
-
-- Licence : **à confirmer à l'acquisition**. Ne pas publier de résultats avant
-  confirmation.
-- Données synthétiques → pas de contrainte RGPD sur les personnes.
-- Redistribution : interdite tant que la licence n'est pas vérifiée.
-- Champ `license` du manifeste : obligatoire, valeur `UNKNOWN` bloquante en
-  mode `official`.
-
-## 7. Couverture
-
-| Besoin | Couvert |
-|--------|:-------:|
-| Identifiants directs | ✅ |
-| QI indirects | ✅ |
-| QI implicites | ✅ |
-| Combinaisons de QI | ✅ |
-| Profil latent | ✅ |
-| Population de référence | ✅ (US) |
-| Attaquant | ✅ |
-| Risque de ré-identification | ✅ |
-| Multilingue | ✅ |
-| Français | ◐ |
-| RH | ◐ transférable |
-| Support | ◐ transférable |
-| Texte réel | ❌ synthétique |
-
-## 8. Apport pour le projet
-
-1. **Valide la faisabilité** de la chaîne complète — c'est ce qui oblige à
-   reformuler la contribution du projet (voir
-   [03-lacunes-et-contribution §3](../rapport/03-lacunes-et-contribution.md)).
-2. Fournit une **vérité terrain sur le risque**, indispensable pour mesurer
-   MAE-risk, MAE-k, AUROC, AUPRC, Brier et ECE.
-3. Fournit un **axe de difficulté contrôlé** : c'est le seul moyen de publier un
-   F1 « par difficulté » et de montrer où le système casse.
-4. Fournit un **protocole d'attaque** réutilisable pour
-   [SPEC-08](../specifications/SPEC-08-attaquants.md).
-
-## 9. Limites et pièges
-
-| Limite | Conséquence |
-|--------|-------------|
-| Synthétique | Ne mesure pas la robustesse en production. Ne jamais présenter un résultat RAT-Bench comme une garantie opérationnelle. |
-| Population US | Les distributions de professions, formations et localisations ne transfèrent pas à la France. Le k calculé est un k **américain**. |
-| Pas de domaine RH/support natif | Transfert partiel seulement. |
-| Pas de français natif fort | À vérifier langue par langue avant de publier une métrique FR. |
-| Attaquant du papier ≠ notre attaquant | Les chiffres ne sont comparables que si le protocole d'attaque est identique. À documenter explicitement. |
-
-## 10. Mapping vers le schéma interne
-
-Cible : [SPEC-02](../specifications/SPEC-02-schema-donnees.md).
-
-| Objet RAT-Bench | Objet interne | Notes |
-|-----------------|---------------|-------|
-| profil démographique | `profiles.jsonl` → `Profile` | `person_id` = identifiant RAT-Bench préfixé `ratbench:` |
-| document généré | `documents.jsonl` → `Document` | `domain = "generic"`, `language` depuis la métadonnée |
-| span annoté | `annotations.jsonl` → `Annotation` | `identifier_type` ∈ {`DIRECT`, `QUASI`} depuis l'étiquette source |
-| mode d'expression | `Annotation.expression_mode` | `EXPLICIT` / `NON_STANDARD` / `IMPLICIT` |
-| régime de difficulté | `Document.meta.difficulty` | conservé tel quel, sert au reporting par difficulté |
-| population de référence | `configs/populations/ratbench-us.yaml` | voir [SPEC-06 §4](../specifications/SPEC-06-population-et-risque.md) |
-| risque gold | `combinations.jsonl` → `Combination.risk_true` | avec `source = "ratbench"` |
-
-**Point d'attention** : la taxonomie source doit être mappée vers les codes
-[SPEC-01](../specifications/SPEC-01-taxonomie-qi.md). Le mapping vit dans
-`configs/datasets/ratbench.yaml`, section `label_map`, et toute étiquette non
-mappée provoque une erreur de validation — **jamais** un silence.
-
-## 11. Splits et protocole
-
-- Reprendre les splits officiels du benchmark. Ne pas resplitter.
-- Si aucun split officiel : split déterministe par `person_id` (jamais par
-  document — sinon fuite entre train et test via le profil), seed 42, 70/15/15.
-- Protocole d'évaluation : `official` uniquement si (a) volumétrie observée =
-  volumétrie attendue, (b) checksum conforme, (c) licence connue. Sinon
-  `sampled` ou `diagnostic`.
-
-## 12. Plan d'implémentation de l'adaptateur
-
-| # | Étape | Sortie |
-|---|-------|--------|
-| 1 | Lire `eval/core/loaders/ratbench.py` de la V1 | note de format dans §4 |
-| 2 | Localiser la source officielle (GitHub/HF) et sa licence | §5 et §6 renseignés |
-| 3 | `scripts/download_ratbench.py` + checksum | `data/raw/ratbench/` + `sha256` |
-| 4 | Écrire `label_map` complet dans `configs/datasets/ratbench.yaml` | mapping vers SPEC-01 |
-| 5 | Implémenter `RatBenchAdapter(DatasetAdapter)` | `src/anonymisation/datasets/ratbench.py` |
-| 6 | Normaliser vers `documents/annotations/profiles/combinations` | `data/processed/ratbench/*.jsonl` |
-| 7 | Importer la population de référence | `configs/populations/ratbench-us.yaml` |
-| 8 | Rejouer l'attaquant du papier, comparer les ordres de grandeur | rapport de non-régression |
-
-## 13. Critères d'acceptation
-
-- [ ] `anonv2 datasets validate ratbench` passe sans avertissement.
-- [ ] Nombre de documents observés == `expected_documents` du manifeste.
-- [ ] Aucune étiquette source non mappée.
-- [ ] 100 % des `Annotation.start/end` retombent sur le texte
-      (`text[start:end] == span_text`).
-- [ ] Chaque `Document` référence un `person_id` existant dans `profiles.jsonl`.
-- [ ] La population de référence permet de recalculer un `k_true` cohérent avec
-      le risque gold, à tolérance documentée près.
-- [ ] Le régime « non standard » produit un risque mesuré supérieur au régime
-      « standard » (test de sanité reproduisant la tendance 44 % → 69 %).
-
-## 14. Questions ouvertes
-
-- Quelle est la licence exacte ? Bloquant pour publication.
-- Quelles langues sont réellement couvertes, et avec quelle volumétrie par
-  langue ?
-- La population de référence est-elle distribuée avec le dataset, ou faut-il la
-  reconstruire depuis des sources ACS/Census ?
-- Le protocole d'attaque du papier est-il reproductible tel quel avec des
-  modèles < 30 B ?
+CPR/IPR restent les proxies littéraux actuels : `anonv2 attack --attacker ratbench`
+ne met pas en œuvre l'inférence et l'appariement **multi-sujets** de SPIA. Restent
+à terminer H-3 (SPIA), H-4 (QICR/RCR@k), H-5 (calibration indépendante), H-6
+(validation humaine et réentraînement aval), H-7 (comparaisons appariées) et H-8/H-9
+(sanité complète et reproduction publiée). Voir `EPIC-H-fiabilite-evaluation.md`.

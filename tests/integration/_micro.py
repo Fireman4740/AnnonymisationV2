@@ -65,3 +65,17 @@ def write_micro_pivot(root: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def write_micro_manifest(config_dir: Path) -> Path:
+    """Écrit le manifeste minimal de ``micro`` : ``score`` exige un protocole déclaré."""
+    config_dir.mkdir(parents=True, exist_ok=True)
+    path = config_dir / "micro.yaml"
+    path.write_text(
+        "evaluation:\n"
+        "  protocol: micro-v1\n"
+        "  protocol_version: '1'\n"
+        "  default_metric_status: DIAGNOSTIC\n",
+        encoding="utf-8",
+    )
+    return config_dir

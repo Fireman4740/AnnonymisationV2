@@ -64,3 +64,16 @@ def test_entity_recall_is_micro_averaged_over_divergent_annotators() -> None:
     pred = [_annotation(0, 4, entity_id="a")]
 
     assert entity_recall(gold, pred, identifier_type=IdentifierType.DIRECT) == pytest.approx(0.5)
+
+
+def test_unlocalized_gold_is_excluded_from_entity_recall():
+    """Un attribut sans offsets n'a pas de mention à masquer : hors dénominateur ER."""
+    from anonymisation.metrics.entities import entity_protection_counts
+
+    localized = {"start": 0, "end": 5, "span_text": "Alice", "identifier_type": "direct",
+                 "qi_categories": ["DIR_NAME"]}
+    unlocalized = {"start": None, "end": None, "span_text": None, "identifier_type": "direct",
+                   "qi_categories": ["DIR_EMAIL"]}
+    assert entity_protection_counts([localized, unlocalized], [localized],
+                                    identifier_type="direct") == (1, 1)
+    assert entity_protection_counts([unlocalized], [], identifier_type="direct") == (0, 0)

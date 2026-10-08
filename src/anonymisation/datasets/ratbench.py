@@ -1,20 +1,21 @@
-"""Adaptateur pour le jeu de données RAT-Bench avec calcul de population PUMS.
+"""Adaptateur RAT-Bench (Krčo et al., 2026 — arXiv:2602.12806).
 
-Normalise `english.jsonl` (300 exemples) :
-- Document : `text`, `doc_id="ratbench:<id>"`, métadonnées (difficulty, scenario, features)
-  (le prompt d'attaque n'est jamais écrit dans les logs ni les métadonnées sensibles)
-- Annotations :
-  - Identifiants directs localisés exactement ou insensibles à la casse
-  - Identifiants indirects : localisés si présents littéralement, sinon `IMPLICIT` sans offsets
-  - Clés indirectes mappées vers SPEC-01 (CIT->GEN_ORIGIN_BELIEF, DOB->GEN_AGE, MAR->GEN_FAMILY,
-    SEX->GEN_GENDER, ST->GEN_GEO, SCHL->GEN_EDUCATION, OCCP->GEN_OCCUPATION, ESR->HR_CONTRACT,
-    RAC2P->GEN_ORIGIN_BELIEF).
-- Combinaisons :
-  - Pour chaque document, calcule `k_true = sum(PWGTP)` via `PumsPopulation` sur les attributs
-    reconnus dans PUMS
-  - Émet `Combination` avec `scope=DOCUMENT`, `target_id=doc_id`, `source=DATASET`,
-    `risk_model=PROSECUTOR`, `k_true=k_true`, `risk_true=1.0/k_true`, `at_risk=(k_true <= 10)`,
-    `population_id="ratbench-us"`.
+Normalise `english.jsonl` (niveaux 1 à 3, 300 exemples, cf. scripts/fetch_ratbench.py) :
+
+- Document : `text`, `doc_id="ratbench:L<niveau>:<id>"`, métadonnées non
+  sensibles (difficulty, scenario, features).
+- Annotations : identifiants directs et indirects localisés (toutes les
+  occurrences, mots entiers, casse ignorée), sinon `IMPLICIT` sans offsets.
+- Profils (`profiles.jsonl`) : la vérité terrain complète du profil (identifiants
+  directs et indirects, scénario, features) dans `Profile.meta`. Cette table
+  n'est JAMAIS transmise aux systèmes : elle sert uniquement à l'attaque figée
+  (`anonv2 attack`), qui juge les devinettes de l'attaquant.
+
+Pas de combinaisons `k` gold : la v1 comptait `sum(PWGTP)` sur des colonnes
+décodées d'un ACS 2022 qui n'est pas la population du papier, et sur 6 des 9
+attributs (date de naissance, profession et origine ignorées). La population
+officielle (PUMS 2010 rééchantillonné, sans poids) n'admet pas ce calcul ; le
+risque de référence de RAT-Bench est CorrectMatch, calculé à l'étape d'attaque.
 """
 
 from __future__ import annotations
@@ -33,21 +34,11 @@ from anonymisation.datasets._local import (
 from anonymisation.datasets.base import AcquisitionReport, DatasetAdapter
 from anonymisation.datasets.ingest import IngestionError
 from anonymisation.datasets.registry import register
-from anonymisation.risk.population import (
-    PopulationError,
-    PopulationNoMatchError,
-    PumsPopulation,
-)
 from anonymisation.schema.models import (
     Annotation,
-    Combination,
-    CombinationSource,
     Document,
     Domain,
-    QiValue,
-    RiskModel,
-    Scope,
-    TargetType,
+    Profile,
     TaskLabel,
 )
 from anonymisation.schema.taxonomy import (
@@ -107,19 +98,49 @@ class _RatBenchEntry:
     profile: dict[str, Any]
 
 
+def _bounded_matches(haystack: str, needle: str) -> list[tuple[int, int]]:
+    """Occurrences non chevauchantes de ``needle`` comme mot(s) entier(s)."""
+    found: list[tuple[int, int]] = []
+    check_left, check_right = needle[0].isalnum(), needle[-1].isalnum()
+    start = haystack.find(needle)
+    while start != -1:
+        end = start + len(needle)
+        left_ok = not check_left or start == 0 or not haystack[start - 1].isalnum()
+        right_ok = not check_right or end == len(haystack) or not haystack[end].isalnum()
+        if left_ok and right_ok:
+            found.append((start, end))
+            start = haystack.find(needle, end)
+        else:
+            start = haystack.find(needle, start + 1)
+    return found
+
+
 def _find_occurrences(text: str, span_text: str) -> list[tuple[int, int]]:
-    """Cherche exact puis insensible à la casse sans inventer d'offset."""
+    """**Toutes** les occurrences, insensibles à la casse, mots entiers.
+
+    La v1 ne renvoyait que la première occurrence, en sous-chaîne brute :
+    « male » était localisé dans « female » ou « email », et les mentions
+    suivantes d'un nom restaient hors gold (11 surfaces sur 18 sur
+    l'échantillon `eval`). Conséquences : rappel surestimé, sur-masquage
+    compté en faux positif, fuite résiduelle même pour un oracle.
+
+    La recherche ignore la casse (« Male » / « male ») : c'est la même règle
+    que l'adversaire littéral de CPR/IPR, sans quoi une mention en casse
+    différente échapperait au gold mais serait comptée comme fuite.
+    """
     if not span_text or not text:
         return []
-    # Exact
-    idx = text.find(span_text)
-    if idx != -1:
-        return [(idx, idx + len(span_text))]
-    # Insensible à la casse
-    idx = text.lower().find(span_text.lower())
-    if idx != -1:
-        return [(idx, idx + len(span_text))]
-    return []
+    lowered = text.lower()
+    # `str.lower` préserve la longueur pour l'immense majorité des textes ;
+    # sinon, recherche exacte seule plutôt que des offsets décalés
+    # (invariant text[start:end] == span_text à la casse près).
+    if len(lowered) != len(text):
+        return _bounded_matches(text, span_text)
+    return _bounded_matches(lowered, span_text.lower())
+
+
+#: Population de référence du papier : PUMS 2010 rééchantillonné (fichier officiel).
+POPULATION_ID = "ratbench-us-pums2010"
 
 
 @register
@@ -133,15 +154,11 @@ class RatBenchAdapter(DatasetAdapter):
     def __init__(self, manifest: Any, raw_dir: Path) -> None:
         super().__init__(manifest, raw_dir)
         self._entries_cache: tuple[_RatBenchEntry, ...] | None = None
-        self._pums: PumsPopulation | None = None
 
     def _source_files(self) -> dict[str, Path]:
         directory = resolve_source_dir(self.manifest.source)
         paths = check_files(directory, self.manifest.source.files)
         by_name = {p.name: p for p in paths}
-        for p in paths:
-            if p.name == "pums_population.parquet":
-                by_name["pums_population.parquet"] = p
         if "english.jsonl" not in by_name:
             raise IngestionError("ratbench : english.jsonl absent")
         return by_name
@@ -159,17 +176,6 @@ class RatBenchAdapter(DatasetAdapter):
             from_cache=True,
             revision=self.manifest.source.revision,
         )
-
-    def _get_pums(self) -> PumsPopulation:
-        if self._pums is None:
-            files = self._source_files()
-            pums_file = files.get("pums_population.parquet")
-            if not pums_file or not pums_file.exists():
-                raise IngestionError(
-                    "ratbench : cache/pums_population.parquet absent pour le calcul de population"
-                )
-            self._pums = PumsPopulation(pums_file)
-        return self._pums
 
     def _load_entries(self) -> tuple[_RatBenchEntry, ...]:
         if self._entries_cache is not None:
@@ -193,13 +199,24 @@ class RatBenchAdapter(DatasetAdapter):
                         ) from exc
 
                     item_id = int(raw["id"])
-                    doc_id = f"ratbench:{item_id}"
+                    if "difficulty" not in raw:
+                        raise IngestionError(
+                            f"ratbench : {jsonl_path}:{line_no} : champ `difficulty` "
+                            "absent — le niveau ne se devine pas (il distingue les "
+                            "fichiers level_1..3 dont les `id` se recouvrent)."
+                        )
+                    difficulty = int(raw["difficulty"])
+                    # Les fichiers level_1..3 numérotent tous leurs exemples
+                    # 0..99, pour des profils DIFFÉRENTS : `ratbench:{id}` seul
+                    # faisait collisionner trois personnes distinctes dès que
+                    # les niveaux étaient combinés.
+                    doc_id = f"ratbench:L{difficulty}:{item_id}"
                     entries.append(
                         _RatBenchEntry(
                             doc_id=doc_id,
                             item_id=item_id,
                             text=str(raw["text"]),
-                            difficulty=int(raw.get("difficulty", 1)),
+                            difficulty=difficulty,
                             scenario=str(raw.get("scenario", "generic")),
                             features=list(raw.get("features", [])),
                             direct_identifiers=dict(raw.get("direct_identifiers", {})),
@@ -251,6 +268,7 @@ class RatBenchAdapter(DatasetAdapter):
                             start=s,
                             end=e,
                             span_text=entry.text[s:e],
+                            entity_id=f"{entry.doc_id}:dir:{key}",
                             identifier_type=IdentifierType.DIRECT,
                             qi_categories=(code,),
                             granularity=gran,
@@ -291,6 +309,7 @@ class RatBenchAdapter(DatasetAdapter):
                             start=s,
                             end=e,
                             span_text=entry.text[s:e],
+                            entity_id=f"{entry.doc_id}:ind:{key}",
                             identifier_type=IdentifierType.QUASI,
                             qi_categories=(code,),
                             granularity=gran,
@@ -313,99 +332,21 @@ class RatBenchAdapter(DatasetAdapter):
                         meta={"source_key": key, "value": str(val)},
                     )
 
-    def iter_combinations(self, split: str) -> Iterator[Combination]:
+    def iter_profiles(self, split: str) -> Iterator[Profile]:
         del split
-        pums = self._get_pums()
-        skipped_no_match: list[str] = []
-        emitted = 0
-
         for entry in self._load_entries():
-            ind = entry.indirect_identifiers
-            pums_criteria: dict[str, Any] = {}
-
-            qi_values: list[QiValue] = []
-
-            if "CIT" in ind:
-                val = ind["CIT"]
-                norm_cit = _CIT_NORM.get(val, val)
-                pums_criteria["citizenship status"] = norm_cit
-                qi_values.append(QiValue(qi_category="GEN_ORIGIN_BELIEF", normalized={"value": norm_cit}))
-
-            if "MAR" in ind:
-                val = ind["MAR"]
-                pums_criteria["marital status"] = val
-                qi_values.append(QiValue(qi_category="GEN_FAMILY", normalized={"value": val}))
-
-            if "SEX" in ind:
-                val = ind["SEX"]
-                pums_criteria["sex"] = val
-                qi_values.append(QiValue(qi_category="GEN_GENDER", normalized={"value": val}))
-
-            if "ST" in ind:
-                val = ind["ST"]
-                pums_criteria["state of residence"] = val
-                qi_values.append(QiValue(qi_category="GEN_GEO", normalized={"value": val}))
-
-            if "SCHL" in ind:
-                val = ind["SCHL"]
-                pums_criteria["educational attainment"] = val
-                qi_values.append(QiValue(qi_category="GEN_EDUCATION", normalized={"value": val}))
-
-            if "ESR" in ind:
-                val = ind["ESR"]
-                pums_criteria["employment status"] = val
-                qi_values.append(QiValue(qi_category="HR_CONTRACT", normalized={"value": val}))
-
-            if not pums_criteria or not qi_values:
-                continue
-
-            try:
-                k_true = pums.weighted_k(pums_criteria)
-            except PopulationNoMatchError:
-                # Combinaison absente de PUMS : cas de données, pas d'erreur de
-                # source. On n'invente pas de k et on ne publie pas de
-                # combinaison, mais on garde la trace du document écarté.
-                skipped_no_match.append(entry.doc_id)
-                continue
-            except PopulationError as exc:
-                # Erreur STRUCTURELLE (colonne absente, PWGTP manquant, parquet
-                # illisible, pyarrow absent) : la taire ferait passer un
-                # schéma incompatible pour un corpus sans individus à risque,
-                # et RAT-Bench s'ingérerait avec zéro combinaison.
-                raise IngestionError(
-                    f"ratbench : population PUMS inexploitable pour {entry.doc_id} : {exc}"
-                ) from exc
-
-            risk_true = 1.0 / float(k_true)
-            at_risk = bool(k_true <= 10)
-
-            yield Combination(
-                combination_id=f"{entry.doc_id}:pums_comb",
+            yield Profile(
+                person_id=entry.doc_id,
                 dataset=self.key,
-                target_type=TargetType.PERSON,
-                target_id=entry.doc_id,
-                scope=Scope.DOCUMENT,
-                doc_ids=(entry.doc_id,),
-                qi_set=tuple(qi_values),
-                k_true=k_true,
-                risk_true=risk_true,
-                risk_model=RiskModel.PROSECUTOR,
-                population_id="ratbench-us",
-                at_risk=at_risk,
-                source=CombinationSource.DATASET,
+                population_id=POPULATION_ID,
+                attributes={},
                 meta={
-                    "pums_criteria": pums_criteria,
                     "difficulty": entry.difficulty,
+                    "scenario": entry.scenario,
+                    "features": entry.features,
+                    "direct_identifiers": entry.direct_identifiers,
+                    "indirect_identifiers": entry.indirect_identifiers,
                 },
-            )
-            emitted += 1
-
-        if emitted == 0:
-            raise IngestionError(
-                "ratbench : aucune combinaison PUMS produite pour "
-                f"{len(skipped_no_match)} document(s) interrogé(s) — schéma de "
-                "population ou critères incompatibles, la moitié « risque » du "
-                "benchmark serait vide."
             )
 
     def iter_tasks(self, split: str) -> Iterator[TaskLabel]:

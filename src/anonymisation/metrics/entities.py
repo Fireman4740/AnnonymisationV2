@@ -151,7 +151,15 @@ def entity_protection_counts(
     mêmes offsets. Les appelants qui agrègent un corpus additionnent ces
     compteurs document par document.
     """
-    gold_groups = group_entities(gold, identifier_type=identifier_type)
+    # Une annotation sans offsets (attribut inféré au niveau document,
+    # I-ANN-2) n'a aucune mention à masquer : aucun système à spans ne peut la
+    # « protéger ». La compter ferait plafonner ER sous 1.0 même pour un oracle
+    # (constaté : ER_qi = 0 sur PersonalReddit, 0.6 sur RAT-Bench avec des
+    # prédictions = gold), alors que le F1 de spans, la fuite gold et CPR
+    # l'excluent déjà. Ces attributs relèvent de l'adversaire d'inférence.
+    gold_groups = group_entities(
+        (span for span in gold if bounds(span) is not None), identifier_type=identifier_type
+    )
     if not gold_groups:
         return 0, 0
     predictions = tuple(pred)

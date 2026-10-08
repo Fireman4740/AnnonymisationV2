@@ -195,13 +195,18 @@ class LlmClient:
             return self._sdk_client
         raise LlmConfigError(f"Backend {backend.name!r} : kind={backend.kind!r} non supporté.")
 
-    def _call_openai_compatible(self, prompt: str, *, temperature: float | None) -> tuple[str, str | None]:
+    def _call_openai_compatible(
+        self, prompt: str, *, temperature: float | None, system: str | None = None
+    ) -> tuple[str, str | None]:
         backend = self._backend
         client = self._ensure_sdk_client()
+        messages = [{"role": "user", "content": prompt}]
+        if system is not None:
+            messages.insert(0, {"role": "system", "content": system})
         try:
             response = client.chat.completions.create(
                 model=backend.model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 temperature=temperature if temperature is not None else backend.temperature,
                 extra_body=dict(backend.extra_body) or None,
             )
@@ -218,15 +223,19 @@ class LlmClient:
         content = choice.message.content or ""
         return content, choice.finish_reason
 
-    def _call_anthropic(self, prompt: str, *, temperature: float | None) -> tuple[str, str | None]:
+    def _call_anthropic(
+        self, prompt: str, *, temperature: float | None, system: str | None = None
+    ) -> tuple[str, str | None]:
         backend = self._backend
         client = self._ensure_sdk_client()
+        extra = {"system": system} if system is not None else {}
         try:
             response = client.messages.create(
                 model=backend.model,
                 max_tokens=4096,
                 temperature=temperature if temperature is not None else backend.temperature,
                 messages=[{"role": "user", "content": prompt}],
+                **extra,
             )
         except Exception as exc:  # noqa: BLE001
             raise LlmBackendUnavailableError(
@@ -255,6 +264,7 @@ class LlmClient:
         *,
         temperature: float | None = None,
         use_cache: bool = True,
+        system: str | None = None,
     ) -> LlmCompletion:
         """Complète ``prompt``. Lève plutôt que de renvoyer un résultat ambigu.
 
@@ -263,7 +273,16 @@ class LlmClient:
         document ne contient aucune entité » (contrainte C3).
         """
         backend = self._backend
-        params = {"temperature": temperature if temperature is not None else backend.temperature}
+        params: dict[str, Any] = {
+            "temperature": temperature if temperature is not None else backend.temperature
+        }
+        if backend.extra_body:
+            params["extra_body"] = dict(backend.extra_body)
+        # Le message système n'entre dans la clé que s'il est fourni : les
+        # entrées de cache existantes (sans système) restent valides.
+        if system is not None:
+            params["system"] = system
+        system_kw: dict[str, Any] = {"system": system} if system is not None else {}
         key = _cache_key(backend, prompt, params)
 
         if use_cache and self._cache_enabled:
@@ -280,9 +299,13 @@ class LlmClient:
 
         started = time.perf_counter()
         if backend.kind == "openai_compatible":
-            content, finish_reason = self._call_openai_compatible(prompt, temperature=temperature)
+            content, finish_reason = self._call_openai_compatible(
+                prompt, temperature=temperature, **system_kw
+            )
         elif backend.kind == "anthropic":
-            content, finish_reason = self._call_anthropic(prompt, temperature=temperature)
+            content, finish_reason = self._call_anthropic(
+                prompt, temperature=temperature, **system_kw
+            )
         elif backend.kind == "stub":
             content, finish_reason = self._call_stub(prompt, temperature=temperature)
         else:  # pragma: no cover — déjà rejeté à la construction pour 'null'

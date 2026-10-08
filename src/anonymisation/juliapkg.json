@@ -1,0 +1,6 @@
+{
+  "packages": {
+    "CorrectMatch": {"uuid": "26fcc630-e5d3-11e9-1f2e-33567d4860bc", "version": "1.4.1"},
+    "DataFrames": {"uuid": "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"}
+  }
+}

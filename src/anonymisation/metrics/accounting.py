@@ -203,3 +203,31 @@ class RunAccounting:
             "publishable": self.publishable,
             "warning": self.warning,
         }
+
+
+def publication_blockers(
+    accounting: RunAccounting, reproducibility: Mapping[str, Any]
+) -> list[str]:
+    """Raisons qui interdisent de publier la scorecard, dans un ordre stable.
+
+    Le taux d'erreur (C4) n'est pas le seul verrou : un run produit depuis un
+    arbre git modifié n'est pas rejouable — son commit ne décrit pas le code
+    qui a tourné. Un état inconnu (``git_dirty`` absent) bloque aussi : on ne
+    présume jamais un dépôt propre.
+    """
+    blockers: list[str] = []
+    if accounting.warning:
+        blockers.append(accounting.warning)
+    code = reproducibility.get("code")
+    dirty = code.get("git_dirty") if isinstance(code, Mapping) else None
+    if dirty is None:
+        blockers.append(
+            "état de l'arbre git inconnu (`code.git_dirty` absent) : relancer "
+            "`anonv2 predict` depuis un dépôt git"
+        )
+    elif dirty:
+        blockers.append(
+            "run produit avec des modifications non commitées : commiter puis "
+            "relancer `anonv2 predict`"
+        )
+    return blockers

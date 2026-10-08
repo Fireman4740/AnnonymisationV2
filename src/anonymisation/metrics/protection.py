@@ -14,6 +14,7 @@ from math import isfinite
 from typing import Any, Final, TypeAlias
 
 from anonymisation.metrics.contracts import MetricContractError
+from anonymisation.metrics.leakage import surface_present
 
 CategoryCounts: TypeAlias = Mapping[str, tuple[int, int]]
 
@@ -227,9 +228,13 @@ __all__ = [
 #: LLM retrouverait des attributs paraphrasés que celui-ci déclare protégés.
 #: C'est écrit dans `details.limitation` de chaque métrique, pas seulement
 #: dans la documentation.
-LITERAL_ADVERSARY: Final[str] = "exact-match"
+#: Adversaire littéral : une PII est « encore inférable » si sa surface gold
+#: reste présente (forme normalisée, mots entiers). Ce n'est PAS l'adversaire
+#: d'inférence de SPIA : il ne voit ni paraphrase, ni généralisation, ni
+#: inférence contextuelle. CPR/IPR calculés ainsi restent ``PROXY``.
+LITERAL_ADVERSARY: Final[str] = "normalized-exact-match"
 LITERAL_ADVERSARY_PROTOCOL: Final[str] = "cpr-exactmatch"
-LITERAL_ADVERSARY_VERSION: Final[str] = "1"
+LITERAL_ADVERSARY_VERSION: Final[str] = "2"
 
 
 def _subject_key_of(annotation: Any, document: Any, doc_id: str, strategy: str) -> str:
@@ -284,7 +289,8 @@ def subject_outcomes_from_run(
     """Construit les ``SubjectOutcome`` d'un run et renvoie la stratégie retenue.
 
     ``O_i`` = surfaces gold testables du sujet ``i`` ; ``A_i`` = celles encore
-    littéralement présentes dans le texte anonymisé de leur document.
+    encore présentes dans le texte anonymisé de leur document, au sens de
+    :func:`~anonymisation.metrics.leakage.surface_present`.
     """
     strategy = choose_subject_key(gold_by_doc, documents_by_doc)
     totals: dict[str, int] = {}
@@ -302,7 +308,7 @@ def subject_outcomes_from_run(
             if not isinstance(surface, str) or not surface.strip():
                 continue
             key = _subject_key_of(annotation, document, doc_id, strategy)
-            present = int(surface in text)
+            present = int(surface_present(surface, text))
             totals[key] = totals.get(key, 0) + 1
             inferable[key] = inferable.get(key, 0) + present
             # Une annotation multi-label (I-ANN-5) compte pour UNE PII, pas

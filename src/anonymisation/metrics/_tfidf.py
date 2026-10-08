@@ -89,6 +89,7 @@ class CentroidClassifier:
     def __init__(self) -> None:
         self.classes: list[str] = []
         self.centroids: list[dict[int, float]] = []
+        self.majority_class: str | None = None
 
     def fit(self, vectors: Sequence[dict[int, float]], labels: Sequence[str]) -> CentroidClassifier:
         if len(vectors) != len(labels):
@@ -100,6 +101,8 @@ class CentroidClassifier:
 
         self.classes = sorted(by_class.keys())
         self.centroids = []
+        # Classe a priori (la plus fréquente, égalité → ordre alphabétique).
+        self.majority_class = min(self.classes, key=lambda c: (-len(by_class[c]), c)) if self.classes else None
 
         for c in self.classes:
             vecs = by_class[c]
@@ -122,10 +125,14 @@ class CentroidClassifier:
 
     def predict_one(self, vector: dict[int, float]) -> str:
         """Prédit la classe dont le centroïde maximise le produit scalaire (cosinus)."""
-        if not self.classes:
-            return "UNKNOWN"
+        if not self.classes or self.majority_class is None:
+            raise ValueError("CentroidClassifier non entraîné : aucune classe.")
+        # Texte sans information (vide, entièrement supprimé, ou sans aucun
+        # terme du vocabulaire) : on prédit la classe a priori. La v1 rendait
+        # la PREMIÈRE classe alphabétique — choix arbitraire qui, selon les
+        # labels, faisait passer un texte supprimé pour parfaitement utile.
         if not vector:
-            return self.classes[0]
+            return self.majority_class
 
         best_score = -1.0
         best_class = self.classes[0]
@@ -151,6 +158,8 @@ class CentroidClassifier:
             elif score == best_score and cls_name < best_class:
                 best_class = cls_name
 
+        if best_score <= 0.0:
+            return self.majority_class
         return best_class
 
     def predict(self, vectors: Iterable[dict[int, float]]) -> list[str]:

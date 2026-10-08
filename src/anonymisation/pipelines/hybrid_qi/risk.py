@@ -158,9 +158,13 @@ class CalibrationStats(BaseModel):
     q_high_residual: tuple[float, float, float]
     #: Régression isotone par strate : segments ``(x_borne, y)`` en croissant.
     isotone: dict[int, tuple[tuple[float, float], ...]]
-    ece: float
-    brier: float
-    male_k: float
+    # Erreurs d'AJUSTEMENT : l'isotone est ajustée puis évaluée sur les mêmes
+    # combinaisons synthétiques. Ce ne sont pas des métriques de calibration
+    # (SPEC-06 §8 exige un split `calib` distinct du test) ; le préfixe `fit_`
+    # interdit de les confondre avec l'ECE/Brier/MALE-k d'une évaluation.
+    fit_ece: float
+    fit_brier: float
+    fit_male_k: float
 
 
 class HybridRiskEstimate(BaseModel):
@@ -580,9 +584,8 @@ def _run_calibration() -> CalibrationStats:
     for i in range(n):
         pred = _apply_isotone(list(isotone[points[i][0]]), points[i][1])
         brier += (pred - points[i][2]) ** 2
-        male_k += abs(
-            math.log2(max(points[i][3], 1e-9)) - math.log2(max(points[i][4], 1.0))
-        )
+        # MALE-k canonique (SPEC-07 §4) sur le k BRUT du modèle copule.
+        male_k += abs(math.log(points[i][3] + 1.0) - math.log(points[i][4] + 1.0))
     brier /= n
     male_k /= n
 
@@ -591,9 +594,9 @@ def _run_calibration() -> CalibrationStats:
         q_low_residual=tuple(q_lo),
         q_high_residual=tuple(q_hi),
         isotone=isotone,
-        ece=ece,
-        brier=brier,
-        male_k=male_k,
+        fit_ece=ece,
+        fit_brier=brier,
+        fit_male_k=male_k,
     )
 
 

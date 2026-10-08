@@ -12,7 +12,7 @@ from math import ceil
 from statistics import median
 from typing import Any
 
-from anonymisation.metrics.accounting import RunAccounting
+from anonymisation.metrics.accounting import RunAccounting, publication_blockers
 from anonymisation.metrics.contracts import MetricDirection, MetricStatus, MetricValue
 from anonymisation.metrics.entities import (
     entity_protection_counts,
@@ -20,6 +20,7 @@ from anonymisation.metrics.entities import (
     same_identifier_type,
 )
 from anonymisation.metrics.gating import gate
+from anonymisation.metrics.intervals import apply_intervals, scorecard_intervals
 from anonymisation.metrics.leakage import aggregate_leak_counts, gold_leak_counts
 from anonymisation.metrics.protection import (
     LITERAL_ADVERSARY,
@@ -27,9 +28,18 @@ from anonymisation.metrics.protection import (
     individual_protection_rate,
     subject_outcomes_from_run,
 )
+from anonymisation.metrics.reidentification import reid_success_metric
 from anonymisation.metrics.spans import span_metrics, weighted_token_precision
-from anonymisation.metrics.tria import TRIARecord, evaluate_trir
-from anonymisation.metrics.utility import mean_utility, rouge_l
+from anonymisation.metrics.tria import (
+    TRIRUnavailable,
+    evaluate_trir,
+    trir_inputs_from_run,
+)
+from anonymisation.metrics.utility import (
+    mean_utility_from_judgments,
+    mean_utility_over_documents,
+    rouge_l,
+)
 from anonymisation.schema.taxonomy import IdentifierType
 
 SCORECARD_SCHEMA_VERSION = "2.0"
@@ -215,107 +225,6 @@ def _expression_rows(
     return output
 
 
-def _subject_of(
-    record: Mapping[str, Any],
-    gold_by_doc: Mapping[str, Sequence[Any]],
-    documents_by_doc: Mapping[str, Any],
-    strategy: str,
-) -> str:
-    """Clé sujet d'un document, selon la stratégie retenue pour le corpus."""
-    doc_id = str(record.get("doc_id"))
-    if strategy == "subject_id":
-        for annotation in gold_by_doc.get(doc_id, ()):
-            value = field_value(annotation, "subject_id", None)
-            if value:
-                return str(value)
-    if strategy == "author_id":
-        value = field_value(documents_by_doc.get(doc_id), "author_id", None)
-        if value:
-            return str(value)
-    return doc_id
-
-
-def _mean_utility_over_documents(
-    *,
-    pairs: Sequence[tuple[str, str]],
-    rouge_scores: Sequence[float],
-    judge: Any,
-    judge_name: str | None,
-) -> MetricValue:
-    """Moyenne document par document de Mean Utility (SPEC-07).
-
-    Sans juge, la métrique reste ``UNAVAILABLE`` par définition (Readability et
-    Meaning sont indispensables) : on réutilise alors les ROUGE-L déjà calculés
-    plutôt que de relancer un LCS. Avec juge, chaque document est évalué
-    séparément puis moyenné — jamais le corpus concaténé.
-    """
-    rouge_mean = sum(rouge_scores) / len(rouge_scores) if rouge_scores else None
-    if judge is None:
-        return MetricValue(
-            name="mean_utility",
-            value=None,
-            protocol="mean-utility",
-            protocol_version="1",
-            status=MetricStatus.UNAVAILABLE,
-            direction=MetricDirection.MAXIMIZE,
-            details={
-                "components": {"readability": None, "meaning": None, "rouge_l": rouge_mean},
-                "judge": None,
-                "documents": len(rouge_scores),
-                "reason": "aucun juge Readability/Meaning configuré",
-            },
-        )
-
-    per_doc = [
-        mean_utility(original=original, anonymized=anonymized, judge=judge, judge_name=judge_name)
-        for original, anonymized in pairs
-    ]
-    values = [result.value for result in per_doc if result.value is not None]
-    if not values:
-        return MetricValue(
-            name="mean_utility",
-            value=None,
-            protocol="mean-utility",
-            protocol_version="1",
-            status=MetricStatus.UNAVAILABLE,
-            direction=MetricDirection.MAXIMIZE,
-            details={
-                "components": {"readability": None, "meaning": None, "rouge_l": rouge_mean},
-                "judge": judge_name,
-                "documents": 0,
-                "reason": "aucun document évaluable par le juge",
-            },
-        )
-
-    def _component(key: str) -> float | None:
-        scores = [
-            (result.details or {}).get("components", {}).get(key)
-            for result in per_doc
-            if result.value is not None
-        ]
-        usable = [float(s) for s in scores if s is not None]
-        return sum(usable) / len(usable) if usable else None
-
-    return MetricValue(
-        name="mean_utility",
-        value=sum(values) / len(values),
-        protocol="mean-utility",
-        protocol_version="1",
-        status=MetricStatus.DIAGNOSTIC,
-        direction=MetricDirection.MAXIMIZE,
-        details={
-            "components": {
-                "readability": _component("readability"),
-                "meaning": _component("meaning"),
-                "rouge_l": _component("rouge_l"),
-            },
-            "judge": judge_name or str(getattr(judge, "name", "unnamed-judge")),
-            "documents": len(values),
-            "aggregation": "moyenne par document",
-        },
-    )
-
-
 def build_scorecard(
     *,
     run_id: str,
@@ -333,6 +242,8 @@ def build_scorecard(
     judge: Any = None,
     judge_name: str | None = None,
     downstream_results: Sequence[Any] | None = None,
+    attack: tuple[Sequence[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    judgments: tuple[Sequence[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Agrège un run figé en scorecard SPEC-07 §10.
 
@@ -404,32 +315,49 @@ def build_scorecard(
         record for record in predictions
         if str(record.get("status", "error")).lower() in ("ok", "partial")
     ]
-
-    leak_counts = aggregate_leak_counts(
-        [
-            gold_leak_counts(
-                str(record.get("anonymized_text") or ""),
-                gold_by_doc.get(str(record.get("doc_id")), ()),
+    for record in scored:
+        # Un texte absent remplacé par "" passerait pour une suppression
+        # totale : protection parfaite, TRIR au hasard, utilité nulle.
+        if not isinstance(record.get("anonymized_text"), str):
+            raise ScorecardError(
+                f"Prédiction {record.get('doc_id')!r} au statut "
+                f"{record.get('status')!r} sans `anonymized_text` str : run "
+                "corrompu, relancer `anonv2 predict`."
             )
-            for record in scored
-        ]
-    )
+
+    per_document_leaks = [
+        gold_leak_counts(
+            str(record["anonymized_text"]),
+            gold_by_doc.get(str(record.get("doc_id")), ()),
+        )
+        for record in scored
+    ]
+    leak_counts = aggregate_leak_counts(per_document_leaks)
 
     outcomes, subject_key = subject_outcomes_from_run(
         predictions, gold_by_doc, documents_by_doc
     )
     cpr = collective_protection_rate(outcomes)
     ipr = individual_protection_rate(outcomes)
+    no_testable_pii = {} if outcomes else {
+        "reason": (
+            "aucune PII gold à surface testable (attributs inférés au niveau "
+            "document, ou corpus sans annotation) : l'adversaire littéral ne "
+            "peut rien constater — CPR/IPR exigent un adversaire d'inférence"
+        )
+    }
     protection_details = {
+        **no_testable_pii,
         "adversary": LITERAL_ADVERSARY,
         "subject_key": subject_key,
         "subjects": len(outcomes),
-        # Écrit dans la métrique, pas seulement dans la documentation : un
-        # adversaire littéral ne fait AUCUNE inférence, il constate une
-        # présence verbatim. Il surestime donc la protection.
+        # Écrit dans la métrique, pas seulement dans la documentation. La v1
+        # annonçait une « borne inférieure de l'inférabilité » : c'est faux en
+        # général (une surface retrouvée hors contexte compte comme fuite).
         "limitation": (
-            "borne inférieure de l'inférabilité : ne capture ni la paraphrase "
-            "ni l'inférence — un adversaire LLM retrouverait davantage"
+            "adversaire littéral : constate la présence d'une surface gold, "
+            "n'infère rien. Ni borne inférieure ni borne supérieure de "
+            "l'inférabilité ; non comparable aux CPR/IPR de SPIA (adversaire LLM)"
         ),
     }
 
@@ -445,7 +373,7 @@ def build_scorecard(
     # Mean Utility est une moyenne PAR DOCUMENT : concaténer le corpus rendrait
     # le LCS de ROUGE-L quadratique en la taille totale (minutes à heures dès
     # quelques milliers de documents) tout en mesurant autre chose.
-    mean_util_result = _mean_utility_over_documents(
+    mean_util_result = mean_utility_from_judgments(*judgments) if judgments is not None else mean_utility_over_documents(
         pairs=[
             (
                 str(field_value(documents_by_doc.get(str(record.get("doc_id"))), "text", "")),
@@ -469,22 +397,33 @@ def build_scorecard(
     trir_result = None
     trir_details: dict[str, Any] = {}
     try:
-        trir_records = [
-            TRIARecord(
-                doc_id=str(record.get("doc_id")),
-                subject_id=_subject_of(record, gold_by_doc, documents_by_doc, subject_key),
-                text=str(field_value(documents_by_doc.get(str(record.get("doc_id"))), "text", "")),
-            )
-            for record in scored
-        ]
-        anonymized = {
-            str(record.get("doc_id")): str(record.get("anonymized_text") or "")
-            for record in scored
-        }
-        trir_result = evaluate_trir(trir_records, anonymized_texts=anonymized)
-        trir_details = trir_result.to_dict()
-    except Exception as exc:  # noqa: BLE001 — TRIR reste facultatif
+        trir_records, trir_anonymized, trir_identity = trir_inputs_from_run(
+            scored, gold_by_doc, documents_by_doc
+        )
+        trir_result = evaluate_trir(trir_records, anonymized_texts=trir_anonymized)
+        trir_details = {**trir_result.to_dict(), **trir_identity}
+    except TRIRUnavailable as exc:
+        # Seule l'indisponibilité DÉCLARÉE est tolérée : un bug de programmation
+        # doit faire échouer le score, pas se déguiser en métrique absente.
         trir_details = {"reason": f"TRIR non calculable : {exc}"}
+
+    # Incertitude (H-7) : mêmes unités que les valeurs ponctuelles.
+    intervals = scorecard_intervals(
+        rows=rows,
+        match=match,
+        token_scores=token_scores,
+        rouge_scores=rouge_scores,
+        leak_counts=per_document_leaks,
+        outcomes=outcomes,
+        trir_result=trir_result,
+    )
+    # Rétention aval : intervalle apparié propre à la tâche. Une moyenne de
+    # plusieurs tâches n'a pas d'intervalle défini ici (chaque tâche porte le
+    # sien dans `downstream_tasks`).
+    evaluated_tasks = [r for r in (downstream_results or ()) if r.utility_retention is not None]
+    intervals["utility_retention"] = (
+        evaluated_tasks[0].ci95 if len(evaluated_tasks) == 1 else None
+    )
 
     diagnostic_status = MetricStatus.DIAGNOSTIC
     capabilities = frozenset(str(c) for c in (system.get("capabilities") or ()))
@@ -564,6 +503,7 @@ def build_scorecard(
         ),
         "counts": overall,
     }
+    diagnostic = apply_intervals(diagnostic, intervals)
 
     def grouped(group_getter: Any) -> dict[str, dict[str, Any]]:
         return _group_metric(
@@ -629,6 +569,10 @@ def build_scorecard(
     ]
     macro_f1 = sum(category_f1) / len(category_f1) if category_f1 else None
 
+    blockers = publication_blockers(accounting, reproducibility)
+    for label, frozen in (("attaque", attack), ("juge", judgments)):
+        if frozen is not None and not frozen[1].get("publishable"):
+            blockers.append(f"{label} : plus de 5 % de documents en erreur (C4)")
     run_info = reproducibility.get("run") or {}
     requested_run_status = str(run_info.get("status", "complete")).lower()
     run_status = (
@@ -655,12 +599,13 @@ def build_scorecard(
         # C-5 règle 5 : la publiabilité dépend du seuil de 5 % d'erreur. Le
         # statut des métriques (dégradé en SAMPLED dès la première erreur, C-5
         # règle 4) est une information distincte, portée par ``status``.
-        "publishable": accounting.publishable,
+        "publishable": not blockers,
+        "publication_blockers": blockers,
         "error_rate": accounting.error_rate,
         "accounting": accounting.to_dict(),
         # SPEC-07 v2.0 : CPR et IPR sont les métriques principales, devant
         # R_succ. Elles sortent en PROXY tant que l'adversaire est littéral.
-        "primary": {
+        "primary": apply_intervals({
             "cpr": _gate(
                 "cpr", cpr, status=MetricStatus.PROXY,
                 direction=MetricDirection.MAXIMIZE, details=protection_details,
@@ -676,11 +621,15 @@ def build_scorecard(
                 else MetricStatus.UNAVAILABLE,
                 direction=MetricDirection.MINIMIZE, details=trir_details,
             ),
-            "reid_success_rate": _metric_dict(
-                "reid_success_rate", None, protocol=protocol,
-                protocol_version=protocol_version, status=MetricStatus.UNAVAILABLE,
-                direction=MetricDirection.MINIMIZE,
-                details={"reason": "aucun attaquant exécuté par score"},
+            # R_succ vient d'une attaque FIGÉE (`anonv2 attack`) : score ne
+            # lance jamais l'attaquant (C5), il relit ses sorties vérifiées.
+            "reid_success_rate": (
+                reid_success_metric(*attack) if attack is not None else _metric_dict(
+                    "reid_success_rate", None, protocol=protocol,
+                    protocol_version=protocol_version, status=MetricStatus.UNAVAILABLE,
+                    direction=MetricDirection.MINIMIZE,
+                    details={"reason": "aucune attaque figée pour ce run (lancer `anonv2 attack`)"},
+                )
             ),
             "utility_retention": _metric_dict(
                 "utility_retention",
@@ -701,7 +650,7 @@ def build_scorecard(
                     }
                 ),
             ),
-        },
+        }, intervals),
         "downstream_tasks": downstream_dicts,
         "diagnostic": diagnostic,
         "macro_f1": _metric_dict(

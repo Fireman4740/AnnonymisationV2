@@ -634,6 +634,32 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
     score_p.add_argument("--protocol", required=True, help="Protocole d'évaluation.")
 
+    attack_p = sub.add_parser(
+        "attack",
+        help="Étape figée optionnelle : attaque de ré-identification (LLM + CorrectMatch).",
+    )
+    attack_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
+    attack_p.add_argument(
+        "--attacker", required=True, choices=("ratbench",),
+        help="Protocole d'attaque (ratbench : Krčo et al. 2026).",
+    )
+    attack_p.add_argument(
+        "--backend", default=None,
+        help="Backend LLM de configs/llm/backends.yaml (défaut : rôle attacker_ratbench).",
+    )
+    attack_p.add_argument("--workers", type=int, default=None, help="Appels LLM parallèles.")
+
+    judge_p = sub.add_parser(
+        "judge",
+        help="Étape figée optionnelle : juge LLM Mean Utility (lisibilité, sens, ROUGE-L).",
+    )
+    judge_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
+    judge_p.add_argument(
+        "--backend", default=None,
+        help="Backend LLM de configs/llm/backends.yaml (défaut : rôle utility_judge).",
+    )
+    judge_p.add_argument("--workers", type=int, default=None, help="Appels LLM parallèles.")
+
     compare_p = sub.add_parser(
         "compare",
         help="Compare les scorecards de plusieurs runs et génère un rapport Markdown.",
@@ -741,6 +767,14 @@ def main(argv: list[str] | None = None) -> int:
         except ScoreError as exc:
             print(f"Erreur d'usage : {exc}", file=sys.stderr)
             return 2
+    if args.command == "attack":
+        from anonymisation.cli.attack import cmd_attack
+
+        return cmd_attack(args.run, args.attacker, args.backend, args.workers)
+    if args.command == "judge":
+        from anonymisation.cli.attack import cmd_judge
+
+        return cmd_judge(args.run, args.backend, args.workers)
     if args.command == "compare":
         from anonymisation.cli.compare import CompareError, cmd_compare
 

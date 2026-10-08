@@ -27,12 +27,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from anonymisation.metrics.calibration import brier as brier_score
+from anonymisation.metrics.calibration import ece_equal_mass, ece_sensitivity
+from anonymisation.metrics.calibration import male_k as male_k_score
 from anonymisation.schema.io import read_jsonl, write_json
 from anonymisation.schema.models import Combination
 
@@ -80,6 +82,7 @@ class CalibrationReport:
     population_gold: str | None
     calibration_scope: str = "synthetic"
     reason: str | None = None
+    ece_by_bins: dict[str, float | None] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -90,8 +93,10 @@ class CalibrationReport:
             "n_unaligned_predictions": self.n_unaligned_predictions,
             "n_unaligned_gold": self.n_unaligned_gold,
             "ece": self.ece,
+            "ece_by_bins": self.ece_by_bins,
             "brier": self.brier,
             "male_k": self.male_k,
+            "formulas": "metrics/calibration.py (SPEC-07 §4) ; cible Brier/ECE = risque gold 1/k",
             "risk_model_predicted": self.risk_model_predicted,
             "risk_model_gold": self.risk_model_gold,
             "population_gold": self.population_gold,
@@ -226,13 +231,11 @@ def evaluate_risk_calibration(
         )
 
     n = len(pairs)
-    brier = sum((r_pred - r_true) ** 2 for _, r_pred, _, r_true in pairs) / n
-    ece = _ece_equipopular(
-        [(r_pred, r_true) for _, r_pred, _, r_true in pairs], n_bins=N_BINS
-    )
-    male_k = sum(
-        abs(math.log(k_pred / k_true)) for k_pred, _, k_true, _ in pairs
-    ) / n
+    # Formules canoniques partagées : un seul MALE-k dans tout le dépôt.
+    risk_pairs = [(r_pred, r_true) for _, r_pred, _, r_true in pairs]
+    brier = brier_score(risk_pairs)
+    ece = ece_equal_mass(risk_pairs, n_bins=N_BINS)
+    male_k = male_k_score([(k_pred, k_true) for k_pred, _, k_true, _ in pairs])
     predicted_doc_ids = {doc_id for doc_id, _ in predictions}
     unaligned_gold = sum(1 for g in golds if not set(g.doc_ids) & predicted_doc_ids)
     risk_models_gold = sorted({g.risk_model.value for g in golds})
@@ -246,6 +249,7 @@ def evaluate_risk_calibration(
         ece=ece,
         brier=brier,
         male_k=male_k,
+        ece_by_bins=ece_sensitivity(risk_pairs),
         risk_model_predicted=(
             next(iter(sorted(models_predicted))) if models_predicted else None
         ),
@@ -285,32 +289,6 @@ def _read_predictions(
                 )
             out.append((str(doc_id), risk if isinstance(risk, dict) else {}))
     return out
-
-
-def _ece_equipopular(
-    risks: list[tuple[float, float]], *, n_bins: int
-) -> float:
-    """ECE sur ``n_bins`` bacs équipopulés du risque prédit : moyenne
-    pondérée des écarts ``|moyenne prédite − moyenne true|`` par bac."""
-    n = len(risks)
-    if n == 0:
-        return 0.0
-    bins = max(1, min(n_bins, n))
-    ordered = sorted(risks, key=lambda r: r[0])
-    size = n // bins
-    remainder = n % bins
-    ece = 0.0
-    idx = 0
-    for b in range(bins):
-        count = size + (1 if b < remainder else 0)
-        if count == 0:
-            continue
-        chunk = ordered[idx : idx + count]
-        idx += count
-        pred = sum(p for p, _ in chunk) / count
-        truth = sum(t for _, t in chunk) / count
-        ece += (count / n) * abs(pred - truth)
-    return ece
 
 
 def _first_value(values: Iterator[Any], default: Any) -> Any:

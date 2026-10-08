@@ -11,35 +11,57 @@ source:
   kind: local
   path: "RAT-Bench"
   path_env: ANONV2_V1_DATASETS
-  files: ["english.jsonl", "cache/pums_population.parquet"]
-  repo: null
-  revision: "v1"
+  # english.jsonl = niveaux 1-3 HF (imperial-cpg/rat-bench@e439e91) ; la
+  # population et les tables servent à l'attaque figée, pas à l'ingestion,
+  # mais leur présence est exigée pour qu'un pivot ingéré soit attaquable.
+  files:
+    - english.jsonl
+    - SOURCES.json
+    - cache/pums_population.parquet
+    - cache/maps/CIT.json
+    - cache/maps/DOB.json
+    - cache/maps/DOB-Day.json
+    - cache/maps/DOB-Month.json
+    - cache/maps/DOB-Year.json
+    - cache/maps/ESR.json
+    - cache/maps/MAR.json
+    - cache/maps/OCCP.json
+    - cache/maps/OCCP_type.json
+    - cache/maps/PUMA_FULL.json
+    - cache/maps/RAC2P.json
+    - cache/maps/SCHL.json
+    - cache/maps/SEX.json
+    - cache/maps/ST.json
+    - cache/maps/zip_to_puma.json
+  repo: "imperial-cpg/rat-bench"
+  revision: "e439e9171dd43c5e26d91b678e3df6264fea5239"
   paper: "arXiv:2602.12806"
   instructions: >
-    Définir ANONV2_V1_DATASETS sur la racine des jeux de données V1.
-    Les fichiers requis sont RAT-Bench/english.jsonl et RAT-Bench/cache/pums_population.parquet.
+    Définir ANONV2_V1_DATASETS sur la racine des jeux de données, puis lancer
+    scripts/fetch_ratbench.py --root "$ANONV2_V1_DATASETS" (texte HF, PUMS 2010
+    officiel, tables code-libellé, empreintes figées dans RAT-Bench/SOURCES.json).
 
 license:
-  spdx: "UNKNOWN"
-  redistribution: false
-  restricted: true
+  spdx: "MIT"
+  redistribution: true
+  restricted: false
   citation: "krco2026ratbench"
-  notes: "RAT-Bench benchmark data."
+  notes: "RAT-Bench (MIT, carte HF). Population PUMS 2010 : microdonnées publiques du US Census Bureau."
 
 integrity:
   sha256: null
   expected_documents: 300
-  expected_profiles: 0
+  expected_profiles: 300
 
 structure:
   domain: generic
   languages: ["en"]
   synthetic: true
-  has_profiles: false
-  has_combinations: true
+  has_profiles: true
+  has_combinations: false
   has_organizations: false
   has_tasks: false
-  split_by: document
+  split_by: person_id
   splits: ["eval"]
 
 annotation:
@@ -71,6 +93,8 @@ evaluation:
   report_by: ["difficulty", "scenario"]
 
 population:
-  population_id: "ratbench-us"
-  k_computable: true
-  risk_model: "prosecutor"
+  population_id: "ratbench-us-pums2010"
+  # Le risque de référence est CorrectMatch (copule), calculé à l'étape
+  # d'attaque sur les attributs correctement devinés — pas un k par comptage.
+  k_computable: false
+  risk_model: "copula"

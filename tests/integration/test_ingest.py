@@ -442,3 +442,19 @@ def test_check_lock_compatibility_taxonomy_mismatch(tmp_path: Path) -> None:
 def test_check_lock_compatibility_missing_lock(tmp_path: Path) -> None:
     with pytest.raises(LockIncompatibleError):
         check_lock_compatibility(tmp_path / "absent.json")
+
+
+def test_reingesting_one_split_leaves_no_unlocked_file(tmp_path: Path) -> None:
+    """Le pivot publié = exactement le lock : aucun split orphelin d'une ingestion
+    précédente (cas constaté sur `tab`, train/dev présents hors lock)."""
+    import json
+
+    _ingest(tmp_path)  # tous les splits
+    _ingest(tmp_path, split="dev")
+    base = tmp_path / "processed" / "micro"
+    lock = json.loads((base / ".manifest.lock.json").read_text(encoding="utf-8"))
+    on_disk = {
+        path.relative_to(base).as_posix() for path in base.rglob("*.jsonl")
+    }
+    assert on_disk == set(lock["files"])
+    assert not list((tmp_path / "processed").glob(".micro-*"))  # transit nettoyé
