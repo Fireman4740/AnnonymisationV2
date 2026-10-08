@@ -53,8 +53,12 @@ def run() -> int:
     for system in ("passthrough", "redact-all"):
         directory = Path("runs") / f"sanity-{system}"
         stages = {}
-        stages["predict"] = command(["predict", "--dataset", "ratbench", "--split", "eval",
-            "--system", system, "--profile", "deterministic", "--limit", "2", "--out", str(directory)])
+        predict_args = ["predict", "--dataset", "ratbench", "--split", "eval",
+            "--system", system, "--profile", "deterministic", "--limit", "2", "--out", str(directory)]
+        if system == "redact-all":
+            # Ancre de suppression totale : choisir explicitement le texte vide.
+            predict_args.extend(["--param", "replacement="])
+        stages["predict"] = command(predict_args)
         if stages["predict"]:
             summary["failures"].append(f"{system}:predict")
             continue
