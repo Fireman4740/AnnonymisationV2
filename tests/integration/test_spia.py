@@ -164,3 +164,28 @@ def test_spia_manifest_exposes_all_fifteen_source_labels() -> None:
     payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert len(payload["label_map"]) == 15
     assert all(payload["label_map"].values())
+
+
+def test_release_empty_fields_aliases_and_inferred_values(tmp_path: Path) -> None:
+    _write_fixture(tmp_path)
+    path = tmp_path / "spia_tab_144.jsonl"
+    row = json.loads(path.read_text())
+    row["subjects"][0]["PIIs"].extend([
+        {"tag": "EMAIL_ADDRESS", "keyword": "", "certainty": 0, "hardness": 0},
+        {"tag": "AGE", "keyword": "thirty", "certainty": 4, "hardness": 3},
+    ])
+    row["subjects"][1]["PIIs"][0]["tag"] = "EMAIL_ADDRESS"
+    path.write_text(json.dumps(row) + "\n")
+    adapter = SpiaAdapter(_manifest(), tmp_path)
+    annotations = list(adapter.iter_annotations("test"))
+    implicit = [a for a in annotations if a.expression_mode.value == "IMPLICIT"]
+    assert len(annotations) == 5  # quatre spans + une valeur inférée, aucun champ vide
+    assert len(implicit) == 1
+    assert implicit[0].start is None and implicit[0].span_text is None
+    assert implicit[0].value_normalized["value"] == "thirty"
+    assert all(a.value_normalized["value"] for a in annotations)
+    profiles = list(adapter.iter_profiles("test"))
+    assert "DIR_EMAIL" not in profiles[0].attributes
+    assert profiles[1].attributes["DIR_EMAIL"].value == "bob@example.com"
+    assert validate_dataset("spia", list(adapter.iter_documents("test")), annotations,
+                            profiles, expected_documents=2).errors() == ()

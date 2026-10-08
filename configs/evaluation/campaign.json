@@ -10,16 +10,7 @@
   "max_document_chars": 16000,
   "train_documents": 256,
   "datasets": {
-    "ratbench": ["eval"],
-    "quasifr": ["anonymization", "hard_quasi_id", "max_anonymization"],
-    "personalreddit": ["test"],
-    "tab": ["test"],
-    "conll2003": ["test"],
-    "dbbio": ["test"],
-    "supporttickets": ["test"],
-    "bitextsupport": ["test"],
     "spia": ["test"],
-    "panorama": ["train"],
-    "openpii": ["validation"]
+    "panorama": ["train"]
   }
 }

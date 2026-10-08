@@ -37,7 +37,11 @@ def fetch(url: str, path: Path, expected: str | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.is_file():
         temporary = path.with_suffix(path.suffix + ".download")
-        with urllib.request.urlopen(url, timeout=120) as source, temporary.open("wb") as out:
+        headers = {}
+        if url.startswith("https://huggingface.co/") and os.environ.get("HF_TOKEN"):
+            headers["Authorization"] = "Bearer " + os.environ["HF_TOKEN"]
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request, timeout=120) as source, temporary.open("wb") as out:
             for chunk in iter(lambda: source.read(1 << 20), b""):
                 out.write(chunk)
         temporary.replace(path)

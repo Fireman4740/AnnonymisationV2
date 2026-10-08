@@ -26,7 +26,6 @@ from anonymisation.schema.models import (
 )
 from anonymisation.schema.taxonomy import ExpressionMode, Subject
 
-
 _DEFAULT_FILES: tuple[str, ...] = (
     "spia_tab_144.jsonl",
     "spia_panorama_531.jsonl",
@@ -43,10 +42,15 @@ class SpiaAdapter(DatasetAdapter):
 
     _TAG_SOURCE_TO_MANIFEST: ClassVar[dict[str, str]] = {
         "ID NUMBER": "ID_NUMBER",
+        "IDENTIFICATION_NUMBER": "ID_NUMBER",
         "DRIVER LICENSE": "DRIVER_LICENSE",
+        "DRIVER_LICENSE_NUMBER": "DRIVER_LICENSE",
         "PHONE": "PHONE",
+        "PHONE_NUMBER": "PHONE",
         "PASSPORT": "PASSPORT",
+        "PASSPORT_NUMBER": "PASSPORT",
         "EMAIL": "EMAIL",
+        "EMAIL_ADDRESS": "EMAIL",
         "NAME": "NAME",
         "SEX": "SEX",
         "AGE": "AGE",
@@ -210,22 +214,24 @@ class SpiaAdapter(DatasetAdapter):
                         )
                     tag = pii.get("tag")
                     keyword = pii.get("keyword")
-                    if not isinstance(tag, str) or not isinstance(keyword, str) or not keyword:
+                    if not isinstance(tag, str) or not isinstance(keyword, str):
                         raise IngestionError(
                             f"spia : {path}:{line_number} : doc_id={doc_id} : "
                             f"PII {pii_index} tag/keyword invalide"
                         )
+                    entry = self._entry(path, line_number, tag)
+                    # La release conserve 15 champs par sujet : une chaîne
+                    # vide signifie qu'aucune valeur n'est annotée (amont
+                    # eval_utils.compare_pii_keywords), pas une PII vide.
+                    if not keyword:
+                        continue
                     start = text.find(keyword, search_from)
                     if start < 0:
                         start = text.find(keyword)
-                    if start < 0:
-                        raise IngestionError(
-                            f"spia : {path}:{line_number} : doc_id={doc_id} : "
-                            f"keyword {keyword!r} absent du texte"
-                        )
-                    end = start + len(keyword)
-                    search_from = end
-                    entry = self._entry(path, line_number, tag)
+                    localized = start >= 0
+                    end = start + len(keyword) if localized else None
+                    if localized:
+                        search_from = end
                     certainty = pii.get("certainty")
                     hardness = pii.get("hardness")
                     if certainty is None:
@@ -240,12 +246,13 @@ class SpiaAdapter(DatasetAdapter):
                             annotation_id=f"{doc_id}:{subject_id}:pii:{pii_index}",
                             doc_id=doc_id,
                             subject_id=subject_id,
-                            start=start,
+                            start=start if localized else None,
                             end=end,
-                            span_text=keyword,
+                            span_text=keyword if localized else None,
                             identifier_type=entry.identifier_type,
                             qi_categories=tuple(entry.qi_categories),
-                            expression_mode=ExpressionMode.EXPLICIT,
+                            expression_mode=(ExpressionMode.EXPLICIT if localized
+                                             else ExpressionMode.IMPLICIT),
                             granularity=entry.granularity,
                             stability=entry.stability,
                             subject=Subject.SELF,
@@ -257,7 +264,8 @@ class SpiaAdapter(DatasetAdapter):
                             },
                             entity_id=f"{subject_id}:{tag.strip().upper()}:{keyword}",
                             confidence=confidence,
-                            meta={"source_tag": tag, "source_file": path.name},
+                            meta={"source_tag": tag, "source_file": path.name,
+                                  "unlocalized": not localized, "expected_value": keyword},
                         )
                     except ValueError as exc:
                         raise IngestionError(
@@ -286,9 +294,14 @@ class SpiaAdapter(DatasetAdapter):
                         )
                     tag = pii["tag"].strip().upper()
                     entry = self._entry(path, line_number, tag)
+                    keyword = pii.get("keyword")
+                    if not isinstance(keyword, str):
+                        raise IngestionError(f"spia : {path}:{line_number} : keyword invalide")
+                    if not keyword:
+                        continue
                     for category in entry.qi_categories:
                         attributes[category] = AttributeValue(
-                            value=pii.get("keyword"),
+                            value=keyword,
                             normalized={"source_tag": pii["tag"]},
                         )
                 yield Profile(
@@ -299,6 +312,7 @@ class SpiaAdapter(DatasetAdapter):
                     meta={
                         "source_corpus": origin,
                         "description": subject.get("description"),
+                        "source_piis": piis,
                     },
                 )
 
