@@ -496,9 +496,14 @@ def build_scorecard(
             direction=MetricDirection.MAXIMIZE,
             details=mean_util_result.details,
         ),
-        # Fuite gold : recherche exacte, indépendante du détecteur.
+        # Fuite gold : taux sur toutes les surfaces testables. La fuite
+        # directe reste publiée séparément pour éviter de masquer les QI.
         "gold_leak_rate": _gate(
-            "gold_leak_rate", leak_counts.direct_rate, status=diagnostic_status,
+            "gold_leak_rate", leak_counts.rate, status=diagnostic_status,
+            direction=MetricDirection.MINIMIZE, details=leak_counts.to_dict(),
+        ),
+        "direct_leak_rate": _gate(
+            "direct_leak_rate", leak_counts.direct_rate, status=diagnostic_status,
             direction=MetricDirection.MINIMIZE, details=leak_counts.to_dict(),
         ),
         "counts": overall,

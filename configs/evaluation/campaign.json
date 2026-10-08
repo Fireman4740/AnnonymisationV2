@@ -5,11 +5,21 @@
   "attacker_backend": "openrouter_nemotron_super",
   "judge_backend": "openrouter_nemotron_super",
   "legacy_root": "/mnt/f/IA/Anonymisation/eval/datasets",
-  "documents_per_split": 2,
-  "candidate_documents": 128,
+  "documents_per_split": 20,
+  "sampling_seed": 20261008,
   "max_document_chars": 16000,
-  "train_documents": 256,
+  "train_documents": 20,
   "datasets": {
-    "spia": ["test"]
+    "ratbench": ["eval"],
+    "quasifr": ["anonymization", "hard_quasi_id", "max_anonymization"],
+    "personalreddit": ["test"],
+    "tab": ["test"],
+    "conll2003": ["test"],
+    "dbbio": ["test"],
+    "supporttickets": ["test"],
+    "bitextsupport": ["test"],
+    "spia": ["test"],
+    "panorama": ["train"],
+    "openpii": ["validation"]
   }
 }

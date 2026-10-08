@@ -47,6 +47,7 @@ METRIC_CAPABILITY_GATE: Final[Mapping[str, frozenset[str]]] = {
     "rouge_l": frozenset(),
     "mean_utility": frozenset(),
     "gold_leak_rate": frozenset(),
+    "direct_leak_rate": frozenset(),
     "reid_success_rate": frozenset(),
     "utility_retention": frozenset(),
     # --- calibration : suppose une estimation de risque -------------------- #

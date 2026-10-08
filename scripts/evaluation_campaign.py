@@ -8,12 +8,13 @@ représentative ni des chiffres comparables aux publications.
 
 from __future__ import annotations
 
+import hashlib
+import heapq
 import json
 import os
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import nullcontext
-from itertools import islice
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -51,31 +52,82 @@ def fetch(url: str, path: Path, expected: str | None = None) -> None:
     print("SOURCE", json.dumps({"url": url, "sha256": actual, "bytes": path.stat().st_size}), flush=True)
 
 
-def choose(candidates: list[Any], key: str, count: int, max_chars: int) -> list[Any]:
-    eligible = [doc for doc in candidates if 0 < len(doc.text) <= max_chars]
-    if key in ("ratbench", "spia"):
-        groups = (1, 2, 3) if key == "ratbench" else ("tab", "panorama")
-        field = "difficulty" if key == "ratbench" else "source_corpus"
-        selected = []
-        for group in groups:
-            members = [doc for doc in eligible if doc.meta.get(field) == group]
-            if not members:
-                raise ValueError(f"{key} : aucun document admissible pour {field}={group}")
-            selected.append(members[0])
-        return selected
-    if not eligible:
-        raise ValueError(f"{key} : aucun document admissible")
-    if len(eligible) < count:
-        print("SAMPLE_SMALL", json.dumps({"dataset": key, "requested": count,
-                                          "available": len(eligible)}), flush=True)
-    return eligible[:count]
+def choose(candidates: Iterable[Any], key: str, split: str, count: int,
+           max_chars: int, seed: int) -> tuple[list[Any], dict[str, Any]]:
+    """Échantillonne exactement ``count`` lignes, de façon stable et stratifiée.
+
+    Le parcours complet évite le biais de préfixe des anciens ``islice``.
+    Seuls les ``count`` meilleurs rangs SHA-256 par strate restent en mémoire.
+    """
+    if count < 1:
+        raise ValueError("la taille d'échantillon doit être positive")
+    if key == "ratbench":
+        field, groups = "difficulty", (1, 2, 3)
+    elif key == "spia":
+        field, groups = "source_corpus", ("tab", "panorama")
+    else:
+        field, groups = None, ("all",)
+    quotas = {
+        group: count // len(groups) + (i < count % len(groups))
+        for i, group in enumerate(groups)
+    }
+    heaps: dict[Any, list[tuple[int, str, Any]]] = {group: [] for group in groups}
+    available = {group: 0 for group in groups}
+    unexpected: dict[str, int] = {}
+
+    for doc in candidates:
+        if not 0 < len(doc.text) <= max_chars:
+            continue
+        group = doc.meta.get(field) if field else "all"
+        if group not in quotas:
+            label = repr(group)
+            unexpected[label] = unexpected.get(label, 0) + 1
+            continue
+        available[group] += 1
+        rank = int.from_bytes(hashlib.sha256(
+            f"{seed}\0{key}\0{split}\0{doc.doc_id}".encode("utf-8")
+        ).digest(), "big")
+        heap = heaps[group]
+        item = (-rank, doc.doc_id, doc)
+        if len(heap) < quotas[group]:
+            heapq.heappush(heap, item)
+        elif rank < -heap[0][0]:
+            heapq.heapreplace(heap, item)
+
+    if unexpected:
+        raise ValueError(f"{key}/{split} : strates inconnues pour {field}: {unexpected}")
+    shortages = {str(group): {"requested": quotas[group], "available": available[group]}
+                 for group in groups if available[group] < quotas[group]}
+    if shortages:
+        raise ValueError(
+            f"{key}/{split} : échantillon incomplet ; quotas exacts requis, pénuries={shortages}"
+        )
+
+    selected: list[Any] = []
+    strata: dict[str, dict[str, int]] = {}
+    for group in groups:
+        heap = heaps[group]
+        ordered = sorted(heap, key=lambda item: (-item[0], item[1]))
+        selected.extend(item[2] for item in ordered)
+        strata[str(group)] = {
+            "requested": quotas[group],
+            "available": available[group],
+            "selected": len(heap),
+        }
+    return selected, {
+        "method": "sha256-bottom-k-v1",
+        "seed": seed,
+        "requested": count,
+        "selected": len(selected),
+        "stratified_by": field,
+        "strata": strata,
+    }
 
 
 class CompleteSample(DatasetAdapter):
     """Vue des documents sélectionnés et de TOUTES leurs annotations/tâches."""
 
-    def __init__(self, source: DatasetAdapter, documents: dict[str, list[Any]],
-                 scan_ids: dict[str, set[str]]) -> None:
+    def __init__(self, source: DatasetAdapter, documents: dict[str, list[Any]]) -> None:
         super().__init__(source.manifest, source.raw_dir)
         self.key = source.key
         self.source = source
@@ -86,7 +138,6 @@ class CompleteSample(DatasetAdapter):
                           for person in (*doc.subject_ids, doc.author_id) if person}
             for split, ids in self.ids.items()
         }
-        self.scan_ids = scan_ids
 
     def splits(self) -> tuple[str, ...]:
         return tuple(self.documents)
@@ -99,11 +150,6 @@ class CompleteSample(DatasetAdapter):
 
     def iter_annotations(self, split: str) -> Iterator[Any]:
         for row in self.source.iter_annotations(split):
-            # OpenPII parcourt les mêmes lignes JSONL, dans le même ordre,
-            # pour documents et annotations. Le premier document hors de la
-            # fenêtre prouve que toutes les annotations sélectionnées sont lues.
-            if self.key == "openpii" and row.doc_id not in self.scan_ids[split]:
-                break
             if row.doc_id in self.ids[split]:
                 yield row
 
@@ -142,23 +188,20 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
     if key == "openpii":
         adapter.download()  # vérifie le SHA-256 agrégé de la release figée
     selected = {}
-    windows = {}
+    sampling = {}
     with_train = loaded.manifest.structure.has_tasks and "train" in loaded.manifest.structure.splits
     target_splits = list(dict.fromkeys((["train"] if with_train else []) + splits))
     for split in target_splits:
-        size = 300 if key in ("ratbench", "spia") else cfg["candidate_documents"]
-        if split == "train" and with_train:
-            size = cfg["train_documents"]
-        candidates = list(islice(adapter.iter_documents(split), size))
-        # SPIA : TAB précède PANORAMA ; lire assez pour inclure les deux origines.
-        windows[split] = {doc.doc_id for doc in candidates}
-        selected[split] = candidates if split == "train" and with_train else choose(
-            candidates, key, cfg["documents_per_split"], cfg["max_document_chars"])
-    sampled = CompleteSample(adapter, selected, windows)
+        count = cfg["train_documents"] if split == "train" and with_train else cfg["documents_per_split"]
+        selected[split], sampling[split] = choose(
+            adapter.iter_documents(split), key, split, count,
+            cfg["max_document_chars"], cfg["sampling_seed"])
+    sampled = CompleteSample(adapter, selected)
     result = ingest(sampled, loaded.manifest, split="all", output_root=Path("data/processed"),
                     resolution=loaded.resolution)
     info = {"dataset": key, "status": result.status, "counts": result.counts,
             "synthetic": loaded.manifest.structure.synthetic,
+            "sampling": sampling,
             "selection": {split: [{"doc_id": doc.doc_id, "chars": len(doc.text),
                                       "language": doc.language, "meta": doc.meta}
                                     for doc in docs] for split, docs in selected.items()},
@@ -190,8 +233,10 @@ def run_campaign() -> int:
     summary: dict[str, Any] = {"purpose": cfg["purpose"], "models": models,
                               "datasets": [], "results": [], "failures": [],
                               "remote_skipped": [],
-                              "unimplemented": ["hr_qi", "synthpai", "hybrid_qi",
-                                                "SPIA adversarial subject matching", "QICR/RCR@k"]}
+                              "unimplemented": ["datasets hr_qi/synthpai (adaptateurs absents)",
+                                                "SPIA adversarial subject matching",
+                                                "QICR/RCR@k", "ECE/Brier/MALE dans scorecard",
+                                                "utility downstream réentraînée / TAU-Eval"]}
     for key, splits in cfg["datasets"].items():
         try:
             info = prepare(key, splits, cfg, cache, official_rat_root)
@@ -214,7 +259,7 @@ def run_campaign() -> int:
                 return command(args)
 
         for split in splits:
-            systems = ["regex-only", "deterministic"]
+            systems = ["regex-only", "deterministic", "hybrid-qi"]
             if remote_allowed:
                 systems.append("llm-full")
             if key == "ratbench":
@@ -223,10 +268,12 @@ def run_campaign() -> int:
                 directory = Path("runs/campaign") / key / split / system
                 entry: dict[str, Any] = {"dataset": key, "split": split, "system": system, "stages": {}}
                 stages = entry["stages"]
+                profile = {"llm-full": "llm_full", "hybrid-qi": "hybrid_qi"}.get(
+                    system, "deterministic")
                 args = ["predict", "--dataset", key, "--split", split, "--system", system,
-                        "--profile", "llm_full" if system == "llm-full" else "deterministic",
+                        "--profile", profile,
                         "--out", str(directory)]
-                if system == "deterministic":
+                if system in ("deterministic", "hybrid-qi"):
                     args += ["--policy", "P2"]
                 elif system == "redact-all":
                     args += ["--param", "replacement="]

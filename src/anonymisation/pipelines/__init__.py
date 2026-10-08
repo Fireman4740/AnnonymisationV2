@@ -19,6 +19,7 @@ système de fichiers. Ajouter un pipeline = ajouter une ligne ici.
 """
 
 from anonymisation.pipelines import deterministic as _deterministic  # noqa: F401
+from anonymisation.pipelines import hybrid_qi as _hybrid_qi  # noqa: F401
 from anonymisation.pipelines import llm_full as _llm_full  # noqa: F401
 from anonymisation.pipelines import passthrough as _passthrough  # noqa: F401
 from anonymisation.pipelines import redact_all as _redact_all  # noqa: F401
@@ -30,6 +31,7 @@ PIPELINE_PACKAGES: tuple[str, ...] = (
     "redact_all",
     "regex_only",
     "deterministic",
+    "hybrid_qi",
     "llm_full",
 )
 

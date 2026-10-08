@@ -77,7 +77,12 @@ def scorecard_intervals(
     ]
     direct = _entity_counts_per_document(rows, IdentifierType.DIRECT)
     quasi = _entity_counts_per_document(rows, IdentifierType.QUASI)
-    leaks = [
+    gold_leaks = [
+        (float(c.leaked), float(c.testable))
+        for c in leak_counts
+        if c.testable
+    ]
+    direct_leaks = [
         (float(c.leaked_direct), float(c.testable_direct))
         for c in leak_counts
         if c.testable_direct
@@ -100,7 +105,8 @@ def scorecard_intervals(
         "ER_di": interval(direct, ratio_of_sums(0, 1), "document"),
         "ER_qi": interval(quasi, ratio_of_sums(0, 1), "document"),
         "rouge_l": interval(list(rouge_scores), mean, "document"),
-        "gold_leak_rate": interval(leaks, ratio_of_sums(0, 1), "document"),
+        "gold_leak_rate": interval(gold_leaks, ratio_of_sums(0, 1), "document"),
+        "direct_leak_rate": interval(direct_leaks, ratio_of_sums(0, 1), "document"),
         "cpr": interval(subjects, complement_ratio_of_sums(0, 1), "subject"),
         "ipr": interval(ipr_units, mean, "subject"),
     }
