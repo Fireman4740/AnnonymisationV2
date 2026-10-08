@@ -80,6 +80,11 @@ JSON invalide est compté en erreur, jamais comme protection ni note par défaut
 Au-delà de 5 % d'erreurs d'une étape, ses métriques deviennent indisponibles et
 la scorecard non publiable. `score` ne relance ni LLM ni CorrectMatch.
 
+Une archive `git archive` conserve le commit via `.git_archival.txt` et
+`export-subst`. Sans dépôt Git, la propreté de l'arbre reste inconnue : le
+scoring diagnostic est permis, la publication demeure bloquée. Un marqueur
+non substitué ou malformé n'est jamais accepté comme identité de commit.
+
 ## Comparabilité et travaux restants
 
 Gemma 4 26B et Nemotron Super via OpenRouter sont configurés en `:free`, avec

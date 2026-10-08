@@ -66,6 +66,10 @@ def run() -> int:
             summary["failures"].append(f"{system}:attack/judge")
         args = ["score", "--run", str(directory), "--protocol", "ratbench-v1"]
         stages["score"] = command(args)
+        if not (directory / "scorecard.json").is_file():
+            summary["failures"].append(f"{system}:score_no_output")
+            summary["results"].append({"system": system, "stages": stages})
+            continue
         card = json.loads((directory / "scorecard.json").read_text())
         before = sha256_file(directory / "scorecard.json")
         command(args)

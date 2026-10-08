@@ -171,7 +171,19 @@ def _git_commit(root: Path) -> str | None:
     reste présent pour que la détection le soit.
     """
     out = _git(root, "rev-parse", "HEAD")
-    return out.strip() if out is not None else None
+    if out is not None:
+        return out.strip()
+    # Archives immuables : le marqueur est substitué par git archive à l'export.
+    # Un simple environnement prétendant connaître le commit n'est pas accepté.
+    archival = root / ".git_archival.txt"
+    if archival.is_file():
+        import re
+
+        match = re.fullmatch(r"commit: ([0-9a-f]{40})\ntree: ([0-9a-f]{40})\n",
+                             archival.read_text(encoding="utf-8"))
+        if match is not None:
+            return match.group(1)
+    return None
 
 
 def _git_dirty(root: Path) -> bool | None:

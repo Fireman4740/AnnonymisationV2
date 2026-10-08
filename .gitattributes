@@ -1,0 +1,2 @@
+# git archive remplace les marqueurs avec le commit exporté, sans copier .git.
+.git_archival.txt export-subst
