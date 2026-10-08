@@ -202,8 +202,8 @@ def run_campaign() -> int:
             summary["remote_skipped"].append({"dataset": key, "stages": ["llm-full", "judge"],
                 "reason": "autorisation explicite d'envoi externe des textes réels en attente"})
 
-        def call(args: list[str]) -> int:
-            guard = nullcontext() if remote_allowed else patch(
+        def call(args: list[str], *, allow_api: bool = remote_allowed) -> int:
+            guard = nullcontext() if allow_api else patch(
                 "anonymisation.llm.client.LlmClient.complete",
                 side_effect=RuntimeError("Corpus réel : appels LLM externes non autorisés"))
             with guard:
