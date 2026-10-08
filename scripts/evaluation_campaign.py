@@ -12,6 +12,7 @@ import json
 import os
 import urllib.request
 from collections.abc import Iterator
+from contextlib import nullcontext
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -153,6 +154,7 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
     result = ingest(sampled, loaded.manifest, split="all", output_root=Path("data/processed"),
                     resolution=loaded.resolution)
     info = {"dataset": key, "status": result.status, "counts": result.counts,
+            "synthetic": loaded.manifest.structure.synthetic,
             "selection": {split: [{"doc_id": doc.doc_id, "chars": len(doc.text),
                                       "language": doc.language, "meta": doc.meta}
                                     for doc in docs] for split, docs in selected.items()},
@@ -183,6 +185,7 @@ def run_campaign() -> int:
     os.environ["ANONV2_PSEUDO_SECRET"] = "functional-evaluation-public-not-for-production"
     summary: dict[str, Any] = {"purpose": cfg["purpose"], "models": models,
                               "datasets": [], "results": [], "failures": [],
+                              "remote_skipped": [],
                               "unimplemented": ["hr_qi", "synthpai", "hybrid_qi",
                                                 "SPIA adversarial subject matching", "QICR/RCR@k"]}
     for key, splits in cfg["datasets"].items():
@@ -194,8 +197,22 @@ def run_campaign() -> int:
             print("CAMPAIGN_ERROR", json.dumps(failure, ensure_ascii=False), flush=True)
             continue
         summary["datasets"].append(info)
+        remote_allowed = info["synthetic"] or cfg["remote_real_corpora_authorized"]
+        if not remote_allowed:
+            summary["remote_skipped"].append({"dataset": key, "stages": ["llm-full", "judge"],
+                "reason": "autorisation explicite d'envoi externe des textes réels en attente"})
+
+        def call(args: list[str]) -> int:
+            guard = nullcontext() if remote_allowed else patch(
+                "anonymisation.llm.client.LlmClient.complete",
+                side_effect=RuntimeError("Corpus réel : appels LLM externes non autorisés"))
+            with guard:
+                return command(args)
+
         for split in splits:
-            systems = ["regex-only", "deterministic", "llm-full"]
+            systems = ["regex-only", "deterministic"]
+            if remote_allowed:
+                systems.append("llm-full")
             if key == "ratbench":
                 systems = ["passthrough", "redact-all", *systems]
             for system in systems:
@@ -212,14 +229,15 @@ def run_campaign() -> int:
                 elif system == "llm-full":
                     args += ["--param", f"backend={cfg['anonymizer_backend']}"]
                 try:
-                    stages["predict"] = command(args)
+                    stages["predict"] = call(args)
                     if not (directory / "manifest.lock.json").is_file():
                         raise ValueError("prédiction sans lock")
                     if key == "ratbench":
-                        stages["attack"] = command(["attack", "--run", str(directory), "--attacker",
+                        stages["attack"] = call(["attack", "--run", str(directory), "--attacker",
                             "ratbench", "--backend", cfg["attacker_backend"], "--workers", "1"])
-                    stages["judge"] = command(["judge", "--run", str(directory), "--backend",
-                                               cfg["judge_backend"], "--workers", "1"])
+                    if remote_allowed:
+                        stages["judge"] = call(["judge", "--run", str(directory), "--backend",
+                                                cfg["judge_backend"], "--workers", "1"])
                     args = ["score", "--run", str(directory), "--protocol", info["protocol"]]
                     with patch("anonymisation.llm.client.LlmClient.complete",
                                side_effect=RuntimeError("Scoring hors ligne : LLM interdit")):
@@ -232,7 +250,7 @@ def run_campaign() -> int:
                         "primary", "diagnostic", "publishable", "publication_blockers")})
                     entry["scorecard_sha256"] = before
                     entry["prediction_counts"] = card["accounting"]
-                    if stages["predict"] or stages.get("attack", 0) or stages["judge"] or not entry["replay_identical"]:
+                    if stages["predict"] or stages.get("attack", 0) or stages.get("judge", 0) or not entry["replay_identical"]:
                         summary["failures"].append({"dataset": key, "split": split,
                                                     "system": system, "stage": "pipeline", "stages": stages})
                 except (OSError, ValueError, KeyError, RuntimeError) as exc:
@@ -244,7 +262,7 @@ def run_campaign() -> int:
                 write_json(Path("runs/campaign/summary.json"), summary)
     write_json(Path("runs/campaign/summary.json"), summary)
     compact = {"purpose": summary["purpose"], "models": models, "failures": summary["failures"],
-               "unimplemented": summary["unimplemented"],
+               "unimplemented": summary["unimplemented"], "remote_skipped": summary["remote_skipped"],
                "results": [{k: r.get(k) for k in ("dataset", "split", "system", "stages",
                    "prediction_counts", "replay_identical", "publishable", "error")} for r in summary["results"]]}
     print("FINAL_CAMPAIGN_SUMMARY", json.dumps(compact, ensure_ascii=False, sort_keys=True), flush=True)

@@ -1,5 +1,6 @@
 {
   "purpose": "functional_multi_corpus_only",
+  "remote_real_corpora_authorized": false,
   "anonymizer_backend": "openrouter_liquid_2_6b",
   "attacker_backend": "openrouter_nemotron_super",
   "judge_backend": "openrouter_nemotron_super",
