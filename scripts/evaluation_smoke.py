@@ -96,4 +96,8 @@ def run() -> int:
 
 
 if __name__ == "__main__":
+    if Path("configs/evaluation/campaign.json").is_file():
+        from evaluation_campaign import run_campaign
+
+        raise SystemExit(run_campaign())
     raise SystemExit(run())
