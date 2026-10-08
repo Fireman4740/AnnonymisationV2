@@ -1,7 +1,7 @@
 """Sanité fonctionnelle sur deux documents, pas une estimation de performance.
 
 Ce contrat lance les deux ancres passthrough/redact-all, un attaquant et un
-juge Gemma gratuits, puis prouve la relecture bit-à-bit hors ligne du score.
+juge gratuits configurés, puis prouve la relecture bit-à-bit hors ligne du score.
 Les échecs de quota sont rapportés explicitement, jamais interprétés comme
 de la protection. Les résultats sont imprimés dans le journal supervisé.
 """
@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from anonymisation.cli.main import main
+from anonymisation.llm.config import load_backends_config
 from anonymisation.schema.io import sha256_file, write_json
 
 
@@ -42,10 +43,13 @@ def command(args: list[str]) -> int:
 
 def run() -> int:
     load_key()
+    cfg = load_backends_config()
+    attacker = cfg.resolve(role="attacker_ratbench")
+    judge = cfg.resolve(role="utility_judge")
     if command(["datasets", "ingest", "ratbench", "--split", "eval"]):
         return 2
     summary = {"purpose": "functional_sanity_only", "documents_per_system": 2,
-               "backend": "openrouter_gemma4_26b", "results": [], "failures": []}
+               "attacker": attacker.name, "judge": judge.name, "results": [], "failures": []}
     for system in ("passthrough", "redact-all"):
         directory = Path("runs") / f"sanity-{system}"
         stages = {}
@@ -55,9 +59,9 @@ def run() -> int:
             summary["failures"].append(f"{system}:predict")
             continue
         stages["attack"] = command(["attack", "--run", str(directory), "--attacker", "ratbench",
-                                    "--backend", "openrouter_gemma4_26b", "--workers", "1"])
+                                    "--backend", attacker.name, "--workers", "1"])
         stages["judge"] = command(["judge", "--run", str(directory),
-                                   "--backend", "openrouter_gemma4_26b", "--workers", "1"])
+                                   "--backend", judge.name, "--workers", "1"])
         if stages["attack"] or stages["judge"]:
             summary["failures"].append(f"{system}:attack/judge")
         args = ["score", "--run", str(directory), "--protocol", "ratbench-v1"]
@@ -72,6 +76,10 @@ def run() -> int:
                  "publishable": card["publishable"], "blockers": card["publication_blockers"],
                  "reid": card["primary"]["reid_success_rate"],
                  "utility": card["diagnostic"]["mean_utility"]}
+        for name in ("attacks.jsonl", "judgments.jsonl"):
+            failed = [json.loads(line) for line in (directory / name).read_text().splitlines()
+                      if line.strip() and json.loads(line).get("status") == "error"]
+            entry[name + "_errors"] = [{"doc_id": r["doc_id"], "error": r.get("error")} for r in failed]
         summary["results"].append(entry)
         print("SANITY_RESULT", json.dumps(entry, ensure_ascii=False, sort_keys=True), flush=True)
     write_json(Path("runs/sanity-summary.json"), summary)

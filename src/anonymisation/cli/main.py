@@ -727,7 +727,6 @@ def main(argv: list[str] | None = None) -> int:
         from anonymisation.pipeline.orchestrator import PipelineCapabilityError
         from anonymisation.pipeline.profiles import ProfileError
         from anonymisation.policy.models import PolicyConfigError
-
         from anonymisation.systems import UnknownSystemError
         from anonymisation.systems.base import SystemError_
 

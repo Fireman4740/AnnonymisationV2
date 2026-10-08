@@ -43,9 +43,9 @@ par `juliapkg.json` dans l'environnement du worktree, au premier import.
 uv run --locked anonv2 predict --dataset ratbench --split eval \
   --system passthrough --profile deterministic --limit 2 --out runs/sanity-pass
 uv run --locked --extra attack anonv2 attack --run runs/sanity-pass \
-  --attacker ratbench --backend openrouter_gemma4_26b --workers 1
+  --attacker ratbench --backend openrouter_nemotron_super --workers 1
 uv run --locked --extra attack anonv2 judge --run runs/sanity-pass \
-  --backend openrouter_gemma4_26b --workers 1
+  --backend openrouter_nemotron_super --workers 1
 uv run --locked anonv2 score --run runs/sanity-pass --protocol ratbench-v1
 ```
 
@@ -82,8 +82,11 @@ la scorecard non publiable. `score` ne relance ni LLM ni CorrectMatch.
 
 ## Comparabilité et travaux restants
 
-Gemma 4 26B via OpenRouter est configuré en `:free`, avec prix maximum nul et
-sans changement automatique de modèle. Les quotas peuvent faire échouer le test.
+Gemma 4 26B et Nemotron Super via OpenRouter sont configurés en `:free`, avec
+prix maximum nul et sans changement automatique de modèle. Après des réponses
+429 de Gemma, les rôles d'évaluation choisissent explicitement Nemotron comme
+référence externe (120 B, au-dessus de la limite des modèles locaux évalués).
+Gemma reste disponible par `--backend openrouter_gemma4_26b`. Les quotas peuvent faire échouer le test.
 L'attaquant diffère de GPT-4.1 utilisé dans RAT-Bench : les résultats restent
 **DIAGNOSTIC**, même avec un protocole et des données fidèles. Le juge gratuit
 n'est pas encore validé contre des annotations humaines.

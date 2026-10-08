@@ -46,7 +46,8 @@ backends:
   # Modèles GRATUITS d'OpenRouter, réservés aux étapes d'ÉVALUATION (attaque,
   # juge) — jamais à un système d'anonymisation évalué. Gemma 4 26B (A4B)
   # respecte la contrainte « < 30 B » ; Nemotron Super (120B A12B) est une
-  # variante explicite hors contrainte, jamais un repli automatique. Un seul modèle par campagne : un
+  # référence externe explicite supérieure à la limite des modèles locaux,
+  # jamais un repli automatique. Un seul modèle par campagne : un
   # taux de ré-identification n'est comparable qu'à attaquant identique.
   # Température 0 + cache disque : une campagne se rejoue à l'identique.
   openrouter_gemma4_26b:
@@ -97,8 +98,10 @@ roles:
   generation: qwen_local        # à changer quand un second modèle local existe
   attacker_a: qwen_local
   attacker_b: sonnet
-  attacker_ratbench: openrouter_gemma4_26b
-  utility_judge: openrouter_gemma4_26b
+  # Référence EXTERNE gratuite : Gemma a renvoyé 429 sur le pool partagé.
+  # Ce choix explicite ne change pas la contrainte des modèles LOCAUX évalués.
+  attacker_ratbench: openrouter_nemotron_super
+  utility_judge: openrouter_nemotron_super
   paraphrase: qwen_local
 
 cache:
