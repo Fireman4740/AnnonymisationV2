@@ -500,11 +500,23 @@ def build_scorecard(
         # directe reste publiée séparément pour éviter de masquer les QI.
         "gold_leak_rate": _gate(
             "gold_leak_rate", leak_counts.rate, status=diagnostic_status,
-            direction=MetricDirection.MINIMIZE, details=leak_counts.to_dict(),
+            direction=MetricDirection.MINIMIZE, details={
+                **leak_counts.to_dict(),
+                "definition_id": "gold-surface-leak-v2",
+                "denominator": "testable",
+                **({"reason": "aucune surface gold testable"}
+                   if leak_counts.testable == 0 else {}),
+            },
         ),
         "direct_leak_rate": _gate(
             "direct_leak_rate", leak_counts.direct_rate, status=diagnostic_status,
-            direction=MetricDirection.MINIMIZE, details=leak_counts.to_dict(),
+            direction=MetricDirection.MINIMIZE, details={
+                **leak_counts.to_dict(),
+                "definition_id": "direct-surface-leak-v1",
+                "denominator": "testable_direct",
+                **({"reason": "aucune surface gold DIRECT testable"}
+                   if leak_counts.testable_direct == 0 else {}),
+            },
         ),
         "counts": overall,
     }

@@ -48,9 +48,8 @@ from anonymisation.capabilities import (
     CAP_SPANS,
     CAP_TRACES,
 )
-from anonymisation.detect.base import Candidate, candidates_to_annotations
+from anonymisation.detect.base import candidates_to_annotations
 from anonymisation.detect.fusion import fuse
-from anonymisation.detect.patterns import load_patterns
 from anonymisation.llm.client import LlmClient
 from anonymisation.llm.config import load_backends_config
 from anonymisation.pipeline.orchestrator import _merge_overlapping, _sha256_text
@@ -67,13 +66,6 @@ from anonymisation.pipeline.traces import (
     entity_key,
 )
 from anonymisation.pipeline.validate_stage import validate_anonymization
-from anonymisation.policy.models import Policy, load_policy_set
-from anonymisation.schema.models import Annotation, Document
-from anonymisation.systems.base import ModelRef, SystemBase, SystemConfig
-from anonymisation.systems.registry import register_system
-from anonymisation.transform.apply import apply_decisions
-from anonymisation.transform.decisions import Action, AnonymizationDecision
-
 from anonymisation.pipelines.hybrid_qi.attack import (
     AttackerA,
     AttackerAReport,
@@ -85,6 +77,7 @@ from anonymisation.pipelines.hybrid_qi.detectors import (
     GlinerDetector,
     run_detection,
 )
+from anonymisation.pipelines.hybrid_qi.policy import plan_hybrid_policy
 from anonymisation.pipelines.hybrid_qi.prompts import (
     OFFERED_QI_CODES,
     QiExtraction,
@@ -93,14 +86,17 @@ from anonymisation.pipelines.hybrid_qi.prompts import (
     parse_qi_extraction,
     prompt_sha256,
 )
-from anonymisation.pipelines.hybrid_qi.policy import plan_hybrid_policy
 from anonymisation.pipelines.hybrid_qi.risk import (
-    HybridRiskEstimate,
     HybridRiskEstimator,
-    PopulationConfig,
     build_qi_attributes,
     load_population,
 )
+from anonymisation.policy.models import load_policy_set
+from anonymisation.schema.models import Annotation, Document
+from anonymisation.systems.base import ModelRef, SystemBase, SystemConfig
+from anonymisation.systems.registry import register_system
+from anonymisation.transform.apply import apply_decisions
+from anonymisation.transform.decisions import Action
 
 #: Dossier du paquet : les ressources livrées (``policy.yaml``,
 #: ``population.yaml``, ``profile.yaml``) sont résolues relativement à lui,
@@ -681,7 +677,10 @@ class HybridQiSystem(SystemBase):
         current_text = transform_result.anonymized_text
         validation = validate_anonymization(
             anonymized_text=current_text,
-            decisions=decisions,
+            # Vérifier les remplacements réellement appliqués après fusion,
+            # comme l'orchestrateur partagé ; les jetons du plan peuvent
+            # avoir été remplacés par un jeton couvrant le span union.
+            decisions=merged,
             gold_annotations=(),
             patterns=self._detector.patterns,
             lexicons=self._detector.lexicons,
@@ -828,7 +827,7 @@ class HybridQiSystem(SystemBase):
                 # la suite de la boucle).
                 validation = validate_anonymization(
                     anonymized_text=current_text,
-                    decisions=decisions,
+                    decisions=merged,
                     gold_annotations=(),
                     patterns=self._detector.patterns,
                     lexicons=self._detector.lexicons,

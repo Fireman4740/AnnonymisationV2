@@ -194,14 +194,19 @@ def plan_hybrid_policy(
             if annotation.identifier_type is IdentifierType.DIRECT:
                 action_name = policy.actions.get("DIRECT", "SUPPRESS")
                 type_label = "identifiant direct"
-            else:
+            elif annotation.identifier_type is IdentifierType.SENSITIVE_ONLY:
                 action_name = policy.actions.get("SENSITIVE_ONLY", "KEEP")
                 type_label = "donnée sensible"
+            else:
+                action_name = "KEEP"
+                type_label = "type IGNORED"
             start, end = _require_offsets(annotation)
             original = doc.text[start:end]
             category = _category_of(annotation)
             action = Action(action_name)
-            check_action_allowed(type_label, annotation.granularity, action)
+            # La table normative est indexée par code, pas par libellé.
+            # La granularité ne pilote que les transformations de QUASI.
+            check_action_allowed(annotation.identifier_type.value, None, action)
             replacement = (
                 original if action is Action.KEEP else f"[{category}_SUPPRIME]"
             )
@@ -250,7 +255,9 @@ def plan_hybrid_policy(
             start, end = _require_offsets(annotation)
             original = doc.text[start:end]
             category = _category_of(annotation)
-            check_action_allowed("QUASI", annotation.granularity, Action.KEEP)
+            # Comme PolicyEngine._keep_decision : KEEP constate une absence
+            # de transformation décidée par la politique. La table SPEC-01 §8
+            # contrôle les transformations, pas cette conservation explicite.
             decisions.append(
                 AnonymizationDecision(
                     start=start,
@@ -330,7 +337,6 @@ def plan_hybrid_policy(
             start, end = _require_offsets(annotation)
             original = doc.text[start:end]
             category = _category_of(annotation)
-            check_action_allowed("QUASI", annotation.granularity, Action.KEEP)
             decisions.append(
                 AnonymizationDecision(
                     start=start,
@@ -471,11 +477,11 @@ def plan_hybrid_policy(
                     "risk_after": risk,
                 }
             )
-        risk = evaluate(levels=levels, suppressed_keys=suppressed_keys)
+        risk = evaluate(levels=levels, suppressed_keys=suppressed_keys).risk
         meta["risk_final"] = risk
         meta["seuil_non_atteint"] = risk > threshold
     else:
-        meta.setdefault("risk_final", risk)
+        meta["risk_final"] = risk
 
     # -- 5. Décisions par annotation -------------------------------------- #
     for attr in attributes:
@@ -575,7 +581,6 @@ def plan_hybrid_policy(
                 )
                 continue
 
-            check_action_allowed("QUASI", annotation.granularity, Action.KEEP)
             decisions.append(
                 AnonymizationDecision(
                     start=start,

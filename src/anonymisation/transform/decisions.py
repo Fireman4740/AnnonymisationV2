@@ -72,8 +72,9 @@ def check_action_allowed(identifier_type: Any, granularity: Any, action: Action 
     silencieuse (règle d'or du projet).
 
     Point important de SPEC-01 §8 : un QI de granularité ``COARSE`` ne peut
-    plus être généralisé, seulement supprimé (ou gardé s'il redevient
-    acceptable, ce que la politique ne décide jamais pour un QUASI COARSE).
+    plus être généralisé. Les planificateurs vérifient ici les transformations
+    de QUASI ; une conservation explicite ``KEEP`` (P0 ou seuil de risque
+    atteint) relève de la politique et conserve le texte original.
     """
     id_type_key = getattr(identifier_type, "value", identifier_type)
     id_type_key = str(id_type_key)

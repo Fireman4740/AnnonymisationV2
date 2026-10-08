@@ -118,6 +118,61 @@ def _build(documents, gold_by_doc, predictions, **kwargs) -> dict:
     )
 
 
+@pytest.mark.parametrize(("text", "rate"), [("âge supprimé", 0.0), ("28 ans", 1.0)])
+def test_quasi_only_leakage_uses_all_surfaces_and_explains_absent_directs(text, rate):
+    doc = _document("d", "28 ans")
+    gold = _annotation("d", 0, 2, span_text="28",
+                       identifier_type=IdentifierType.QUASI, category="GEN_AGE")
+    row = _prediction("d", [])
+    row["anonymized_text"] = text
+    card = _build({"d": doc}, {"d": (gold,)}, [row])
+    full = card["diagnostic"]["gold_leak_rate"]
+    direct = card["diagnostic"]["direct_leak_rate"]
+    assert full["value"] == rate == full["details"]["rate"]
+    assert full["status"] == "diagnostic"
+    assert full["details"]["definition_id"] == "gold-surface-leak-v2"
+    assert direct["value"] is None and direct["status"] == "unavailable"
+    assert "DIRECT" in direct["details"]["reason"]
+
+
+def test_empty_gold_leakage_is_unavailable_with_reason():
+    doc = _document("d", "Document sans identifiant")
+    row = _prediction("d", [])
+    row["anonymized_text"] = doc.text
+    card = _build({"d": doc}, {"d": ()}, [row])
+    for name in ("gold_leak_rate", "direct_leak_rate"):
+        block = card["diagnostic"][name]
+        assert block["value"] is None and block["status"] == "unavailable"
+        assert block["details"]["reason"]
+
+
+def test_gold_and_direct_leakage_have_distinct_pooled_rates_and_intervals():
+    docs, gold, rows = {}, {}, []
+    for i, (text, anonymous) in enumerate([("Alice 28 30 40", "Alice"), ("Bob 50", "50")]):
+        doc_id = f"d{i}"
+        docs[doc_id] = _document(doc_id, text)
+        spans = []
+        for j, word in enumerate(text.split()):
+            start = text.index(word)
+            spans.append(_annotation(
+                doc_id, start, start + len(word), span_text=word,
+                identifier_type=IdentifierType.DIRECT if j == 0 else IdentifierType.QUASI,
+                category="DIR_NAME" if j == 0 else "GEN_AGE",
+            ))
+        gold[doc_id] = tuple(spans)
+        row = _prediction(doc_id, [])
+        row["anonymized_text"] = anonymous
+        rows.append(row)
+    card = _build(docs, gold, rows)
+    full, direct = (card["diagnostic"][key] for key in ("gold_leak_rate", "direct_leak_rate"))
+    assert full["value"] == pytest.approx(2 / 6)
+    assert direct["value"] == pytest.approx(1 / 2)
+    assert full["details"]["ci95"]["low"] == pytest.approx(1 / 4)
+    assert full["details"]["ci95"]["high"] == pytest.approx(1 / 2)
+    assert direct["details"]["ci95"]["low"] == 0.0
+    assert direct["details"]["ci95"]["high"] == 1.0
+
+
 def test_entity_recall_never_matches_across_documents() -> None:
     """Une prédiction du document B ne protège pas une mention du document A.
 

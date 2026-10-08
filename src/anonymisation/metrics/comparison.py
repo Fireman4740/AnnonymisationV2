@@ -41,6 +41,8 @@ _CHECKED_METRICS: tuple[tuple[str, str], ...] = (
     ("diagnostic", "mean_utility"),
     ("diagnostic", "ER_di"),
     ("diagnostic", "ER_qi"),
+    ("diagnostic", "gold_leak_rate"),
+    ("diagnostic", "direct_leak_rate"),
 )
 
 #: Statuts non publiables : la valeur existe, mais ne porte aucune garantie de
@@ -99,26 +101,45 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                 f"Scorecard #{idx} protocole incompatible : attendu {ref_protocol}/{ref_proto_ver}, obtenu {proto}/{proto_ver}"
             )
 
-        # Le protocole global identique ne suffit pas : deux runs peuvent
-        # publier la même métrique sous des statuts différents (PROXY vs
-        # SAMPLED). Les aligner dans un tableau les ferait passer pour deux
-        # chiffres du même ordre. Seules les lignes qui portent réellement une
-        # valeur des deux côtés sont concernées.
-        for section, metric in _CHECKED_METRICS:
-            ref_status = _status_of((ref.get(section) or {}).get(metric))
-            status = _status_of((sc.get(section) or {}).get(metric))
-            if ref_status is None or status is None:
+    # Chaque métrique prend pour référence sa première valeur disponible,
+    # même si la première scorecard ne peut pas la produire.
+    for section, metric in _CHECKED_METRICS:
+        reference: tuple[str, tuple[Any, ...]] | None = None
+        values = 0
+        for idx, sc in enumerate(scorecards, start=1):
+            block = (sc.get(section) or {}).get(metric)
+            status = _status_of(block)
+            if status is None or status in _NO_VALUE or block.get("value") is None:
                 continue
-            # Une métrique qu'un système ne peut pas produire (capacité absente)
-            # s'affiche « — » : elle ne se compare à rien et ne bloque donc
-            # pas la comparaison des colonnes que les deux systèmes publient.
-            if ref_status in _NO_VALUE or status in _NO_VALUE:
+            details = block.get("details") or {}
+            values += 1
+            signature = (
+                block.get("protocol", sc.get("protocol")),
+                block.get("protocol_version", sc.get("protocol_version")),
+                details.get("definition_id"),
+                details.get("denominator"),
+            )
+            if reference is None:
+                reference = status, signature
                 continue
+            ref_status, ref_signature = reference
             if ref_status != status:
                 raise MetricComparisonError(
                     f"Scorecard #{idx} statut incompatible pour {metric!r} : "
                     f"attendu {ref_status!r}, obtenu {status!r}"
                 )
+            if ref_signature != signature:
+                raise MetricComparisonError(
+                    f"Scorecard #{idx} définition incompatible pour {metric!r} : "
+                    f"attendu {ref_signature!r}, obtenu {signature!r}. "
+                    "Recalculer les anciennes scorecards avec le même scorer."
+                )
+        if (metric in ("gold_leak_rate", "direct_leak_rate") and values > 1
+                and reference is not None and reference[1][2] is None):
+            raise MetricComparisonError(
+                f"Définition non versionnée pour {metric!r} : comparaison invérifiable. "
+                "Recalculer les anciennes scorecards avec le même scorer."
+            )
 
 
 def _fmt_metric(val: Any) -> str:

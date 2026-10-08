@@ -84,6 +84,8 @@ def choose(candidates: Iterable[Any], key: str, split: str, count: int,
             unexpected[label] = unexpected.get(label, 0) + 1
             continue
         available[group] += 1
+        if quotas[group] == 0:
+            continue
         rank = int.from_bytes(hashlib.sha256(
             f"{seed}\0{key}\0{split}\0{doc.doc_id}".encode("utf-8")
         ).digest(), "big")

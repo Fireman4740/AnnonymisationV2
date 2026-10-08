@@ -40,7 +40,10 @@ def _dummy_scorecard(system_id: str, cpr_val: float | None = 0.85) -> dict:
             "mean_utility": {"name": "mean_utility", "value": None, "status": "unavailable", "details": {"reason": "no judge"}},
             "ER_di": {"name": "ER_di", "value": 0.95, "status": "diagnostic"},
             "ER_qi": {"name": "ER_qi", "value": 0.70, "status": "diagnostic"},
-            "gold_leak_rate": {"name": "gold_leak_rate", "value": 0.0, "status": "diagnostic"},
+            "gold_leak_rate": {
+                "name": "gold_leak_rate", "value": 0.0, "status": "diagnostic",
+                "details": {"definition_id": "gold-surface-leak-v2", "denominator": "testable"},
+            },
         },
         "efficiency": {
             "latency_p50_ms": 12.34,
@@ -55,6 +58,46 @@ def test_assert_comparable_across_systems_refuses_different_datasets():
 
     with pytest.raises(MetricComparisonError, match="dataset incompatible"):
         assert_comparable_across_systems([sc1, sc2])
+
+
+def test_legacy_gold_definition_cannot_mix_with_corrected_definition():
+    old, new = _dummy_scorecard("old"), _dummy_scorecard("new")
+    old["diagnostic"]["gold_leak_rate"].pop("details")
+    new["diagnostic"]["gold_leak_rate"]["details"] = {
+        "definition_id": "gold-surface-leak-v2", "denominator": "testable",
+    }
+    with pytest.raises(MetricComparisonError, match="définition incompatible.*gold_leak_rate"):
+        assert_comparable_across_systems([old, new])
+
+
+def test_unavailable_first_card_does_not_hide_incompatible_later_definitions():
+    unavailable, old, new = (_dummy_scorecard(s) for s in ("unavailable", "old", "new"))
+    old["diagnostic"]["gold_leak_rate"].pop("details")
+    unavailable["diagnostic"]["gold_leak_rate"] = {"value": None, "status": "unavailable"}
+    new["diagnostic"]["gold_leak_rate"]["details"] = {
+        "definition_id": "gold-surface-leak-v2", "denominator": "testable",
+    }
+    with pytest.raises(MetricComparisonError, match="définition incompatible"):
+        assert_comparable_across_systems([unavailable, old, new])
+
+
+def test_same_leak_definition_allows_different_values():
+    cards = [_dummy_scorecard(s) for s in ("one", "two")]
+    for card, value in zip(cards, (0.0, 1.0)):
+        block = card["diagnostic"]["gold_leak_rate"]
+        block["value"] = value
+        block["details"] = {
+            "definition_id": "gold-surface-leak-v2", "denominator": "testable",
+        }
+    assert_comparable_across_systems(cards)
+
+
+def test_two_unversioned_gold_cards_are_not_assumed_comparable():
+    cards = [_dummy_scorecard(s) for s in ("legacy-one", "legacy-two")]
+    for card in cards:
+        card["diagnostic"]["gold_leak_rate"].pop("details")
+    with pytest.raises(MetricComparisonError, match="non versionnée"):
+        assert_comparable_across_systems(cards)
 
 
 def test_render_comparison_markdown():
