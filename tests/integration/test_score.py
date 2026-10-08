@@ -183,6 +183,26 @@ def score_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return run
 
 
+@pytest.mark.parametrize("sampled_at", ["data_version", "run"])
+def test_official_protocol_on_sampled_inputs_stays_sampled(score_fixture: Path, sampled_at: str):
+    config = score.DATASETS_CONFIG / "mini.yaml"
+    config.write_text(config.read_text().replace("DIAGNOSTIC", "OFFICIAL"))
+    predictions_path = score_fixture / "predictions.jsonl"
+    rows = [json.loads(line) for line in predictions_path.read_text().splitlines()]
+    for row in rows:
+        row.update(status="ok", error=[])
+    _write_jsonl(predictions_path, rows)
+    _relock_outputs(score_fixture)
+    path = score_fixture / "manifest.lock.json"
+    lock = json.loads(path.read_text())
+    lock[sampled_at]["status"] = "sampled"
+    path.write_text(json.dumps(lock))
+    score.cmd_score(str(score_fixture), "mini-v1")
+    card = json.loads((score_fixture / "scorecard.json").read_text())
+    assert card["status"] == "sampled"
+    assert card["primary"]["cpr"]["status"] == "proxy"
+
+
 def test_score_is_offline_and_never_imports_detector() -> None:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO_ROOT / "src")

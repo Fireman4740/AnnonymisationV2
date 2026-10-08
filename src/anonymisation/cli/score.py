@@ -298,6 +298,14 @@ def cmd_score(run: str | Path, protocol: str) -> int:
     except (KeyError, TypeError, ScorecardError) as exc:
         raise ScoreError(f"Lock de run invalide : {exc}") from exc
     protocol_name, protocol_version, default_status = _protocol_info(dataset, protocol)
+    # Un sous-ensemble du pivot reste un échantillon même si predict a
+    # parcouru ce pivot entier. Il ne peut hériter du statut OFFICIAL déclaré
+    # pour le protocole complet (notamment SPIA/PANORAMA).
+    if default_status is MetricStatus.OFFICIAL and (
+        lock.get("data_version", {}).get("status") == "sampled"
+        or run_info.get("status") == "sampled"
+    ):
+        default_status = MetricStatus.SAMPLED
     # Vérifié AVANT toute lecture : un gold ré-ingéré depuis le run ferait
     # scorer les prédictions contre une autre vérité terrain.
     # `train/` n'est lu (donc vérifié) que si le split évalué porte des tâches

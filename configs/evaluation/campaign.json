@@ -10,7 +10,6 @@
   "max_document_chars": 16000,
   "train_documents": 256,
   "datasets": {
-    "spia": ["test"],
-    "panorama": ["train"]
+    "spia": ["test"]
   }
 }
