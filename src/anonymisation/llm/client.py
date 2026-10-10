@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,7 +111,8 @@ class LlmClient:
         backend = cfg.resolve(name=name)
         return cls(
             backend,
-            cache_dir=(_REPO_ROOT / cfg.cache.dir if cfg.cache.enabled else None),
+            cache_dir=(Path(os.environ.get("ANONV2_LLM_CACHE_DIR", str(_REPO_ROOT / cfg.cache.dir)))
+                       if cfg.cache.enabled else None),
             cache_enabled=cfg.cache.enabled,
         )
 
@@ -126,7 +128,8 @@ class LlmClient:
         backend = cfg.resolve(role=role)
         return cls(
             backend,
-            cache_dir=(_REPO_ROOT / cfg.cache.dir if cfg.cache.enabled else None),
+            cache_dir=(Path(os.environ.get("ANONV2_LLM_CACHE_DIR", str(_REPO_ROOT / cfg.cache.dir)))
+                       if cfg.cache.enabled else None),
             cache_enabled=cfg.cache.enabled,
         )
 
@@ -176,6 +179,7 @@ class LlmClient:
                 base_url=backend.base_url,
                 api_key=api_key,
                 timeout=backend.timeout_s,
+                max_retries=backend.max_retries,
             )
             return self._sdk_client
         if backend.kind == "anthropic":
@@ -196,7 +200,8 @@ class LlmClient:
         raise LlmConfigError(f"Backend {backend.name!r} : kind={backend.kind!r} non supporté.")
 
     def _call_openai_compatible(
-        self, prompt: str, *, temperature: float | None, system: str | None = None
+        self, prompt: str, *, temperature: float | None, system: str | None = None,
+        max_tokens: int | None = None,
     ) -> tuple[str, str | None]:
         backend = self._backend
         client = self._ensure_sdk_client()
@@ -209,6 +214,7 @@ class LlmClient:
                 messages=messages,
                 temperature=temperature if temperature is not None else backend.temperature,
                 extra_body=dict(backend.extra_body) or None,
+                **({"max_tokens": max_tokens} if max_tokens is not None else {}),
             )
         except Exception as exc:  # noqa: BLE001 — toute panne réseau devient LlmBackendUnavailableError
             hint = f" {backend.health.hint}" if backend.health.hint else ""
@@ -224,7 +230,8 @@ class LlmClient:
         return content, choice.finish_reason
 
     def _call_anthropic(
-        self, prompt: str, *, temperature: float | None, system: str | None = None
+        self, prompt: str, *, temperature: float | None, system: str | None = None,
+        max_tokens: int | None = None,
     ) -> tuple[str, str | None]:
         backend = self._backend
         client = self._ensure_sdk_client()
@@ -232,7 +239,7 @@ class LlmClient:
         try:
             response = client.messages.create(
                 model=backend.model,
-                max_tokens=4096,
+                max_tokens=max_tokens if max_tokens is not None else 4096,
                 temperature=temperature if temperature is not None else backend.temperature,
                 messages=[{"role": "user", "content": prompt}],
                 **extra,
@@ -265,6 +272,7 @@ class LlmClient:
         temperature: float | None = None,
         use_cache: bool = True,
         system: str | None = None,
+        max_tokens: int | None = None,
     ) -> LlmCompletion:
         """Complète ``prompt``. Lève plutôt que de renvoyer un résultat ambigu.
 
@@ -273,6 +281,8 @@ class LlmClient:
         document ne contient aucune entité » (contrainte C3).
         """
         backend = self._backend
+        if max_tokens is not None and max_tokens < 1:
+            raise LlmConfigError("max_tokens doit être strictement positif")
         params: dict[str, Any] = {
             "temperature": temperature if temperature is not None else backend.temperature
         }
@@ -283,6 +293,9 @@ class LlmClient:
         if system is not None:
             params["system"] = system
         system_kw: dict[str, Any] = {"system": system} if system is not None else {}
+        if max_tokens is not None:
+            params["max_tokens"] = max_tokens
+            system_kw["max_tokens"] = max_tokens
         key = _cache_key(backend, prompt, params)
 
         if use_cache and self._cache_enabled:

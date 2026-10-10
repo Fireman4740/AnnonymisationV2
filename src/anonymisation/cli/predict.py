@@ -175,15 +175,10 @@ def _git_commit(root: Path) -> str | None:
         return out.strip()
     # Archives immuables : le marqueur est substitué par git archive à l'export.
     # Un simple environnement prétendant connaître le commit n'est pas accepté.
-    archival = root / ".git_archival.txt"
-    if archival.is_file():
-        import re
+    from anonymisation.provenance import archive_identity
 
-        match = re.fullmatch(r"commit: ([0-9a-f]{40})\ntree: ([0-9a-f]{40})\n",
-                             archival.read_text(encoding="utf-8"))
-        if match is not None:
-            return match.group(1)
-    return None
+    identity = archive_identity(root)
+    return identity[0] if identity else None
 
 
 def _git_dirty(root: Path) -> bool | None:
@@ -196,7 +191,11 @@ def _git_dirty(root: Path) -> bool | None:
     scorer — jamais présumé propre.
     """
     out = _git(root, "status", "--porcelain")
-    return bool(out.strip()) if out is not None else None
+    if out is not None:
+        return bool(out.strip())
+    from anonymisation.provenance import archive_dirty
+
+    return archive_dirty(root)
 
 
 def _data_version(key: str) -> dict[str, Any]:

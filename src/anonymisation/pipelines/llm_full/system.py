@@ -39,19 +39,19 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from anonymisation.capabilities import CAP_DECISIONS, CAP_SPANS
 from anonymisation.detect.base import Candidate, candidates_to_annotations
 from anonymisation.llm.client import LlmClient
 from anonymisation.llm.config import load_backends_config
+from anonymisation.pipeline.orchestrator import _merge_overlapping
+from anonymisation.pipeline.traces import PipelineResult
 from anonymisation.pipelines.llm_full.prompts import (
     ParsedEntity,
     build_anonymization_prompt,
     parse_llm_entities,
 )
-from anonymisation.pipeline.orchestrator import _merge_overlapping
-from anonymisation.pipeline.traces import PipelineResult
 from anonymisation.schema.models import Annotation, Document
 from anonymisation.schema.taxonomy import (
     DIRECT_CODES,
@@ -97,7 +97,8 @@ class _LlmFullParams(BaseModel):
     backend: str = "qwen_local"
     #: Garde-fou anti-divergence : au-delà, les entités surnuméraires sont
     #: ignorées plutôt que de laisser une réponse aberrante saturer le document.
-    max_entities: int = 60
+    max_entities: int = Field(default=60, ge=1)
+    max_output_tokens: int = Field(default=4096, ge=1)
     #: Override de la température du backend ; ``None`` = valeur du backend.
     temperature: float | None = None
 
@@ -197,6 +198,7 @@ class LlmFullSystem(SystemBase):
             str(self._params["backend"]), config=backends_config
         )
         self._max_entities = int(self._params["max_entities"])
+        self._max_output_tokens = int(self._params["max_output_tokens"])
         self._temperature = self._params.get("temperature")
 
     def models(self) -> tuple[ModelRef, ...]:
@@ -251,17 +253,24 @@ class LlmFullSystem(SystemBase):
         # tels quels et ``SystemBase.run`` les convertit en status="error"
         # nommé — jamais interprétés comme « aucune entité trouvée » (C3).
         prompt = build_anonymization_prompt(doc.text)
-        completion = self._client.complete(prompt, temperature=self._temperature)
+        completion = self._client.complete(prompt, temperature=self._temperature,
+                                           max_tokens=self._max_output_tokens)
         parsed = parse_llm_entities(completion.content)
 
         candidates: list[Candidate] = []
         decisions: list[AnonymizationDecision] = []
         warnings: list[str] = []
-        occurrence_counts: dict[str, int] = {}
+        if len(parsed) > self._max_entities:
+            warnings.append(f"limite max_entities={self._max_entities} : "
+                            f"{len(parsed) - self._max_entities} entité(s) non traitée(s)")
+        occurrence_counts: dict[tuple[str, str], int] = {}
 
         for entity in parsed[: self._max_entities]:
-            occurrence_index = occurrence_counts.get(entity.span, 0)
-            occurrence_counts[entity.span] = occurrence_index + 1
+            # Une même mention peut porter plusieurs catégories (I-ANN-5).
+            # Chaque catégorie parcourt ses occurrences indépendamment.
+            occurrence_key = (entity.span, entity.category)
+            occurrence_index = occurrence_counts.get(occurrence_key, 0)
+            occurrence_counts[occurrence_key] = occurrence_index + 1
 
             built = self._build_candidate(doc, entity, occurrence_index)
             if built is None:

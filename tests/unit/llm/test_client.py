@@ -144,3 +144,21 @@ def test_cache_disabled_never_persists(tmp_path: Path, monkeypatch: pytest.Monke
     )
     client.complete("bonjour")
     assert not cache_dir.exists()
+
+
+def test_output_budget_is_sent_and_separates_cached_responses(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    requests = []
+
+    def create(**kwargs):
+        requests.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="response"), finish_reason="stop")])
+
+    client = LlmClient(_backend(), cache_dir=tmp_path, cache_enabled=True)
+    client._sdk_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    assert not client.complete("p", max_tokens=4096).cached
+    assert client.complete("p", max_tokens=4096).cached
+    assert not client.complete("p", max_tokens=8192).cached
+    assert [request["max_tokens"] for request in requests] == [4096, 8192]

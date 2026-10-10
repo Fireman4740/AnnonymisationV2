@@ -75,3 +75,16 @@ def test_ratbench_small_sample_zero_quotas(count):
 def test_ratbench_sample_rejects_missing_requested_stratum():
     with pytest.raises(ValueError, match="échantillon incomplet"):
         campaign.choose(_docs("difficulty", (1, 2)), "ratbench", "test", 3, 8000, 42)
+
+
+def test_dataset_budget_redistributes_a_short_split_without_duplicates():
+    available = {"anonymization": 31, "hard_quasi_id": 40, "max_anonymization": 1}
+    assert campaign.split_budget(available, 20) == {
+        "anonymization": 10, "hard_quasi_id": 9, "max_anonymization": 1,
+    }
+    with pytest.raises(ValueError, match="incomplet"):
+        campaign.split_budget({"small": 1}, 20)
+
+
+def test_dataset_budget_can_leave_a_split_empty_explicitly():
+    assert campaign.split_budget({"empty": 0, "full": 20}, 20) == {"empty": 0, "full": 20}

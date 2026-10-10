@@ -166,6 +166,24 @@ class CompleteSample(DatasetAdapter):
                 yield row
 
 
+def split_budget(available: dict[str, int], count: int) -> dict[str, int]:
+    """Répartit exactement le budget dataset en conservant les splits source.
+
+    Les splits courts contribuent à hauteur de leur capacité ; les places
+    restantes sont distribuées aux autres splits, jamais par duplication.
+    """
+    if count < 1 or sum(available.values()) < count:
+        raise ValueError(f"budget dataset incomplet : demandé={count}, disponibles={available}")
+    quotas = {split: 0 for split in available}
+    remaining = count
+    while remaining:
+        for split, capacity in available.items():
+            if remaining and quotas[split] < capacity:
+                quotas[split] += 1
+                remaining -= 1
+    return quotas
+
+
 def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
             official_rat_root: Path) -> dict[str, Any]:
     os.environ["ANONV2_V1_DATASETS"] = str(official_rat_root if key == "ratbench"
@@ -178,7 +196,8 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
                   raw / name, digest)
         os.environ["ANONV2_SPIA_ROOT"] = str(raw.resolve())
     elif key == "panorama":
-        raw = cache / "PANORAMA"
+        raw = Path(cfg.get("source_overrides", {}).get(key,
+                   os.environ.get("ANONV2_PANORAMA_ROOT", str(cache / "PANORAMA"))))
         os.environ["ANONV2_PANORAMA_ROOT"] = str(raw.resolve())
         fetch("https://huggingface.co/datasets/srirxml/PANORAMA/resolve/"
               "f0037fdba4d2f2be771079c3388d48a1242af3e0/data/train-00000-of-00001.parquet",
@@ -193,8 +212,18 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
     sampling = {}
     with_train = loaded.manifest.structure.has_tasks and "train" in loaded.manifest.structure.splits
     target_splits = list(dict.fromkeys((["train"] if with_train else []) + splits))
+    budget = {split: cfg["documents_per_split"] for split in splits}
+    if "documents_per_dataset" in cfg:
+        if len(splits) == 1:
+            budget = {splits[0]: cfg["documents_per_dataset"]}
+        else:
+            available = {split: sum(0 < len(doc.text) <= cfg["max_document_chars"]
+                                    for doc in adapter.iter_documents(split)) for split in splits}
+            budget = split_budget(available, cfg["documents_per_dataset"])
     for split in target_splits:
-        count = cfg["train_documents"] if split == "train" and with_train else cfg["documents_per_split"]
+        count = budget.get(split, cfg["train_documents"])
+        if count == 0:
+            continue
         selected[split], sampling[split] = choose(
             adapter.iter_documents(split), key, split, count,
             cfg["max_document_chars"], cfg["sampling_seed"])
@@ -203,6 +232,9 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
                     resolution=loaded.resolution)
     info = {"dataset": key, "status": result.status, "counts": result.counts,
             "synthetic": loaded.manifest.structure.synthetic,
+            "evaluation_splits": [split for split in splits if budget[split] > 0],
+            "evaluation_documents": sum(budget.values()),
+            "split_budget": budget,
             "sampling": sampling,
             "selection": {split: [{"doc_id": doc.doc_id, "chars": len(doc.text),
                                       "language": doc.language, "meta": doc.meta}
@@ -233,6 +265,8 @@ def run_campaign() -> int:
     # Clé de pseudonymisation réservée à ce test public, jamais une clé réelle.
     os.environ["ANONV2_PSEUDO_SECRET"] = "functional-evaluation-public-not-for-production"
     summary: dict[str, Any] = {"purpose": cfg["purpose"], "models": models,
+                              "requested_systems": cfg.get("systems"),
+                              "documents_per_dataset": cfg.get("documents_per_dataset"),
                               "datasets": [], "results": [], "failures": [],
                               "remote_skipped": [],
                               "unimplemented": ["datasets hr_qi/synthpai (adaptateurs absents)",
@@ -260,11 +294,11 @@ def run_campaign() -> int:
             with guard:
                 return command(args)
 
-        for split in splits:
-            systems = ["regex-only", "deterministic", "hybrid-qi"]
-            if remote_allowed:
-                systems.append("llm-full")
-            if key == "ratbench":
+        for split in info["evaluation_splits"]:
+            systems = cfg.get("systems", ["regex-only", "deterministic", "hybrid-qi", "llm-full"])
+            if not remote_allowed:
+                systems = [system for system in systems if system != "llm-full"]
+            if key == "ratbench" and "systems" not in cfg:
                 systems = ["passthrough", "redact-all", *systems]
             for system in systems:
                 directory = Path("runs/campaign") / key / split / system
@@ -280,7 +314,9 @@ def run_campaign() -> int:
                 elif system == "redact-all":
                     args += ["--param", "replacement="]
                 elif system == "llm-full":
-                    args += ["--param", f"backend={cfg['anonymizer_backend']}"]
+                    args += ["--param", f"backend={cfg['anonymizer_backend']}",
+                             "--param", f"max_output_tokens={cfg.get('llm_full_max_output_tokens', 4096)}",
+                             "--param", f"max_entities={cfg.get('llm_full_max_entities', 60)}"]
                 try:
                     stages["predict"] = call(args)
                     if not (directory / "manifest.lock.json").is_file():

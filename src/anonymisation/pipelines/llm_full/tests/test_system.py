@@ -14,9 +14,9 @@ import pytest
 from anonymisation.capabilities import CAP_DECISIONS, CAP_SPANS
 from anonymisation.llm.client import LlmCompletion
 from anonymisation.pipelines.llm_full.prompts import LlmMalformedResponseError
+from anonymisation.pipelines.llm_full.system import LlmFullSystem
 from anonymisation.schema.models import Document, Domain
 from anonymisation.systems.base import SystemConfig
-from anonymisation.pipelines.llm_full.system import LlmFullSystem
 
 
 def _system() -> LlmFullSystem:
@@ -52,6 +52,38 @@ def test_identity_and_capabilities():
     assert system.capabilities == frozenset({CAP_SPANS, CAP_DECISIONS})
     assert system.uses_policy is False
     assert system.offline_only is False
+
+
+def test_same_mention_can_have_multiple_categories(monkeypatch):
+    system = _system()
+    monkeypatch.setattr(system._client, "complete", lambda *a, **k: _stub_completion([
+        {"span": "doctorant", "category": category, "action": "SUPPRESS", "replacement": ""}
+        for category in ("GEN_EDUCATION", "GEN_OCCUPATION")
+    ]))
+    result = system.run(_doc("Je suis doctorant."))
+    assert result.status == "ok", result.errors
+    assert len(result.annotations) == 2
+    assert {(a.start, a.end) for a in result.annotations} == {(8, 17)}
+    assert "doctorant" not in result.anonymized_text
+
+
+def test_entity_limit_is_explicit_and_output_budget_forwarded(monkeypatch):
+    system = LlmFullSystem(SystemConfig(params={"backend": "stub", "max_entities": 1}))
+    observed = {}
+
+    def complete(*args, **kwargs):
+        observed.update(kwargs)
+        return _stub_completion([
+            {"span": name, "category": "DIR_NAME", "action": "SUPPRESS", "replacement": ""}
+            for name in ("Alice", "Bob")
+        ])
+
+    monkeypatch.setattr(system._client, "complete", complete)
+    result = system.run(_doc("Alice et Bob"))
+    assert observed["max_tokens"] == 4096
+    assert result.status == "partial"
+    assert any("max_entities=1" in error for error in result.errors)
+    assert "Alice" not in result.anonymized_text and "Bob" in result.anonymized_text
 
 
 def test_happy_path_suppress_and_generalize(monkeypatch: pytest.MonkeyPatch):

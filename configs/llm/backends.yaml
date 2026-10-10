@@ -56,6 +56,7 @@ backends:
     model: "google/gemma-4-26b-a4b-it:free"
     api_key_env: "OPENROUTER_API_KEY"
     timeout_s: 180
+    max_retries: 5
     max_concurrency: 2          # palier gratuit : débit partagé, 429 fréquents
     temperature: 0.0
     extra_body:
@@ -67,6 +68,7 @@ backends:
     model: "nvidia/nemotron-3-super-120b-a12b:free"
     api_key_env: "OPENROUTER_API_KEY"
     timeout_s: 300
+    max_retries: 5
     max_concurrency: 2
     temperature: 0.0
     extra_body:
@@ -80,11 +82,13 @@ backends:
     model: "liquid/lfm-2.5-2.6b:free"
     api_key_env: "OPENROUTER_API_KEY"
     timeout_s: 180
+    max_retries: 5
     max_concurrency: 1
     temperature: 0.0
     extra_body:
       provider:
         max_price: {prompt: 0, completion: 0}
+
 
   # --- Sans LLM : CI, tests, pipeline dégradé ----------------------------- #
   # Permet de faire tourner le pipeline de bout en bout sans GPU (SPEC-10 §6.4).
