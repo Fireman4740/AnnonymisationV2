@@ -350,19 +350,19 @@ def test_point_estimates_fall_inside_their_intervals() -> None:
     ]
     card = _build(documents, gold, predictions)
     for block, name in (("diagnostic", "span_recall"), ("diagnostic", "ER_di"),
-                        ("primary", "cpr"), ("primary", "ipr")):
+                        ("diagnostic", "literal_cpr"), ("diagnostic", "literal_ipr")):
         metric = card[block][name]
         ci = metric["details"]["ci95"]
         assert ci["low"] <= metric["value"] <= ci["high"], name
         assert ci["seed"] and ci["replicates"] == 1000
-    assert card["primary"]["cpr"]["details"]["ci95"]["unit"] == "subject"
+    assert card["diagnostic"]["literal_cpr"]["details"]["ci95"]["unit"] == "subject"
 
 
-def test_official_request_with_proxy_primary_degrades_card_instead_of_crashing():
-    """Un run complet sans erreur d'un protocole OFFICIAL doit rester scorable.
+def test_official_run_without_spia_attack_is_scorable_and_never_substitutes_literal_cpr():
+    """Un run OFFICIAL complet reste scorable ; CPR/IPR viennent du seul protocole SPIA.
 
-    CPR/IPR sont PROXY tant que l'adversaire est littéral : la scorecard ne
-    peut pas se dire OFFICIAL, elle est dégradée en PROXY avec sa raison.
+    Sans attaque SPIA figée, ils sont UNAVAILABLE avec leur raison ; la
+    présence littérale reste publiée sous un nom explicite, jamais à leur place.
     """
     doc = _document("d", "Alice")
     gold = _annotation("d", 0, 5, span_text="Alice")
@@ -374,7 +374,9 @@ def test_official_request_with_proxy_primary_degrades_card_instead_of_crashing()
         documents_by_doc={"d": doc}, reproducibility=LOCK, system=_SYSTEM,
         requested_status=MetricStatus.OFFICIAL,
     )
-    assert card["status"] == "proxy"
-    assert card["primary"]["cpr"]["status"] == "proxy"
-    assert "cpr" in card["status_reason"] and "ipr" in card["status_reason"]
+    assert card["status"] == "official"
+    for name in ("cpr", "ipr"):
+        assert card["primary"][name]["value"] is None
+        assert f"literal_{name}" in card["primary"][name]["details"]["reason"]
+    assert card["diagnostic"]["literal_cpr"]["value"] == 1.0
     validate_scorecard(card)

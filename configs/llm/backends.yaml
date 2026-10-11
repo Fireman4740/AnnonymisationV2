@@ -118,6 +118,7 @@ roles:
   # Référence EXTERNE gratuite : Gemma a renvoyé 429 sur le pool partagé.
   # Ce choix explicite ne change pas la contrainte des modèles LOCAUX évalués.
   attacker_ratbench: openrouter_nemotron_super
+  attacker_spia: openrouter_nemotron_super
   utility_judge: openrouter_nemotron_super
   paraphrase: qwen_local
 

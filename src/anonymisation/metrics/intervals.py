@@ -122,8 +122,8 @@ def scorecard_intervals(
         "rouge_l": interval(list(rouge_scores), mean, "document"),
         "gold_leak_rate": interval(gold_leaks, ratio_of_sums(0, 1), "document"),
         "direct_leak_rate": interval(direct_leaks, ratio_of_sums(0, 1), "document"),
-        "cpr": interval(subjects, complement_ratio_of_sums(0, 1), "subject"),
-        "ipr": interval(ipr_units, mean, "subject"),
+        "literal_cpr": interval(subjects, complement_ratio_of_sums(0, 1), "subject"),
+        "literal_ipr": interval(ipr_units, mean, "subject"),
     }
     result["entity_recall_direct"] = result["ER_di"]
     result["entity_recall_quasi"] = result["ER_qi"]

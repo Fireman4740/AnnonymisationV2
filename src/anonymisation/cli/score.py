@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from anonymisation.metrics.contracts import MetricStatus
+from anonymisation.metrics.contracts import MetricDirection, MetricStatus, MetricValue
 from anonymisation.metrics.downstream import evaluate_downstream_task
 from anonymisation.metrics.scorecard import (
     ScorecardError,
@@ -282,6 +282,106 @@ def _load_frozen(
     return rows, lock
 
 
+SPIA_ATTACK_LOCK_NAME = "spia_attack.lock.json"
+SPIA_ATTACKS_NAME = "spia_attacks.jsonl"
+
+
+def _load_spia_attack(
+    run_dir: Path, run_lock: Mapping[str, Any], predictions_sha256: str, *,
+    expected_doc_ids: set[str],
+) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    """Attaque SPIA figée, vérifiée contre ce run et ce gold source, ou ``None``."""
+    lock_path = run_dir / SPIA_ATTACK_LOCK_NAME
+    if not lock_path.is_file():
+        if (run_dir / SPIA_ATTACKS_NAME).is_file():
+            raise ScoreError(f"{run_dir / SPIA_ATTACKS_NAME} sans {SPIA_ATTACK_LOCK_NAME}")
+        return None
+    lock = _read_json(lock_path)
+    if (lock.get("protocol"), str(lock.get("protocol_version"))) != ("spia-original", "1"):
+        raise ScoreError(f"{lock_path} : protocole/version non pris en charge")
+    inputs = lock.get("inputs") or {}
+    if inputs.get("predictions.jsonl") != predictions_sha256:
+        raise ScoreError(f"{lock_path} : attaque menée sur d'autres prédictions — la relancer")
+    expected_gold = ((run_lock.get("data_version") or {}).get("source") or {}).get("fingerprint")
+    if not expected_gold or inputs.get("gold_source_fingerprint") != expected_gold:
+        raise ScoreError(f"{lock_path} : gold SPIA source divergent ou absent")
+    try:
+        verify_run_outputs(run_dir, lock.get("outputs"), (SPIA_ATTACKS_NAME,),
+                           context=f"{SPIA_ATTACK_LOCK_NAME} {run_dir}")
+    except DataIntegrityError as exc:
+        raise ScoreError(str(exc)) from exc
+    rows = [json.loads(line) for line in
+            (run_dir / SPIA_ATTACKS_NAME).read_text(encoding="utf-8").splitlines() if line.strip()]
+    ids = [row.get("doc_id") for row in rows]
+    if len(set(ids)) != len(ids) or set(ids) != expected_doc_ids:
+        raise ScoreError(f"{SPIA_ATTACKS_NAME} : couverture incomplète, étrangère ou dupliquée")
+    errors = sum(row.get("status") != "ok" for row in rows)
+    rate = errors / len(rows) if rows else 1.0
+    if (lock.get("documents") != len(rows) or lock.get("documents_error") != errors
+            or lock.get("error_rate") != rate):
+        raise ScoreError(f"{lock_path} : comptabilité divergente des sorties figées")
+    return rows, lock
+
+
+def _tab_official(
+    lock: Mapping[str, Any],
+    split: str,
+    predictions: list[dict[str, Any]],
+    documents: Mapping[str, Document],
+    capabilities: frozenset[str],
+    protocol: str,
+    protocol_version: str,
+) -> dict[str, Any]:
+    """Mesures de l'évaluateur TAB ORIGINAL, depuis le gold source verrouillé (H-8).
+
+    Le gold source est relu depuis le répertoire figé par l'ingestion et son
+    empreinte revérifiée : un fichier modifié depuis le run fait échouer le
+    score plutôt que de mesurer contre une autre vérité terrain.
+    """
+    from anonymisation.datasets._local import fingerprint
+    from anonymisation.datasets.tab import TabAdapter
+    from anonymisation.metrics.tab_official import evaluate_tab, masked_spans
+
+    def unavailable(reason: str) -> dict[str, Any]:
+        return MetricValue(
+            name="tab_official", value=None, protocol=protocol,
+            protocol_version=protocol_version, status=MetricStatus.UNAVAILABLE,
+            direction=MetricDirection.MAXIMIZE, details={"reason": reason},
+        ).to_dict()
+
+    if "decisions" not in capabilities:
+        return unavailable("système sans capacité 'decisions' : aucun masque appliqué à évaluer")
+    source = (lock.get("data_version") or {}).get("source") or {}
+    files = [Path(p) for p in source.get("files") or ()]
+    if not files or any(not p.is_file() for p in files):
+        raise ScoreError(
+            "TAB : fichiers source du lock d'ingestion introuvables — l'évaluateur officiel "
+            "lit le gold original ; réacquérir TAB à l'emplacement verrouillé."
+        )
+    if fingerprint(files) != source.get("fingerprint"):
+        raise ScoreError("TAB : sources modifiées depuis l'ingestion (empreinte divergente)")
+    split_file = next((p for p in files if p.name == TabAdapter._SPLIT_FILES.get(split)), None)
+    if split_file is None:
+        raise ScoreError(f"TAB : aucun fichier source verrouillé pour le split {split!r}")
+    records = json.loads(split_file.read_text(encoding="utf-8"))
+    masks = {}
+    for record in predictions:
+        if record.get("status") not in ("ok", "partial"):
+            continue
+        document = documents[str(record["doc_id"])]
+        masks[str(document.meta["source_doc_id"])] = masked_spans(record.get("decisions") or ())
+    if not masks:
+        return unavailable("aucun document scoré")
+    result = evaluate_tab(records, masks)
+    measures = result["measures"]
+    return MetricValue(
+        name="tab_official", value=measures["recall_direct_entities"], protocol=protocol,
+        protocol_version=protocol_version, status=MetricStatus.DIAGNOSTIC,
+        direction=MetricDirection.MAXIMIZE,
+        details={**result, "value_is": "recall_direct_entities (ER_di officiel)"},
+    ).to_dict()
+
+
 def cmd_score(run: str | Path, protocol: str) -> int:
     """Calcule ``scorecard.json`` depuis un run figé, sans modèle.
 
@@ -392,6 +492,16 @@ def cmd_score(run: str | Path, protocol: str) -> int:
                                    JUDGE_LOCK_NAME, JUDGMENTS_NAME,
                                    expected_doc_ids=expected_doc_ids,
                                    expected_protocol="mean-utility-spia"),
+            spia_attack=_load_spia_attack(run_dir, lock, inputs["run"]["predictions.jsonl"],
+                                          expected_doc_ids=expected_doc_ids),
+            external_diagnostics=(
+                {"tab_official": _tab_official(
+                    lock, split, predictions, documents,
+                    frozenset(str(c) for c in system_block.get("capabilities") or ()),
+                    protocol_name, protocol_version,
+                )}
+                if dataset == "tab" else None
+            ),
         )
     except (TypeError, ValueError) as exc:
         raise ScoreError(f"Scorecard impossible à calculer : {exc}") from exc

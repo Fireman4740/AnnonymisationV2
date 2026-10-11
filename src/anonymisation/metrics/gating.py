@@ -37,6 +37,7 @@ METRIC_CAPABILITY_GATE: Final[Mapping[str, frozenset[str]]] = {
     "span_schemas": frozenset({CAP_SPANS}),
     # Couverture des masques : lit les décisions appliquées.
     "mask_coverage": frozenset({CAP_DECISIONS}),
+    "tab_official": frozenset({CAP_DECISIONS}),
     "macro_f1": frozenset({CAP_SPANS}),
     "weighted_token_precision": frozenset({CAP_SPANS}),
     "ER_di": frozenset({CAP_SPANS}),
@@ -48,6 +49,8 @@ METRIC_CAPABILITY_GATE: Final[Mapping[str, frozenset[str]]] = {
     # pleinement évaluable sur la protection et l'utilité.
     "cpr": frozenset(),
     "ipr": frozenset(),
+    "literal_cpr": frozenset(),
+    "literal_ipr": frozenset(),
     "trir": frozenset(),
     "rouge_l": frozenset(),
     "mean_utility": frozenset(),

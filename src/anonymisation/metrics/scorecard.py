@@ -31,6 +31,7 @@ from anonymisation.metrics.protection import (
     subject_outcomes_from_run,
 )
 from anonymisation.metrics.reidentification import reid_success_metric
+from anonymisation.metrics.spia_protection import spia_protection
 from anonymisation.metrics.spans import weighted_token_precision
 from anonymisation.metrics.tria import (
     TRIRUnavailable,
@@ -253,6 +254,8 @@ def build_scorecard(
     downstream_results: Sequence[Any] | None = None,
     attack: tuple[Sequence[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     judgments: tuple[Sequence[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    external_diagnostics: Mapping[str, Mapping[str, Any]] | None = None,
+    spia_attack: tuple[Sequence[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Agrège un run figé en scorecard SPEC-07 §10.
 
@@ -563,7 +566,23 @@ def build_scorecard(
             },
         ),
         "counts": overall,
+        # Adversaire LITTÉRAL : présence d'une surface gold. Diagnostic de
+        # fuite textuelle, jamais substitut des CPR/IPR du protocole SPIA.
+        "literal_cpr": _gate(
+            "literal_cpr", cpr, status=diagnostic_status,
+            direction=MetricDirection.MAXIMIZE, details=protection_details,
+        ),
+        "literal_ipr": _gate(
+            "literal_ipr", ipr, status=diagnostic_status,
+            direction=MetricDirection.MAXIMIZE, details=protection_details,
+        ),
     }
+    # Évaluateurs ORIGINAUX propres à un corpus (TAB), calculés par `score`
+    # qui seul lit les fichiers source : publiés tels quels, sous leur nom.
+    for name, metric in (external_diagnostics or {}).items():
+        if name in diagnostic:
+            raise ScorecardError(f"diagnostic externe {name!r} en conflit avec une métrique interne")
+        diagnostic[name] = dict(metric)
     diagnostic = apply_intervals(diagnostic, intervals)
 
     def grouped(group_getter: Any) -> dict[str, dict[str, Any]]:
@@ -629,18 +648,28 @@ def build_scorecard(
     macro_f1 = sum(category_f1) / len(category_f1) if category_f1 else None
 
     blockers = publication_blockers(accounting, reproducibility)
-    for label, frozen in (("attaque", attack), ("juge", judgments)):
+    for label, frozen in (("attaque", attack), ("attaque SPIA", spia_attack), ("juge", judgments)):
         if frozen is not None and not frozen[1].get("publishable"):
             blockers.append(f"{label} : plus de 5 % de documents en erreur (C4)")
+    if spia_attack is not None:
+        spia_cpr, spia_ipr = spia_protection(*spia_attack)
+    else:
+        spia_cpr, spia_ipr = (
+            _metric_dict(
+                name, None, protocol=protocol, protocol_version=protocol_version,
+                status=MetricStatus.UNAVAILABLE, direction=MetricDirection.MAXIMIZE,
+                details={"reason": (
+                    "aucune attaque SPIA figée pour ce run (`anonv2 attack --attacker spia`, "
+                    "corpus SPIA) ; l'adversaire littéral est publié sous "
+                    f"diagnostic.literal_{name}, non substituable"
+                )},
+            )
+            for name in ("cpr", "ipr")
+        )
     primary = apply_intervals({
-        "cpr": _gate(
-            "cpr", cpr, status=MetricStatus.PROXY,
-            direction=MetricDirection.MAXIMIZE, details=protection_details,
-        ),
-        "ipr": _gate(
-            "ipr", ipr, status=MetricStatus.PROXY,
-            direction=MetricDirection.MAXIMIZE, details=protection_details,
-        ),
+        # CPR/IPR : réservés au protocole d'inférence SPIA original (H-2).
+        "cpr": spia_cpr,
+        "ipr": spia_ipr,
         "trir": _gate(
             "trir",
             trir_result.trir if trir_result is not None else None,

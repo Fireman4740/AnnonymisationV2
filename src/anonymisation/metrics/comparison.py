@@ -40,6 +40,8 @@ _CHECKED_METRICS: tuple[tuple[str, str], ...] = (
     ("primary", "utility_retention"),
     ("primary", "reid_success_rate"),
     ("diagnostic", "mean_utility"),
+    ("diagnostic", "literal_cpr"),
+    ("diagnostic", "literal_ipr"),
     ("diagnostic", "ER_di"),
     ("diagnostic", "ER_qi"),
     ("diagnostic", "gold_leak_rate"),

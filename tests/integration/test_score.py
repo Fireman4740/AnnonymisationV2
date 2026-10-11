@@ -200,7 +200,10 @@ def test_official_protocol_on_sampled_inputs_stays_sampled(score_fixture: Path, 
     score.cmd_score(str(score_fixture), "mini-v1")
     card = json.loads((score_fixture / "scorecard.json").read_text())
     assert card["status"] == "sampled"
-    assert card["primary"]["cpr"]["status"] == "proxy"
+    # Sans attaque SPIA figée, CPR/IPR principaux sont indisponibles ; la
+    # présence littérale reste un diagnostic distinct.
+    assert card["primary"]["cpr"]["status"] == "unavailable"
+    assert card["diagnostic"]["literal_cpr"]["status"] == "diagnostic"
 
 
 def test_score_is_offline_and_never_imports_detector() -> None:

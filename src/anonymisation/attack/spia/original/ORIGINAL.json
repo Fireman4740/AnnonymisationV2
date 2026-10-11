@@ -1,0 +1,38 @@
+{
+  "commit": "3fa78a1b3c75788c6294f40024fc79e1ef42923f",
+  "license": "MIT",
+  "replaced": {
+    "src/llm/client.py": {
+      "original_sha256": "0727781b17fa0fc13ad8258d083fda2b8f617412425c46aced1e949c858a71bb",
+      "reason": "transport LLM remplac\u00e9 par le client du projet ; fonctions de prompt recopi\u00e9es mot pour mot"
+    }
+  },
+  "repo": "maisonOP/spia",
+  "verbatim_files": {
+    "LICENSE": "d98beb02bf3492f1e93ea4a3b136c08a8bc3ba75f58a472bd51a04535a4d83ee",
+    "config/__init__.py": "9d4948f4f94e7989c834ca146faf3be8821008225b938e51b57cbf534aeecdcb",
+    "config/prompts/__init__.py": "3f8ce08df4bff1e2f6a17febd3da0aecc0b36644f996c43cbb60a5e6aac5585b",
+    "config/prompts/align_subjects.py": "085334f36f8ae1615335e7121c232a949bb22d13d95057b83fe91ca7588adc70",
+    "config/prompts/analysis_subjects.py": "8eb02a9606e47d345dfed2b2b6fe662bf9299d6fad1be1c5d3b2006d6fa54daf",
+    "config/prompts/annotate_pii.py": "37323a373b8df70164878914ee8868c28608ec8fbcb757b10b5d41f67a09758c",
+    "config/prompts/eval_annotation_agreement.py": "9bc903dfd58a8e582cae7a182219989d76dcf35f2b65dcb248cf80d0c9a371cf",
+    "src/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/common_utils.py": "d9aeaebe574601195e6347dca1f247892004cc37380ddd810ad09f036be3d4da",
+    "src/evaluate/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/evaluate/calculate_inference_accuracy.py": "f2aa943066e4cfd3fd9eb237d2fca2b651b33d60aab5a3c721a8dc3c90b988cf",
+    "src/evaluate/eval_utils.py": "9950c02c6f54166d69b9512ba16ef4c54e69fa3ea3f506c9aad176f5d19e017b",
+    "src/evaluate/gt_vs_llms/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/evaluate/gt_vs_llms/align_subject_based_ground_truth.py": "e3aebd5b812847ec72784a5405c465ed9f6b69d5afdb70127d17c699bcc31590",
+    "src/evaluate/gt_vs_llms/check_human_labels_gt.py": "95bdd63b1540116aa5bf4cdf984d152da897a1edb9638365f5c52f712b11ceed",
+    "src/evaluate/privacy/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/evaluate/privacy/calculate_ipr_cpr.py": "78d6cd932bbfc8f58f1349da9c1e73f35158301bcda656705fd9a2fd9e63508f",
+    "src/inference/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/inference/infer_spia.py": "e6959b3e031904df44ed15d2fce66a7d18015029a513972dbbcbd7d49f6c9e83",
+    "src/llm/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/llm/parser/__init__.py": "0faccd0e372c99f982c8555e02449f8c261ebb4a8df169bd03266b40731bd5f7",
+    "src/llm/parser/annotation_agreement_parser.py": "2df6bd1cbd97f31020ac7f2a48e8b9d84c1776f40ba2d9aa37fdcdd26b66e67d",
+    "src/llm/parser/subject_alignment_parser.py": "8f0d70f62278fe83772ba763da0dfbad2a5f325e1410599d7acb0735ad28905f",
+    "src/llm/parser/subject_analysis_parser.py": "7d5dd6b3b46e386813bbccf4b0b2482d7288c21ed6ed21829060aeebde8e2b7c",
+    "src/llm/parser/subject_profiling_parser.py": "010769d418ae98a9c8800dad125b54b8788c628a4ef88e2e0f0254f06b4f1d42"
+  }
+}

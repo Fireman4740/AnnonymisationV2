@@ -640,12 +640,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     attack_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
     attack_p.add_argument(
-        "--attacker", required=True, choices=("ratbench",),
+        "--attacker", required=True, choices=("ratbench", "spia"),
         help="Protocole d'attaque (ratbench : Krčo et al. 2026).",
     )
     attack_p.add_argument(
         "--backend", default=None,
-        help="Backend LLM de configs/llm/backends.yaml (défaut : rôle attacker_ratbench).",
+        help="Backend LLM de configs/llm/backends.yaml (défaut : rôle attacker_<attaquant>).",
     )
     attack_p.add_argument("--workers", type=int, default=None, help="Appels LLM parallèles.")
 

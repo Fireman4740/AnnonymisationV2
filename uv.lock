@@ -242,6 +242,15 @@ models = [
     { name = "torch" },
     { name = "transformers" },
 ]
+tab-eval = [
+    { name = "en-core-web-md" },
+    { name = "intervaltree" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pandas" },
+    { name = "spacy" },
+    { name = "tqdm" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -249,17 +258,21 @@ requires-dist = [
     { name = "bert-score", marker = "extra == 'metrics-text'", specifier = ">=0.3.13" },
     { name = "correctmatch", marker = "extra == 'attack'", specifier = ">=1.4.1" },
     { name = "datasets", marker = "extra == 'download'", specifier = ">=2.19" },
+    { name = "en-core-web-md", marker = "extra == 'tab-eval'", url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl" },
     { name = "gliner", marker = "extra == 'models'", specifier = ">=0.2" },
     { name = "huggingface-hub", marker = "extra == 'download'", specifier = ">=0.23" },
+    { name = "intervaltree", marker = "extra == 'tab-eval'", specifier = ">=3.1" },
     { name = "lxml", marker = "extra == 'download'", specifier = ">=5.2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "nervaluate", specifier = "==1.2.1" },
     { name = "numpy", marker = "extra == 'datasets'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'metrics'", specifier = ">=1.26" },
+    { name = "numpy", marker = "extra == 'tab-eval'", specifier = ">=1.26" },
     { name = "openai", marker = "extra == 'attack'", specifier = ">=1.0" },
     { name = "openai", marker = "extra == 'llm'", specifier = ">=1.0" },
     { name = "pandas", marker = "extra == 'attack'", specifier = ">=2.2" },
     { name = "pandas", marker = "extra == 'datasets'", specifier = ">=2.2" },
+    { name = "pandas", marker = "extra == 'tab-eval'", specifier = ">=2.2" },
     { name = "presidio-analyzer", marker = "extra == 'models'", specifier = ">=2.2" },
     { name = "pyarrow", marker = "extra == 'attack'", specifier = ">=15.0" },
     { name = "pyarrow", marker = "extra == 'datasets'", specifier = ">=15.0" },
@@ -273,10 +286,12 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'metrics-text'", specifier = ">=1.5" },
     { name = "scipy", marker = "extra == 'metrics'", specifier = ">=1.13" },
     { name = "spacy", marker = "extra == 'models'", specifier = ">=3.7" },
+    { name = "spacy", marker = "extra == 'tab-eval'", specifier = ">=3.8,<3.9" },
     { name = "torch", marker = "extra == 'models'", specifier = ">=2.3" },
+    { name = "tqdm", marker = "extra == 'tab-eval'", specifier = ">=4.66" },
     { name = "transformers", marker = "extra == 'models'", specifier = ">=4.41" },
 ]
-provides-extras = ["datasets", "download", "models", "metrics", "metrics-text", "attack", "llm", "llm-anthropic", "dev"]
+provides-extras = ["datasets", "download", "models", "metrics", "metrics-text", "attack", "tab-eval", "llm", "llm-anthropic", "dev"]
 
 [[package]]
 name = "anthropic"
@@ -1065,6 +1080,14 @@ wheels = [
 ]
 
 [[package]]
+name = "en-core-web-md"
+version = "3.8.0"
+source = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl" }
+wheels = [
+    { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl", hash = "sha256:5e6329fe3fecedb1d1a02c3ea2172ee0fede6cea6e4aefb6a02d832dba78a310" },
+]
+
+[[package]]
 name = "filelock"
 version = "3.32.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1418,6 +1441,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
+]
+
+[[package]]
+name = "intervaltree"
+version = "3.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sortedcontainers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/53/c3/b2afa612aa0373f3e6bb190e6de35f293b307d1537f109e3e25dbfcdf212/intervaltree-3.2.1.tar.gz", hash = "sha256:f3f7e8baeb7dd75b9f7a6d33cf3ec10025984a8e66e3016d537e52130c73cfe2", size = 1231531, upload-time = "2025-12-24T04:25:06.773Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/7f/8a80a1c7c2ed05822b5a2b312d2995f30c533641f8198366ba2e26a7bb03/intervaltree-3.2.1-py2.py3-none-any.whl", hash = "sha256:a8a8381bbd35d48ceebee932c77ffc988492d22fb1d27d0ba1d74a7694eb8f0b", size = 25929, upload-time = "2025-12-24T04:25:05.298Z" },
 ]
 
 [[package]]
@@ -4098,6 +4133,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a2/87/a6771e1546d97e7e041b6ae58d80074f81b7d5121207425c964ddf5cfdbd/sniffio-1.3.1.tar.gz", hash = "sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc", size = 20372, upload-time = "2024-02-25T23:20:04.057Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl", hash = "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2", size = 10235, upload-time = "2024-02-25T23:20:01.196Z" },
+]
+
+[[package]]
+name = "sortedcontainers"
+version = "2.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594, upload-time = "2021-05-16T22:03:42.897Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575, upload-time = "2021-05-16T22:03:41.177Z" },
 ]
 
 [[package]]

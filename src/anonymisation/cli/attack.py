@@ -18,21 +18,28 @@ PROCESSED_ROOT = REPO_ROOT / "data" / "processed"
 def cmd_attack(run: str, attacker: str, backend: str | None, workers: int | None) -> int:
     from anonymisation.attack.ratbench.risk import CorrectMatchUnavailable
     from anonymisation.attack.ratbench.runner import AttackError, run_attack
+    from anonymisation.attack.spia.runner import SpiaAttackError, run_spia_attack
+    from anonymisation.attack.spia.vendored import VendoredSpiaError
     from anonymisation.schema.integrity import DataIntegrityError
 
-    if attacker != "ratbench":  # argparse le garantit ; défense en profondeur
+    if attacker not in ("ratbench", "spia"):  # argparse le garantit ; défense en profondeur
         print(f"Erreur d'usage : attaquant inconnu {attacker!r}", file=sys.stderr)
         return 2
     try:
-        name = backend or load_backends_config().roles.get("attacker_ratbench")
+        role = f"attacker_{attacker}"
+        name = backend or load_backends_config().roles.get(role)
         if not name:
-            raise LlmConfigError("aucun backend : passer --backend ou définir le rôle attacker_ratbench")
-        lock = run_attack(Path(run), backend=name, processed_root=PROCESSED_ROOT, workers=workers)
-    except (AttackError, DataIntegrityError, CorrectMatchUnavailable, LlmConfigError) as exc:
+            raise LlmConfigError(f"aucun backend : passer --backend ou définir le rôle {role}")
+        if attacker == "ratbench":
+            lock = run_attack(Path(run), backend=name, processed_root=PROCESSED_ROOT, workers=workers)
+        else:
+            lock = run_spia_attack(Path(run), backend=name, workers=workers)
+    except (AttackError, SpiaAttackError, VendoredSpiaError, DataIntegrityError,
+            CorrectMatchUnavailable, LlmConfigError) as exc:
         print(f"Erreur d'usage : {exc}", file=sys.stderr)
         return 2
     print(
-        f"attack : {lock['documents']} document(s), {lock['documents_error']} en erreur "
+        f"attack {attacker} : {lock['documents']} document(s), {lock['documents_error']} en erreur "
         f"({lock['error_rate']:.1%}) — attaquant {lock['attacker']['model']}"
     )
     if not lock["publishable"]:

@@ -59,6 +59,17 @@ attack = [
   "pandas>=2.2",
   "pyarrow>=15.0",
 ]
+# Évaluateur ORIGINAL de TAB (metrics/vendor/tab_evaluation.py, recopié tel
+# quel) : spaCy + modèle en_core_web_md exigés par son GoldCorpus. Hors ligne
+# une fois installé ; requis par `score` sur le seul corpus `tab`.
+tab_eval = [
+  "spacy>=3.8,<3.9",
+  "en-core-web-md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl",
+  "intervaltree>=3.1",
+  "tqdm>=4.66",
+  "pandas>=2.2",
+  "numpy>=1.26",
+]
 # Pipelines d'anonymisation pilotés par un LLM (anonymisation.pipelines.llm_*).
 llm = [
   "openai>=1.0",
@@ -79,6 +90,11 @@ anonv2 = "anonymisation.cli.main:app"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# Le modèle spaCy de l'évaluateur TAB n'est publié que comme roue GitHub
+# (référence directe, figée par uv.lock avec son empreinte).
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/anonymisation"]
