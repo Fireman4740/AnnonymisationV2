@@ -116,23 +116,25 @@ def group_entities(
     return {key: tuple(values) for key, values in groups.items()}
 
 
-def _mention_matches(gold: SpanLike, pred: Sequence[SpanLike]) -> bool:
+def mention_covered(gold: SpanLike, pred: Sequence[SpanLike]) -> bool:
+    """La mention gold est-elle couverte par une prédiction qui la chevauche ?
+
+    Seuls les offsets prouvent la couverture. Un ``entity_id`` partagé ne
+    suffit pas : les identifiants gold et prédits viennent d'espaces de noms
+    différents, et une prédiction sans offsets ne masque aucun caractère.
+    Un ``entity_id`` égal dispense seulement de l'accord de catégorie.
+    """
     gold_entity = field_value(gold, "entity_id")
     for candidate in pred:
+        if not overlaps(gold, candidate):
+            continue
         candidate_entity = field_value(candidate, "entity_id")
-        if (
+        same_entity = (
             gold_entity is not None
             and candidate_entity is not None
             and str(gold_entity) == str(candidate_entity)
-        ):
-            if bounds(gold) is None or bounds(candidate) is None:
-                return True
-            if overlaps(gold, candidate):
-                return True
-            continue
-        if not same_category(gold, candidate):
-            continue
-        if overlaps(gold, candidate):
+        )
+        if same_entity or same_category(gold, candidate):
             return True
     return False
 
@@ -164,7 +166,7 @@ def entity_protection_counts(
         return 0, 0
     predictions = tuple(pred)
     protected = sum(
-        all(_mention_matches(mention, predictions) for mention in mentions)
+        all(mention_covered(mention, predictions) for mention in mentions)
         for mentions in gold_groups.values()
     )
     return protected, len(gold_groups)

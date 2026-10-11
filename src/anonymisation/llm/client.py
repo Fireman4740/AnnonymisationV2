@@ -30,6 +30,10 @@ from anonymisation.llm.config import (
 from anonymisation.schema.io import atomic_write
 
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[3]
+#: Fins de génération signalant une sortie coupée par le budget de tokens.
+#: OpenAI-compatible écrit ``length`` ; Anthropic écrit ``max_tokens``. N'en
+#: reconnaître qu'une laisserait passer un JSON tronqué comme réponse valide (C3).
+_TRUNCATION_REASONS: Final[frozenset[str]] = frozenset({"length", "max_tokens"})
 
 
 class LlmError(RuntimeError):
@@ -331,9 +335,9 @@ class LlmClient:
                 f"(finish_reason={finish_reason!r}). Ce n'est jamais interprété comme "
                 "« aucune entité trouvée » (SPEC-10 C3)."
             )
-        if finish_reason == "length":
+        if finish_reason in _TRUNCATION_REASONS:
             raise LlmEmptyResponseError(
-                f"Backend {backend.name!r} : réponse tronquée (finish_reason='length'). "
+                f"Backend {backend.name!r} : réponse tronquée (finish_reason={finish_reason!r}). "
                 "Augmenter max_tokens ou réduire le document plutôt que d'exploiter "
                 "une sortie incomplète."
             )

@@ -65,6 +65,30 @@ et corrigés :
 | **F26** — estimateur de risque naïf : k̂ ≈ 4e-27, risque = 1 partout (ECE 0,80, MALE-k 11,3 sur RAT-Bench) | ⬜ côté moteur de risque (L4), pas l'évaluation | `risk/` |
 | **F27** — pivots locaux échantillonnés à 32 docs (support, bitext, dbbio, ratbench) : aucune tâche aval informative ; pivot `tab` incohérent avec son lock | ⬜ réingestion complète requise (sources brutes absentes de ce poste) | `data/processed` |
 
+### Revue de code (2026-10-11) — branche de la campagne `b7fd0f9`
+
+Revue du scoring, de l'attaque RAT-Bench, du client LLM, de `predict` et de la
+campagne. Chaque défaut est couvert par un test qui échouait avant correctif.
+
+| Constat | État | Où |
+|---|---|---|
+| **F28** — un run complet et sans erreur d'un protocole `OFFICIAL` (SPIA, PANORAMA, hr_qi) faisait **échouer `score`** : CPR/IPR sont PROXY, et une carte OFFICIAL avec PROXY dans `primary` lève ; idem pour un risque naïf PROXY | ✅ carte dégradée en `proxy` avec `status_reason` ; `validate_scorecard` refuse toujours une carte OFFICIAL portant du PROXY | `metrics/scorecard.py` |
+| **F29** — sortie Anthropic tronquée (`stop_reason='max_tokens'`) acceptée comme valide : seul `length` (OpenAI) était reconnu (C3) | ✅ les deux fins tronquées lèvent, rien n'est mis en cache | `llm/client.py` |
+| **F30** — `compare` ne contrôlait ni R_succ ni l'identité de l'attaquant/du juge : deux anonymiseurs évalués par des attaquants différents (OpenRouter vs local) se comparaient sans erreur ; aucune vérification que la vérité terrain était la même | ✅ R_succ contrôlé et affiché ; signature attaquant/juge/modèle de risque ; empreintes `inputs.pivot` identiques exigées | `metrics/comparison.py` |
+| **F31** — `llm-full` localisait un span en sous-chaîne : « Ali » trouvé dans « Alice » → mauvais mot masqué, vraie mention en clair | ✅ occurrences en mots entiers seulement (même règle que la fuite gold) ; introuvable → écarté + avertissement | `pipelines/llm_full/system.py` |
+| **F32** — ER et mode `entity` : un `entity_id` égal valait couverture même sans chevauchement (prédiction ailleurs, ou sans offsets) ; espaces de noms gold/prédiction distincts | ✅ chevauchement d'offsets obligatoire ; l'`entity_id` dispense seulement de l'accord de catégorie | `metrics/entities.py`, `metrics/spans.py` |
+| **F33** — lock de `predict` : `models` et `prompts` écrits en dur à `[]` même pour `llm-full` ; valeurs des paramètres absentes (seule leur empreinte) | ✅ modèles déclarés, prompts avec empreinte du module, `params` effectifs, empreinte de `configs/llm/backends.yaml` pour un système non hors ligne | `cli/predict.py`, `systems/base.py` |
+| **F34** — `score` en échec laissait la scorecard précédente ; la campagne ignorait le code de sortie de `score` et du replay, et pouvait relire une carte périmée | ✅ scorecard retirée avant tout calcul ; `stage_failures` vérifie predict/attack/judge/score/replay | `cli/score.py`, `scripts/evaluation_campaign.py` |
+| **F35** — SPIA : certitude absente ou invalide remplacée par 1.0 (certaine) en silence | ✅ `IngestionError` nommant fichier, ligne et PII | `datasets/spia.py` |
+
+Écarts constatés mais **non modifiés** (décision protocolaire, pas un bug de
+code) : l'attaque RAT-Bench compte en erreur une réponse qui omet un attribut
+demandé, là où le code officiel le traite comme une devinette fausse (cause de
+l'erreur « MAR absent ») ; CorrectMatch ré-encode les codes PUMS en rangs
+denses et écarte aussi les estimations hors de [0, 1], là où l'officiel
+n'écarte que les NaN ; le mode `partial` exige encore une catégorie compatible,
+contrairement à nervaluate (H-8).
+
 ## 2. Constats vérifiés
 
 Gravité : **B** = bloquant (chiffre faux ou trompeur), **M** = majeur (non

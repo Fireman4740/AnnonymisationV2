@@ -280,11 +280,7 @@ def build_scorecard(
         else MetricStatus(str(requested_status).lower())
     )
     status = accounting.status_for(status)
-    if status is MetricStatus.OFFICIAL and any(_has_proxy_risk(record) for record in predictions):
-        raise ScorecardError(
-            "Scorecard OFFICIAL interdite : les prédictions portent un risque PROXY "
-            "(estimateur naïf)."
-        )
+    proxy_risk = any(_has_proxy_risk(record) for record in predictions)
 
 
     overall = _aggregate_counts(
@@ -590,6 +586,52 @@ def build_scorecard(
     for label, frozen in (("attaque", attack), ("juge", judgments)):
         if frozen is not None and not frozen[1].get("publishable"):
             blockers.append(f"{label} : plus de 5 % de documents en erreur (C4)")
+    primary = apply_intervals({
+        "cpr": _gate(
+            "cpr", cpr, status=MetricStatus.PROXY,
+            direction=MetricDirection.MAXIMIZE, details=protection_details,
+        ),
+        "ipr": _gate(
+            "ipr", ipr, status=MetricStatus.PROXY,
+            direction=MetricDirection.MAXIMIZE, details=protection_details,
+        ),
+        "trir": _gate(
+            "trir",
+            trir_result.trir if trir_result is not None else None,
+            status=MetricStatus.PROXY if trir_result is not None
+            else MetricStatus.UNAVAILABLE,
+            direction=MetricDirection.MINIMIZE, details=trir_details,
+        ),
+        # R_succ vient d'une attaque FIGÉE (`anonv2 attack`) : score ne
+        # lance jamais l'attaquant (C5), il relit ses sorties vérifiées.
+        "reid_success_rate": (
+            reid_success_metric(*attack) if attack is not None else _metric_dict(
+                "reid_success_rate", None, protocol=protocol,
+                protocol_version=protocol_version, status=MetricStatus.UNAVAILABLE,
+                direction=MetricDirection.MINIMIZE,
+                details={"reason": "aucune attaque figée pour ce run (lancer `anonv2 attack`)"},
+            )
+        ),
+        "utility_retention": _metric_dict(
+            "utility_retention",
+            retention_mean,
+            protocol=protocol,
+            protocol_version=protocol_version,
+            status=(
+                MetricStatus.DIAGNOSTIC if retention_mean is not None
+                else MetricStatus.UNAVAILABLE
+            ),
+            direction=MetricDirection.MAXIMIZE,
+            details=(
+                {"tasks": downstream_dicts}
+                if downstream_dicts
+                else {
+                    "reason": "aucune tâche downstream déclarée ; "
+                    "voir `rouge_l` pour un proxy d'utilité textuelle"
+                }
+            ),
+        ),
+    }, intervals)
     run_info = reproducibility.get("run") or {}
     requested_run_status = str(run_info.get("status", "complete")).lower()
     run_status = (
@@ -597,6 +639,26 @@ def build_scorecard(
         if requested_run_status == "sampled" or status is MetricStatus.SAMPLED
         else status.value
     )
+    # SPEC-07 §9 : une scorecard OFFICIAL ne peut pas porter de PROXY dans
+    # `primary`. CPR/IPR restent PROXY tant que l'adversaire est littéral : un
+    # run complet et sans erreur d'un protocole OFFICIAL (SPIA, PANORAMA) est
+    # donc dégradé en PROXY, avec sa raison — au lieu de faire échouer `score`.
+    proxy_primary = sorted(
+        name for name, metric in primary.items()
+        if isinstance(metric, Mapping)
+        and _status_label(metric.get("status")) == MetricStatus.PROXY.value
+    )
+    # Même règle pour un risque estimé par l'estimateur naïf (PROXY) dans les
+    # prédictions : il est signalé, jamais présenté comme officiel.
+    proxy_sources = []
+    if proxy_primary:
+        proxy_sources.append(f"métriques principales approchées ({', '.join(proxy_primary)})")
+    if proxy_risk:
+        proxy_sources.append("risque PROXY dans les prédictions (estimateur naïf)")
+    status_reason = None
+    if run_status == MetricStatus.OFFICIAL.value and proxy_sources:
+        run_status = MetricStatus.PROXY.value
+        status_reason = "statut OFFICIAL demandé, dégradé en PROXY : " + " ; ".join(proxy_sources)
     scorecard = {
         "run_id": run_id,
         "schema_version": SCORECARD_SCHEMA_VERSION,
@@ -613,6 +675,7 @@ def build_scorecard(
         "protocol": protocol,
         "protocol_version": protocol_version,
         "status": run_status,
+        **({"status_reason": status_reason} if status_reason else {}),
         # C-5 règle 5 : la publiabilité dépend du seuil de 5 % d'erreur. Le
         # statut des métriques (dégradé en SAMPLED dès la première erreur, C-5
         # règle 4) est une information distincte, portée par ``status``.
@@ -622,52 +685,7 @@ def build_scorecard(
         "accounting": accounting.to_dict(),
         # SPEC-07 v2.0 : CPR et IPR sont les métriques principales, devant
         # R_succ. Elles sortent en PROXY tant que l'adversaire est littéral.
-        "primary": apply_intervals({
-            "cpr": _gate(
-                "cpr", cpr, status=MetricStatus.PROXY,
-                direction=MetricDirection.MAXIMIZE, details=protection_details,
-            ),
-            "ipr": _gate(
-                "ipr", ipr, status=MetricStatus.PROXY,
-                direction=MetricDirection.MAXIMIZE, details=protection_details,
-            ),
-            "trir": _gate(
-                "trir",
-                trir_result.trir if trir_result is not None else None,
-                status=MetricStatus.PROXY if trir_result is not None
-                else MetricStatus.UNAVAILABLE,
-                direction=MetricDirection.MINIMIZE, details=trir_details,
-            ),
-            # R_succ vient d'une attaque FIGÉE (`anonv2 attack`) : score ne
-            # lance jamais l'attaquant (C5), il relit ses sorties vérifiées.
-            "reid_success_rate": (
-                reid_success_metric(*attack) if attack is not None else _metric_dict(
-                    "reid_success_rate", None, protocol=protocol,
-                    protocol_version=protocol_version, status=MetricStatus.UNAVAILABLE,
-                    direction=MetricDirection.MINIMIZE,
-                    details={"reason": "aucune attaque figée pour ce run (lancer `anonv2 attack`)"},
-                )
-            ),
-            "utility_retention": _metric_dict(
-                "utility_retention",
-                retention_mean,
-                protocol=protocol,
-                protocol_version=protocol_version,
-                status=(
-                    MetricStatus.DIAGNOSTIC if retention_mean is not None
-                    else MetricStatus.UNAVAILABLE
-                ),
-                direction=MetricDirection.MAXIMIZE,
-                details=(
-                    {"tasks": downstream_dicts}
-                    if downstream_dicts
-                    else {
-                        "reason": "aucune tâche downstream déclarée ; "
-                        "voir `rouge_l` pour un proxy d'utilité textuelle"
-                    }
-                ),
-            ),
-        }, intervals),
+        "primary": primary,
         "downstream_tasks": downstream_dicts,
         "diagnostic": diagnostic,
         "macro_f1": _metric_dict(

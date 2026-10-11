@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from anonymisation.datasets.ingest import IngestionError
 from anonymisation.datasets.manifest import DatasetManifest
 from anonymisation.datasets.spia import SpiaAdapter
 from anonymisation.schema.models import Document
@@ -189,3 +192,21 @@ def test_release_empty_fields_aliases_and_inferred_values(tmp_path: Path) -> Non
     assert profiles[1].attributes["DIR_EMAIL"].value == "bob@example.com"
     assert validate_dataset("spia", list(adapter.iter_documents("test")), annotations,
                             profiles, expected_documents=2).errors() == ()
+
+
+@pytest.mark.parametrize("certainty", [None, "élevée", 7, -1])
+def test_invalid_or_missing_certainty_fails_loudly(tmp_path: Path, certainty: Any) -> None:
+    """La certitude SPIA (0-5) conditionne le filtrage du protocole : jamais 1.0 par défaut."""
+    _write_fixture(tmp_path)
+    path = tmp_path / "spia_tab_144.jsonl"
+    row = json.loads(path.read_text())
+    pii = row["subjects"][0]["PIIs"][0]
+    if certainty is None:
+        pii.pop("certainty")
+    else:
+        pii["certainty"] = certainty
+    path.write_text(json.dumps(row) + "\n")
+    adapter = SpiaAdapter(_manifest(), tmp_path)
+
+    with pytest.raises(IngestionError, match="certainty"):
+        list(adapter.iter_annotations("test"))

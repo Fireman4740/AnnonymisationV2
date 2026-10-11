@@ -259,6 +259,14 @@ class SystemBase(ABC):
             uses_policy=self.uses_policy,
         )
 
+    def effective_params(self) -> dict[str, Any]:
+        """Paramètres validés (défauts inclus), pour le lock du run.
+
+        ``params_digest`` distingue deux runs ; seules les valeurs permettent
+        de rejouer celui-ci (H-0).
+        """
+        return dict(self._params)
+
     def models(self) -> tuple[ModelRef, ...]:
         return ()
 

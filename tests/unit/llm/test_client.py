@@ -162,3 +162,17 @@ def test_output_budget_is_sent_and_separates_cached_responses(tmp_path, monkeypa
     assert client.complete("p", max_tokens=4096).cached
     assert not client.complete("p", max_tokens=8192).cached
     assert [request["max_tokens"] for request in requests] == [4096, 8192]
+
+
+def test_anthropic_max_tokens_stop_is_truncation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Anthropic signale la troncature par ``stop_reason='max_tokens'`` : même règle C3."""
+    backend = BackendSpec(name="claude", kind="anthropic", model="claude-test", timeout_s=1.0)
+    client = LlmClient(backend, cache_dir=tmp_path / "cache", cache_enabled=True)
+    monkeypatch.setattr(
+        client, "_call_anthropic",
+        lambda prompt, *, temperature, **_: ('{"entities": [', "max_tokens"),
+    )
+
+    with pytest.raises(LlmEmptyResponseError, match="tronquée"):
+        client.complete("bonjour")
+    assert not (tmp_path / "cache").exists()

@@ -252,3 +252,36 @@ def test_no_entities_found_is_a_valid_ok_result(monkeypatch: pytest.MonkeyPatch)
     assert result.status == "ok"
     assert result.annotations == ()
     assert result.anonymized_text == doc.text
+
+
+def test_span_is_located_on_word_boundaries_not_inside_another_word(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """« Ali » ne doit pas être masqué dans « Alice » pendant que la vraie mention fuit."""
+    system = _system()
+    doc = _doc("Alice a vu Ali hier.")
+    monkeypatch.setattr(system._client, "complete", lambda *a, **k: _stub_completion([
+        {"span": "Ali", "category": "DIR_NAME", "action": "SUPPRESS", "replacement": ""},
+    ]))
+
+    result = system.run(doc)
+
+    assert [(a.start, a.end) for a in result.annotations] == [(11, 14)]
+    assert result.anonymized_text == "Alice a vu [DIR_NAME_SUPPRIME] hier."
+
+
+def test_span_only_found_inside_a_word_is_dropped_with_warning(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    system = _system()
+    doc = _doc("Rendez-vous a Lille.")
+    monkeypatch.setattr(system._client, "complete", lambda *a, **k: _stub_completion([
+        {"span": "Lil", "category": "GEN_GEO", "action": "SUPPRESS", "replacement": ""},
+    ]))
+
+    result = system.run(doc)
+
+    assert result.annotations == ()
+    assert result.anonymized_text == doc.text
+    assert result.status == "partial"
+    assert any("introuvable" in warning for warning in result.errors)

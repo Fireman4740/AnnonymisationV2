@@ -38,12 +38,57 @@ _CHECKED_METRICS: tuple[tuple[str, str], ...] = (
     ("primary", "ipr"),
     ("primary", "trir"),
     ("primary", "utility_retention"),
+    ("primary", "reid_success_rate"),
     ("diagnostic", "mean_utility"),
     ("diagnostic", "ER_di"),
     ("diagnostic", "ER_qi"),
     ("diagnostic", "gold_leak_rate"),
     ("diagnostic", "direct_leak_rate"),
 )
+
+#: Configuration d'un modèle évaluateur (attaquant, juge) qui conditionne la
+#: valeur : deux anonymiseurs ne se comparent qu'à évaluateur identique (H-1).
+_EVALUATOR_FIELDS: tuple[str, ...] = ("backend", "model", "temperature")
+
+
+def _evaluator_signature(details: dict[str, Any]) -> tuple[Any, ...]:
+    """Attaquant, juge et modèle de risque déclarés par la métrique, s'il y en a."""
+    signature: list[Any] = []
+    for role in ("attacker", "judge"):
+        block = details.get(role)
+        if isinstance(block, dict):
+            signature.append((role, *(block.get(name) for name in _EVALUATOR_FIELDS)))
+    risk = details.get("risk")
+    if isinstance(risk, dict):
+        signature.append(("risk", *(risk.get(name) for name in
+                                    ("population_n", "threshold", "repeats", "population_sha256"))))
+    return tuple(signature)
+
+
+def _assert_same_ground_truth(scorecards: Sequence[dict[str, Any]]) -> None:
+    """Refuse des runs scorés contre des pivots gold différents.
+
+    Même dataset et même split ne suffisent pas : une ré-ingestion ou une autre
+    sélection de documents change la vérité terrain. Les empreintes du pivot
+    effectivement lu par ``score`` (``inputs.pivot``) doivent coïncider ; une
+    carte qui n'en porte pas (ancien scorer) n'est pas vérifiable ici.
+    """
+    pivots = [
+        (idx, (sc.get("inputs") or {}).get("pivot"))
+        for idx, sc in enumerate(scorecards, start=1)
+    ]
+    known = [(idx, pivot) for idx, pivot in pivots if isinstance(pivot, dict)]
+    if not known:
+        return
+    ref_idx, reference = known[0]
+    for idx, pivot in known[1:]:
+        if pivot != reference:
+            raise MetricComparisonError(
+                f"Scorecard #{idx} scorée sur une autre vérité terrain que la #{ref_idx} "
+                "(empreintes `inputs.pivot` différentes) : ré-ingestion ou sélection "
+                "de documents divergente — rescorer contre le même pivot."
+            )
+
 
 #: Statuts non publiables : la valeur existe, mais ne porte aucune garantie de
 #: comparabilité externe (cf. ``assert_comparable``).
@@ -101,6 +146,8 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                 f"Scorecard #{idx} protocole incompatible : attendu {ref_protocol}/{ref_proto_ver}, obtenu {proto}/{proto_ver}"
             )
 
+    _assert_same_ground_truth(scorecards)
+
     # Chaque métrique prend pour référence sa première valeur disponible,
     # même si la première scorecard ne peut pas la produire.
     for section, metric in _CHECKED_METRICS:
@@ -118,6 +165,7 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                 block.get("protocol_version", sc.get("protocol_version")),
                 details.get("definition_id"),
                 details.get("denominator"),
+                _evaluator_signature(details),
             )
             if reference is None:
                 reference = status, signature
@@ -192,8 +240,8 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         "comparabilité externe (SPEC-07). Elles ne se lisent qu'entre runs de "
         "même statut, tel que vérifié ci-dessus.",
         "",
-        "| Système | Version | CPR | IPR | TRIR | Utility Ret. | Mean Utility | ROUGE-L | ER_di | ER_qi | Gold Leak | Latence p50 (ms) | Erreur |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Système | Version | CPR | IPR | TRIR | R_succ | Utility Ret. | Mean Utility | ROUGE-L | ER_di | ER_qi | Gold Leak | Latence p50 (ms) | Erreur |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
 
     unavailable_provenance: list[str] = []
@@ -210,6 +258,7 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         cpr = _cell(primary.get("cpr"))
         ipr = _cell(primary.get("ipr"))
         trir = _cell(primary.get("trir"))
+        reid = _cell(primary.get("reid_success_rate"))
         util_ret = _cell(primary.get("utility_retention"))
         mean_util = _cell(diag.get("mean_utility"))
         rouge = _cell(diag.get("rouge_l"))
@@ -224,7 +273,7 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         err_str = f"{float(err):.1%}"
 
         lines.append(
-            f"| `{sys_id}` | `{sys_ver}` | {cpr} | {ipr} | {trir} | {util_ret} | {mean_util} | {rouge} | {er_di} | {er_qi} | {leak} | {lat_str} | {err_str} |"
+            f"| `{sys_id}` | `{sys_ver}` | {cpr} | {ipr} | {trir} | {reid} | {util_ret} | {mean_util} | {rouge} | {er_di} | {er_qi} | {leak} | {lat_str} | {err_str} |"
         )
 
         # Collecter les raisons des indisponibilités
@@ -232,6 +281,7 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
             ("CPR", primary.get("cpr")),
             ("IPR", primary.get("ipr")),
             ("TRIR", primary.get("trir")),
+            ("R_succ", primary.get("reid_success_rate")),
             ("Utility Retention", primary.get("utility_retention")),
             ("Mean Utility", diag.get("mean_utility")),
             ("ER_di", diag.get("ER_di")),

@@ -88,3 +88,18 @@ def test_dataset_budget_redistributes_a_short_split_without_duplicates():
 
 def test_dataset_budget_can_leave_a_split_empty_explicitly():
     assert campaign.split_budget({"empty": 0, "full": 20}, 20) == {"empty": 0, "full": 20}
+
+
+@pytest.mark.parametrize(("stages", "replay_identical", "expected"), [
+    # Score 1 = publication bloquée (C4, arbre modifié) : un résultat, pas une panne.
+    ({"predict": 0, "score": 1, "replay": 1}, True, []),
+    ({"predict": 0, "score": 0, "replay": 0}, True, []),
+    ({"predict": 1, "score": 0, "replay": 0}, True, ["predict"]),
+    ({"predict": 0, "attack": 1, "score": 0, "replay": 0}, True, ["attack"]),
+    # Score 2 = erreur d'usage : aucune scorecard de ce run n'existe.
+    ({"predict": 0, "score": 2, "replay": 2}, True, ["score", "replay"]),
+    ({"predict": 0, "score": 0, "replay": 1}, True, ["replay"]),
+    ({"predict": 0, "score": 0, "replay": 0}, False, ["replay"]),
+])
+def test_stage_failures_check_score_and_replay_exit_codes(stages, replay_identical, expected):
+    assert campaign.stage_failures(stages, replay_identical) == expected

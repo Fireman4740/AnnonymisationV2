@@ -77,3 +77,28 @@ def test_unlocalized_gold_is_excluded_from_entity_recall():
     assert entity_protection_counts([localized, unlocalized], [localized],
                                     identifier_type="direct") == (1, 1)
     assert entity_protection_counts([unlocalized], [], identifier_type="direct") == (0, 0)
+
+
+def test_shared_entity_id_never_replaces_offset_overlap() -> None:
+    """Un identifiant d'entité égal ne masque pas une mention située ailleurs.
+
+    Les ``entity_id`` gold et prédits viennent d'espaces de noms différents ;
+    seule l'intersection des offsets prouve qu'une mention est couverte.
+    """
+    gold = [_annotation(0, 4, entity_id="e1"), _annotation(10, 14, entity_id="e1")]
+    pred = [_annotation(0, 4, entity_id="e1")]
+
+    assert span_metrics(gold, pred, match="entity")["recall"] == 0.0
+    assert entity_recall(gold, pred, identifier_type=IdentifierType.DIRECT) == 0.0
+
+
+def test_prediction_without_offsets_protects_nothing() -> None:
+    gold = [_annotation(0, 4, entity_id="e1")]
+    unanchored = Annotation(
+        annotation_id="p-doc", doc_id="d1", start=None, end=None, span_text=None,
+        identifier_type=IdentifierType.DIRECT, qi_categories=("DIR_NAME",),
+        expression_mode=ExpressionMode.IMPLICIT, granularity=Granularity.EXACT,
+        stability=Stability.STABLE, entity_id="e1",
+    )
+
+    assert entity_recall(gold, [unanchored], identifier_type=IdentifierType.DIRECT) == 0.0

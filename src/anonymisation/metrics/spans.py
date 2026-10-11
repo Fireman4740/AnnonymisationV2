@@ -15,8 +15,8 @@ from anonymisation.metrics.entities import (
     SpanLike,
     bounds,
     categories,
-    field_value,
     group_entities,
+    mention_covered,
     overlaps,
     same_category,
 )
@@ -100,41 +100,18 @@ def _partial_counts(
 def _entity_counts(gold: Sequence[SpanLike], pred: Sequence[SpanLike]) -> tuple[int, int, int]:
     gold_groups = group_entities(gold)
     pred_groups = group_entities(pred)
-    matched_gold = 0
-    for mentions in gold_groups.values():
-        # Une entité est protégée uniquement si aucune de ses mentions ne fuit.
-        if all(
-            any(
-                same_category(gold_mention, prediction)
-                and (
-                    overlaps(gold_mention, prediction)
-                    or (
-                        field_value(gold_mention, "entity_id") is not None
-                        and field_value(gold_mention, "entity_id")
-                        == field_value(prediction, "entity_id")
-                    )
-                )
-                for prediction in pred
-            )
-            for gold_mention in mentions
-        ):
-            matched_gold += 1
-    matched_pred = 0
-    for mentions in pred_groups.values():
-        if any(
-            same_category(gold_mention, prediction)
-            and (
-                overlaps(gold_mention, prediction)
-                or (
-                    field_value(gold_mention, "entity_id") is not None
-                    and field_value(gold_mention, "entity_id")
-                    == field_value(prediction, "entity_id")
-                )
-            )
-            for gold_mention in gold
-            for prediction in mentions
-        ):
-            matched_pred += 1
+    # Une entité est protégée uniquement si aucune de ses mentions ne fuit. La
+    # correspondance exige un chevauchement d'offsets : un `entity_id` égal ne
+    # couvre pas une mention située ailleurs (espaces de noms gold/prédiction
+    # distincts).
+    matched_gold = sum(
+        all(mention_covered(gold_mention, pred) for gold_mention in mentions)
+        for mentions in gold_groups.values()
+    )
+    matched_pred = sum(
+        any(mention_covered(gold_mention, mentions) for gold_mention in gold)
+        for mentions in pred_groups.values()
+    )
     return matched_gold, len(pred_groups) - matched_pred, len(gold_groups) - matched_gold
 
 

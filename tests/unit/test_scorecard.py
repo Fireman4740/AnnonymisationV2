@@ -291,20 +291,23 @@ def test_naive_risk_cannot_produce_official_scorecard() -> None:
     prediction = _prediction("d1", [annotation])
     prediction["risk"] = {"risk": 0.5, "status": "PROXY"}
 
-    with pytest.raises(ScorecardError, match="OFFICIAL"):
-        build_scorecard(
-            run_id="run-naive",
-            dataset="mini",
-            split="train",
-            protocol="mini-diagnostic",
-            protocol_version="1",
-            predictions=[prediction],
-            gold_by_doc={"d1": (annotation,)},
-            documents_by_doc=documents,
-            reproducibility=LOCK,
-            system=_SYSTEM,
-            requested_status=MetricStatus.OFFICIAL,
-        )
+    # Dégradation explicite plutôt qu'un échec : le run reste scorable, mais
+    # la carte ne se présente jamais comme OFFICIAL.
+    card = build_scorecard(
+        run_id="run-naive",
+        dataset="mini",
+        split="train",
+        protocol="mini-diagnostic",
+        protocol_version="1",
+        predictions=[prediction],
+        gold_by_doc={"d1": (annotation,)},
+        documents_by_doc=documents,
+        reproducibility=LOCK,
+        system=_SYSTEM,
+        requested_status=MetricStatus.OFFICIAL,
+    )
+    assert card["status"] == MetricStatus.PROXY.value
+    assert "risque PROXY" in card["status_reason"]
 
 
 # --------------------------------------------------------------------------- #
@@ -353,3 +356,25 @@ def test_point_estimates_fall_inside_their_intervals() -> None:
         assert ci["low"] <= metric["value"] <= ci["high"], name
         assert ci["seed"] and ci["replicates"] == 1000
     assert card["primary"]["cpr"]["details"]["ci95"]["unit"] == "subject"
+
+
+def test_official_request_with_proxy_primary_degrades_card_instead_of_crashing():
+    """Un run complet sans erreur d'un protocole OFFICIAL doit rester scorable.
+
+    CPR/IPR sont PROXY tant que l'adversaire est littéral : la scorecard ne
+    peut pas se dire OFFICIAL, elle est dégradée en PROXY avec sa raison.
+    """
+    doc = _document("d", "Alice")
+    gold = _annotation("d", 0, 5, span_text="Alice")
+    row = _prediction("d", [gold])
+    row["anonymized_text"] = "[NOM]"
+    card = build_scorecard(
+        run_id="run-1", dataset="mini", split="train", protocol="mini-official",
+        protocol_version="1", predictions=[row], gold_by_doc={"d": (gold,)},
+        documents_by_doc={"d": doc}, reproducibility=LOCK, system=_SYSTEM,
+        requested_status=MetricStatus.OFFICIAL,
+    )
+    assert card["status"] == "proxy"
+    assert card["primary"]["cpr"]["status"] == "proxy"
+    assert "cpr" in card["status_reason"] and "ipr" in card["status_reason"]
+    validate_scorecard(card)

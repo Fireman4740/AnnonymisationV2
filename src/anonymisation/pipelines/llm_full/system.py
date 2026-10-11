@@ -10,7 +10,7 @@ Ce que le code déterministe garde pour lui, volontairement :
 
 - **la localisation des offsets** — on ne fait jamais confiance à un LLM pour
   compter des caractères ; le span renvoyé est recherché tel quel dans le
-  texte original (:func:`_locate_nth`), et une entité dont le span est
+  texte original, en mots entiers (:func:`_locate_nth`), et une entité dont le span est
   introuvable est écartée plutôt que d'inventer un offset ;
 - **la légalité de l'action** — validée contre ``ALLOWED_ACTIONS`` (SPEC-01
   §8, ``transform.decisions.check_action_allowed``) ; une action interdite ou
@@ -114,19 +114,39 @@ def _identifier_type_for(category: str) -> IdentifierType:
     )
 
 
+def _on_word_boundaries(text: str, start: int, end: int) -> bool:
+    """L'occurrence ``text[start:end]`` n'est-elle pas collée à un autre mot ?
+
+    Même règle que la mesure de fuite (``metrics.leakage.surface_present``) :
+    un bord alphanumérique du span ne doit pas toucher un caractère
+    alphanumérique du texte. Sans elle, « Ali » se localisait dans « Alice » :
+    le mauvais mot était masqué et la vraie mention restait en clair.
+    """
+    left_ok = not text[start].isalnum() or start == 0 or not text[start - 1].isalnum()
+    right_ok = not text[end - 1].isalnum() or end == len(text) or not text[end].isalnum()
+    return left_ok and right_ok
+
+
 def _locate_nth(text: str, span: str, occurrence_index: int) -> tuple[int, int] | None:
-    """Trouve la ``occurrence_index``-ième occurrence de ``span`` dans ``text``.
+    """Trouve la ``occurrence_index``-ième occurrence **en mots entiers** de ``span``.
 
     Recherche par sous-chaîne exacte, jamais par offset renvoyé par le LLM
-    (SPEC-10, invariant des offsets). Renvoie ``None`` si l'occurrence
-    demandée n'existe pas plutôt que de deviner.
+    (SPEC-10, invariant des offsets) ; les occurrences internes à un autre
+    mot sont ignorées. Renvoie ``None`` si l'occurrence demandée n'existe pas
+    plutôt que de deviner.
     """
-    start = -1
-    for _ in range(occurrence_index + 1):
+    if not span:
+        return None
+    found = 0
+    start = text.find(span)
+    while start != -1:
+        end = start + len(span)
+        if _on_word_boundaries(text, start, end):
+            if found == occurrence_index:
+                return start, end
+            found += 1
         start = text.find(span, start + 1)
-        if start == -1:
-            return None
-    return start, start + len(span)
+    return None
 
 
 def _resolve_action(

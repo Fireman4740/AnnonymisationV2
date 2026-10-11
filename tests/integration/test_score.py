@@ -371,3 +371,19 @@ def test_dirty_tree_blocks_publication(score_fixture: Path) -> None:
     card = json.loads((score_fixture / "scorecard.json").read_text(encoding="utf-8"))
     assert card["publishable"] is False
     assert any("non commitées" in reason for reason in card["publication_blockers"])
+
+
+def test_failed_rescore_never_leaves_a_previous_scorecard(score_fixture: Path) -> None:
+    """Une scorecard d'un score antérieur ne doit pas survivre à un score en échec.
+
+    Sinon un appelant (campagne, humain) relit l'ancienne carte comme si elle
+    décrivait les prédictions actuelles.
+    """
+    score.cmd_score(score_fixture, "mini-v1")
+    assert (score_fixture / "scorecard.json").is_file()
+    predictions = score_fixture / "predictions.jsonl"
+    predictions.write_text(predictions.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    with pytest.raises(score.ScoreError, match="modifié après"):
+        score.cmd_score(score_fixture, "mini-v1")
+    assert not (score_fixture / "scorecard.json").exists()

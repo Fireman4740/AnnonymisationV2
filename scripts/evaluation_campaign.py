@@ -184,6 +184,26 @@ def split_budget(available: dict[str, int], count: int) -> dict[str, int]:
     return quotas
 
 
+#: Codes de sortie de ``score`` : 0 publiable, 1 publication bloquée (C4,
+#: arbre modifié — la scorecard existe et est un résultat), 2 erreur d'usage.
+SCORE_RESULT_CODES = (0, 1)
+
+
+def stage_failures(stages: dict[str, int], replay_identical: bool) -> list[str]:
+    """Étapes en échec d'une entrée de campagne, dans l'ordre d'exécution.
+
+    ``score`` n'échoue qu'avec un code hors de :data:`SCORE_RESULT_CODES` ;
+    le replay doit rendre le même code et la même scorecard au bit près.
+    """
+    failed = [name for name in ("predict", "attack", "judge") if stages.get(name, 0)]
+    if stages.get("score") not in SCORE_RESULT_CODES:
+        failed.append("score")
+    replay = stages.get("replay")
+    if replay not in SCORE_RESULT_CODES or replay != stages.get("score") or not replay_identical:
+        failed.append("replay")
+    return failed
+
+
 def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
             official_rat_root: Path) -> dict[str, Any]:
     os.environ["ANONV2_V1_DATASETS"] = str(official_rat_root if key == "ratbench"
@@ -339,9 +359,11 @@ def run_campaign() -> int:
                         "primary", "diagnostic", "publishable", "publication_blockers")})
                     entry["scorecard_sha256"] = before
                     entry["prediction_counts"] = card["accounting"]
-                    if stages["predict"] or stages.get("attack", 0) or stages.get("judge", 0) or not entry["replay_identical"]:
-                        summary["failures"].append({"dataset": key, "split": split,
-                                                    "system": system, "stage": "pipeline", "stages": stages})
+                    failed = stage_failures(stages, entry["replay_identical"])
+                    if failed:
+                        summary["failures"].append({"dataset": key, "split": split, "system": system,
+                                                    "stage": "pipeline", "failed": failed,
+                                                    "stages": stages})
                 except (OSError, ValueError, KeyError, RuntimeError) as exc:
                     entry["error"] = f"{type(exc).__name__}: {exc}"
                     summary["failures"].append({"dataset": key, "split": split,

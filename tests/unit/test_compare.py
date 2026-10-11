@@ -148,3 +148,51 @@ def test_cmd_compare_and_index(tmp_path: Path):
     assert ret == 0
     assert out_md.is_file()
     assert "# Comparaison des systèmes" in out_md.read_text(encoding="utf-8")
+
+
+def _with_reid(card: dict, model: str) -> dict:
+    card["primary"]["reid_success_rate"] = {
+        "name": "reid_success_rate", "value": 0.4, "status": "diagnostic",
+        "protocol": "ratbench-staab-correctmatch", "protocol_version": "1",
+        "details": {
+            "attacker": {"backend": "or", "model": model, "temperature": 0.0},
+            "risk": {"population_n": 306169200, "threshold": 0.2, "repeats": 10},
+        },
+    }
+    return card
+
+
+def test_reidentification_rates_require_the_same_attacker():
+    """H-1 : comparer des anonymiseurs à attaquant identique."""
+    same = [_with_reid(_dummy_scorecard(s), "attacker-a") for s in ("a", "b")]
+    assert_comparable_across_systems(same)
+
+    mixed = [_with_reid(_dummy_scorecard("a"), "attacker-a"),
+             _with_reid(_dummy_scorecard("b"), "attacker-b")]
+    with pytest.raises(MetricComparisonError, match="reid_success_rate"):
+        assert_comparable_across_systems(mixed)
+
+
+def test_utility_judgments_require_the_same_judge():
+    cards = [_dummy_scorecard(s) for s in ("a", "b")]
+    for card, model in zip(cards, ("judge-a", "judge-b"), strict=True):
+        card["diagnostic"]["mean_utility"] = {
+            "name": "mean_utility", "value": 0.7, "status": "diagnostic",
+            "details": {"judge": {"backend": "or", "model": model, "temperature": 0.0}},
+        }
+    with pytest.raises(MetricComparisonError, match="mean_utility"):
+        assert_comparable_across_systems(cards)
+
+
+def test_runs_scored_on_different_documents_are_not_comparable():
+    first, second = _dummy_scorecard("a"), _dummy_scorecard("b")
+    first["inputs"] = {"pivot": {"test/documents.jsonl": "1" * 64}, "run": {}}
+    second["inputs"] = {"pivot": {"test/documents.jsonl": "2" * 64}, "run": {}}
+    with pytest.raises(MetricComparisonError, match="vérité terrain"):
+        assert_comparable_across_systems([first, second])
+
+
+def test_comparison_table_shows_reidentification_rate():
+    cards = [_with_reid(_dummy_scorecard(s), "attacker-a") for s in ("a", "b")]
+    report = render_comparison_markdown(cards)
+    assert "R_succ" in report and "0.4000" in report

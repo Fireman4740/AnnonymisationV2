@@ -234,13 +234,17 @@ class SpiaAdapter(DatasetAdapter):
                         search_from = end
                     certainty = pii.get("certainty")
                     hardness = pii.get("hardness")
-                    if certainty is None:
-                        confidence = 1.0
-                    else:
-                        try:
-                            confidence = min(1.0, max(0.0, float(certainty) / 5.0))
-                        except (TypeError, ValueError):
-                            confidence = 1.0
+                    # La certitude (0-5) pilote le filtrage `min_certainty` du
+                    # protocole SPIA : absente ou hors échelle, elle ne vaut
+                    # jamais « certaine » par défaut.
+                    if (isinstance(certainty, bool) or not isinstance(certainty, (int, float))
+                            or not 0 <= certainty <= 5):
+                        raise IngestionError(
+                            f"spia : {path}:{line_number} : doc_id={doc_id} : "
+                            f"PII {pii_index} : certainty={certainty!r} absente ou hors "
+                            "de [0, 5] — vérifier la release SPIA figée"
+                        )
+                    confidence = float(certainty) / 5.0
                     try:
                         yield Annotation(
                             annotation_id=f"{doc_id}:{subject_id}:pii:{pii_index}",

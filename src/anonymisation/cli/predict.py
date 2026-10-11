@@ -22,6 +22,7 @@ aucune date dans le lock.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 from collections import defaultdict
@@ -56,11 +57,13 @@ from anonymisation.schema.io import (
 from anonymisation.schema.models import Annotation, Document
 from anonymisation.schema.taxonomy import TAXONOMY_VERSION
 from anonymisation.systems import SystemConfig, resolve_system
+from anonymisation.systems.base import SystemBase
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[3]
 PROCESSED_ROOT = REPO_ROOT / "data" / "processed"
 DATASETS_CONFIG = REPO_ROOT / "configs" / "datasets"
 POLICY_FILE = REPO_ROOT / "configs" / "policy" / "policies.yaml"
+LLM_BACKENDS_FILE = REPO_ROOT / "configs" / "llm" / "backends.yaml"
 
 
 class PredictError(ValueError):
@@ -235,6 +238,44 @@ def _verify_pivot(key: str, split: str, data_version: Mapping[str, Any]) -> None
         raise PredictError(str(exc)) from exc
 
 
+def _prompt_digest(ref: str) -> dict[str, str]:
+    """Référence ``module:fonction`` d'un prompt + empreinte du module source.
+
+    Le nom seul ne fige rien : éditer le gabarit sous le même nom changerait
+    les sorties sans changer le lock. Un module introuvable lève plutôt que
+    d'écrire une empreinte vide.
+    """
+    module = ref.partition(":")[0]
+    spec = importlib.util.find_spec(module)
+    if spec is None or spec.origin is None or not Path(spec.origin).is_file():
+        raise PredictError(
+            f"Prompt {ref!r} déclaré par le système : module {module!r} introuvable, "
+            "empreinte impossible — corriger `prompts()` du système."
+        )
+    return {"ref": ref, "sha256": sha256_file(Path(spec.origin))}
+
+
+def _system_reproducibility(pipe: SystemBase) -> dict[str, Any]:
+    """Modèles, prompts et paramètres **effectifs** du système (SPEC-09 §5, H-0).
+
+    Un système appelant un LLM fige aussi l'empreinte de
+    ``configs/llm/backends.yaml`` : température, URL et routage du fournisseur
+    y vivent, et changent la sortie sans changer le nom du modèle.
+    """
+    descriptor = pipe.describe()
+    block: dict[str, Any] = {
+        "models": [model.to_dict() for model in descriptor.models],
+        "prompts": [_prompt_digest(ref) for ref in descriptor.prompts],
+        "params": pipe.effective_params(),
+    }
+    if not descriptor.offline_only:
+        block["llm_config"] = {
+            "source": str(LLM_BACKENDS_FILE.relative_to(REPO_ROOT)),
+            "sha256": sha256_file(LLM_BACKENDS_FILE),
+        }
+    return block
+
+
 def _build_lock(
     *,
     key: str,
@@ -245,6 +286,7 @@ def _build_lock(
     documents_total: int,
     counts: dict[str, int],
     data_version: Mapping[str, Any],
+    system_block: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Les sept éléments de reproductibilité (SPEC-09 §5), en ordre stable.
 
@@ -275,13 +317,17 @@ def _build_lock(
             "git_commit": _git_commit(REPO_ROOT),
             "git_dirty": _git_dirty(REPO_ROOT),
         },
-        # 4. Modèles utilisés + quantification — v1 : aucun (détecteur
-        #    déterministe, pas de NER/LLM).
-        "models": [],
+        # 4. Modèles utilisés + quantification, déclarés par le système
+        #    (vide pour un système déterministe).
+        "models": list(system_block["models"]),
+        # Valeurs effectives des paramètres (défauts inclus).
+        "params": dict(system_block["params"]),
+        **({"llm_config": dict(system_block["llm_config"])}
+           if "llm_config" in system_block else {}),
         # 5. Graine(s) de l'aléa.
         "seeds": {"determinism": det.seed},
-        # 6. Prompts d'attaque versionnés — v1 : aucun (pas d'étape LLM).
-        "prompts": [],
+        # 6. Prompts versionnés : référence + empreinte du module source.
+        "prompts": list(system_block["prompts"]),
         # 7. Politique effective.
         "policy": (
             {
@@ -413,6 +459,7 @@ def cmd_predict(
         documents_total=len(docs),
         counts=counts,
         data_version=data_version,
+        system_block=_system_reproducibility(pipe),
     )
     # Empreinte des sorties : `score` refuse un run édité après coup.
     lock["outputs"] = {

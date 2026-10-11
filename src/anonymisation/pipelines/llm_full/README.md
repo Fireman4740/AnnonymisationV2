@@ -18,7 +18,8 @@ et les backends sont l'infrastructure partagée `anonymisation.llm`.
 Jamais confié au modèle, par conception :
 
 - **la localisation des offsets** — le span renvoyé est recherché tel quel dans
-  le texte original ; une entité introuvable est écartée, jamais approximée ;
+  le texte original, en mots entiers (« Ali » n'est jamais localisé dans
+  « Alice ») ; une entité introuvable est écartée, jamais approximée ;
 - **la légalité de l'action** — validée contre `ALLOWED_ACTIONS` (SPEC-01 §8),
   repli explicite sur `SUPPRESS` et journalisation ;
 - **l'application au texte** — `apply_decisions`, droite→gauche, comme les

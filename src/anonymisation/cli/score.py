@@ -283,6 +283,10 @@ def cmd_score(run: str | Path, protocol: str) -> int:
     lock_path = run_dir / LOCK_NAME
     if not lock_path.is_file():
         raise ScoreError(f"Lock de run absent : {lock_path} — exécute d'abord predict")
+    # La scorecard est dérivée et recalculable : on retire l'ancienne AVANT
+    # toute vérification. Un score qui échoue ensuite ne laisse donc aucune
+    # carte d'un état antérieur, relue à tort comme décrivant le run actuel.
+    (run_dir / SCORECARD_NAME).unlink(missing_ok=True)
     lock = _read_json(lock_path)
     if lock.get("taxonomy_version") != TAXONOMY_VERSION:
         raise ScoreError(
