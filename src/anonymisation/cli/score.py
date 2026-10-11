@@ -214,6 +214,11 @@ def _load_train_data(dataset: str) -> tuple[list[Document], list[TaskLabel]]:
         ) from exc
     return docs, tasks
 
+#: Versions des étapes figées lisibles par ce scorer. L'attaque RAT-Bench v1
+#: lisait la réponse en JSON avant le format ligne à ligne officiel, et
+#: comptait un attribut omis comme une erreur : ses sorties ne sont pas
+#: comparables et doivent être régénérées.
+_FROZEN_VERSIONS = {"ratbench-staab-correctmatch": "2", "mean-utility-spia": "1"}
 ATTACK_LOCK_NAME = "attack.lock.json"
 ATTACKS_NAME = "attacks.jsonl"
 JUDGE_LOCK_NAME = "judge.lock.json"
@@ -236,8 +241,12 @@ def _load_frozen(
             raise ScoreError(f"{run_dir / rows_name} sans {lock_name} : sortie non vérifiable")
         return None
     lock = _read_json(lock_path)
-    if lock.get("protocol") != expected_protocol or str(lock.get("protocol_version")) != "1":
-        raise ScoreError(f"{lock_path} : protocole/version non pris en charge")
+    expected_version = _FROZEN_VERSIONS[expected_protocol]
+    if lock.get("protocol") != expected_protocol or str(lock.get("protocol_version")) != expected_version:
+        raise ScoreError(
+            f"{lock_path} : protocole/version {lock.get('protocol')}/{lock.get('protocol_version')} "
+            f"non pris en charge (attendu {expected_protocol}/{expected_version}) — relancer l'étape"
+        )
     run_lock = _read_json(run_dir / LOCK_NAME)
     split = str(run_lock["run"]["split"])
     gold_name = "documents.jsonl" if lock_name == JUDGE_LOCK_NAME else "profiles.jsonl"

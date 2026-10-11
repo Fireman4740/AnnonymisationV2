@@ -50,11 +50,13 @@ from anonymisation.schema.io import atomic_write, read_jsonl, sha256_file, write
 from anonymisation.schema.models import Profile
 
 PROTOCOL = "ratbench-staab-correctmatch"
-PROTOCOL_VERSION = "1"
+PROTOCOL_VERSION = "2"
 ATTACKS_NAME = "attacks.jsonl"
 ATTACK_LOCK_NAME = "attack.lock.json"
 #: Attentes entre réessais quand le palier gratuit renvoie 429/502.
 RETRY_DELAYS_S = (5, 15, 30)
+#: ``max_output_tokens=4096`` de l'attaquant officiel (``attackers/gpt.py``).
+ATTACKER_MAX_TOKENS = 4096
 MAX_ERROR_RATE = 0.05
 
 
@@ -120,7 +122,8 @@ def _complete_with_retries(
         if delay:
             sleep(delay)
         try:
-            completion = client.complete(prompt, system=SYSTEM_PROMPT)
+            completion = client.complete(prompt, system=SYSTEM_PROMPT,
+                                         max_tokens=ATTACKER_MAX_TOKENS)
             return completion.content, completion.cached
         except LlmBackendUnavailableError:
             if attempt == len(RETRY_DELAYS_S):
@@ -143,18 +146,14 @@ def attack_one(
     try:
         prompt = staab_prompt(features, str(record["anonymized_text"]), str(meta["scenario"]), maps)
         response, cached = complete(prompt)
+        # Un attribut absent de la réponse est une devinette vide, donc fausse
+        # (code officiel) ; seule une réponse sans aucun attribut lisible est
+        # une erreur (C3).
         guesses = parse_guesses(response)
-        required = [f for f in features if f not in ("DOB-Day", "DOB-Month", "DOB-Year")]
-        missing = [f for f in required if f not in guesses or "Guess" not in guesses[f]]
-        if missing:
-            raise AttackParseError(f"réponse incomplète : attributs absents {missing}")
-        for feature in required:
-            guess = guesses[feature]["Guess"]
-            if not isinstance(guess, (str, list)) or (isinstance(guess, list)
-                    and any(not isinstance(g, str) for g in guess)):
-                raise AttackParseError(f"devinette `{feature}` : chaîne ou liste de chaînes attendue")
     except (LlmError, AttackParseError) as exc:
         return {**base, "status": "error", "error": f"{type(exc).__name__}: {exc}"}
+    required = [f for f in features if f not in ("DOB-Day", "DOB-Month", "DOB-Year")]
+    unanswered = sorted(f for f in required if not guesses.get(f, {}).get("Guess"))
     correctness = check_profile(guesses, ground_truth, features)
     direct_hits = sorted(
         att for att, flags in correctness.items()
@@ -169,6 +168,7 @@ def attack_one(
         **base,
         "status": "ok",
         "error": None,
+        "prompt": prompt,
         "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         "cached": cached,
         "response": response,
@@ -176,9 +176,16 @@ def attack_one(
         "correctness": {k: v for k, v in sorted(correctness.items())},
         "correct_direct_ids": direct_hits,
         "correct_indirect_columns": list(estimate.columns),
+        "unanswered_attributes": unanswered,
+        "encoded_record": dict(estimate.record),
+        "correctmatch_draws": list(estimate.correctness_draws),
         "correctmatch_correctness": estimate.correctness,
         "correctmatch_uniqueness": estimate.uniqueness,
-        "reidentified": bool(direct_hits) or estimate.correctness >= REID_CORRECTNESS_THRESHOLD,
+        # `_is_reided` officiel : NaN >= 0,2 est faux, comme dans numpy.
+        "reidentified": bool(direct_hits) or (
+            estimate.correctness is not None
+            and estimate.correctness >= REID_CORRECTNESS_THRESHOLD
+        ),
     }
 
 
@@ -240,6 +247,8 @@ def run_attack(
             "backend": client.backend.name,
             "model": client.backend.model,
             "temperature": client.backend.temperature,
+            "max_tokens": ATTACKER_MAX_TOKENS,
+            "parser": "parse_output_gpt (ligne à ligne, officiel)",
             "system_prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
             "prompt_module_sha256": sha256_file(Path(__file__).with_name("prompts.py")),
         },
@@ -254,6 +263,7 @@ def run_attack(
             "encoding": "sorted-dense-1-based",
             "stochastic": True,
             "protocol_module_sha256": sha256_file(Path(__file__).with_name("risk.py")),
+            "nan_rule": "moyenne des tirages non NaN ; tous NaN → null, non ré-identifié par CorrectMatch",
         },
         "inputs": {
             "predictions.jsonl": inputs.predictions_sha256,

@@ -54,11 +54,16 @@ def reid_success_metric(
         ).to_dict()
     flags = [1.0 if r["reidentified"] else 0.0 for r in ok]
     for row in ok:
-        probability = float(row["correctmatch_correctness"])
+        # `None` = tous les tirages CorrectMatch NaN : non ré-identifié par la
+        # correctness, comme `NaN >= 0.2` dans le code officiel.
+        raw = row["correctmatch_correctness"]
+        probability = None if raw is None else float(raw)
         direct = row["correct_direct_ids"]
-        if (not 0 <= probability <= 1 or not isinstance(direct, list)
+        by_correctness = probability is not None and probability >= 0.2
+        if ((probability is not None and not 0 <= probability <= 1)
+                or not isinstance(direct, list)
                 or not isinstance(row["reidentified"], bool)
-                or row["reidentified"] != (bool(direct) or probability >= 0.2)):
+                or row["reidentified"] != (bool(direct) or by_correctness)):
             raise ValueError(f"attaque {row.get('doc_id')} : succès ou probabilité incohérent")
     by_difficulty: dict[str, list[float]] = defaultdict(list)
     for row, flag in zip(ok, flags, strict=True):
@@ -66,7 +71,9 @@ def reid_success_metric(
     details = {
         **base_details,
         "direct_identifier_hit_rate": mean([1.0 if r["correct_direct_ids"] else 0.0 for r in ok]),
-        "mean_correctmatch_correctness": mean([float(r["correctmatch_correctness"]) for r in ok]),
+        "mean_correctmatch_correctness": mean([float(r["correctmatch_correctness"]) for r in ok
+                                               if r["correctmatch_correctness"] is not None]),
+        "correctmatch_all_nan": sum(r["correctmatch_correctness"] is None for r in ok),
         "by_difficulty": {
             level: {"documents": len(values), "value": mean(values)}
             for level, values in sorted(by_difficulty.items())

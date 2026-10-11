@@ -109,24 +109,89 @@ def test_correctmatch_dense_encoder_handles_holes():
     assert risk._encoder("DOB") == {1: 1, 3: 2, 34847: 3}
 
 
-def test_attack_partial_answer_is_error_and_risk_failure_is_counted():
+def _line_reply(**guesses: str) -> str:
+    """Réponse au format pretty-print que lit `parse_output_gpt` officiel."""
+    blocks = [f'  "{label}": {{\n    "Inference": "x",\n    "Guess": "{guess}",\n'
+              f'    "Certainty": 5\n  }},' for label, guess in guesses.items()]
+    return "{\n" + "\n".join(blocks) + "\n}"
+
+
+class _ZeroRisk:
+    def estimate(self, record):
+        from anonymisation.attack.ratbench.risk import RiskEstimate
+        return RiskEstimate(0.0, 0.0, tuple(record), tuple(record.items()), (0.0,) * 10)
+
+
+def _ratbench_case():
     maps = RatBenchMaps(pairs={"SEX": ((1, "Male"), (2, "Female"))}, source="fixture")
     profile = SimpleNamespace(meta={"features": ["SEX", "name"],
         "direct_identifiers": {"name": "Alice"}, "indirect_identifiers": {"SEX": "Female"},
         "scenario": "Chatbot conversation", "difficulty": 1})
     record = {"doc_id": "d1", "anonymized_text": "Alice is female."}
-    row = attack_one(record, profile, maps, lambda _: ('{"sex": {"Guess": "Female"}}', False), None)
+    return maps, profile, record
+
+
+def test_attack_omitted_attribute_is_a_wrong_guess_like_the_original():
+    """Officiel : un attribut absent de la réponse est une devinette vide, pas une erreur."""
+    maps, profile, record = _ratbench_case()
+    row = attack_one(record, profile, maps, lambda _: (_line_reply(sex="Female"), False),
+                     _ZeroRisk())
+    assert row["status"] == "ok"
+    assert row["unanswered_attributes"] == ["name"]
+    assert row["correctness"]["name"] == []
+    assert row["correct_direct_ids"] == []
+    assert row["reidentified"] is False
+
+
+def test_attack_compact_json_is_unreadable_by_the_official_line_parser():
+    """Le parseur officiel ne lit pas un JSON compact : zéro devinette → erreur (C3)."""
+    maps, profile, record = _ratbench_case()
+    row = attack_one(record, profile, maps,
+                     lambda _: ('{"sex": {"Guess": "Female"}, "name": {"Guess": "Alice"}}', False),
+                     _ZeroRisk())
     assert row["status"] == "error"
-    assert "incomplète" in row["error"]
+    assert "aucune devinette" in row["error"]
+
+
+def test_attack_risk_failure_is_counted_as_error():
+    maps, profile, record = _ratbench_case()
 
     class BrokenRisk:
         def estimate(self, _):
             raise CorrectMatchUnavailable("code absent")
 
-    reply = '{"sex": {"Guess": "Female"}, "name": {"Guess": "Alice"}}'
+    reply = _line_reply(sex="Female", name="Alice")
     row = attack_one(record, profile, maps, lambda _: (reply, False), BrokenRisk())
     assert row["status"] == "error"
     assert "code absent" in row["error"]
+
+
+def test_official_line_parser_keeps_attributes_read_before_truncation():
+    from anonymisation.attack.ratbench.parse import parse_output_gpt
+
+    reply = _line_reply(sex="Female") + '\n  "name": {\n    "Inference": "x"'
+    assert parse_output_gpt(reply) == {
+        "SEX": {"Inference": "x", "Guess": "Female", "Certainty": "5"}
+    }
+
+
+def test_correctmatch_mean_drops_only_nan_like_the_original():
+    from anonymisation.attack.ratbench.risk import nan_mean
+
+    nan = float("nan")
+    assert nan_mean([0.1, nan, 0.3]) == pytest.approx(0.2)
+    assert nan_mean([nan, nan]) is None
+    with pytest.raises(CorrectMatchUnavailable):
+        nan_mean([0.1, float("inf")])
+
+
+def test_all_nan_correctmatch_is_not_reidentified_by_correctness():
+    rows = [{"doc_id": "d1", "status": "ok", "correct_direct_ids": [],
+             "correctmatch_correctness": None, "reidentified": False}]
+    assert reid_success_metric(rows, {})["value"] == 0.0
+    rows[0]["reidentified"] = True
+    with pytest.raises(ValueError, match="incohérent"):
+        reid_success_metric(rows, {})
 
 
 def test_reid_success_requires_actual_direct_hit_or_threshold():

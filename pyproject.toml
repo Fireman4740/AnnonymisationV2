@@ -3,7 +3,7 @@ name = "anonymisation-v2"
 version = "0.1.0"
 description = "Détection de quasi-identifiants indirects et anonymisation pilotée par le risque de ré-identification"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Mathis Carlesso" }]
 
@@ -13,6 +13,10 @@ authors = [{ name = "Mathis Carlesso" }]
 dependencies = [
   "pydantic>=2.7",
   "pyyaml>=6.0",
+  # Schémas de spans de référence (SemEval-2013 9.1) : pur Python, sans
+  # dépendance. Version ÉPINGLÉE : les schémas ont changé entre versions.
+  # nervaluate 1.x exige Python >= 3.11 (comme correctmatch) : d'où le minimum.
+  "nervaluate==1.2.1",
 ]
 
 [project.optional-dependencies]
@@ -51,8 +55,7 @@ attack = [
   "openai>=1.0",
   "rapidfuzz>=3.0",
   "rouge-score>=0.1.2",
-  # correctmatch n'existe que pour Python >= 3.11 : le noyau reste 3.10.
-  "correctmatch>=1.4.1; python_version >= '3.11'",
+  "correctmatch>=1.4.1",
   "pandas>=2.2",
   "pyarrow>=15.0",
 ]

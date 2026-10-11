@@ -22,6 +22,8 @@ from anonymisation.metrics.entities import (
 from anonymisation.metrics.gating import gate
 from anonymisation.metrics.intervals import apply_intervals, scorecard_intervals
 from anonymisation.metrics.leakage import aggregate_leak_counts, gold_leak_counts
+from anonymisation.metrics.masking import MaskCoverage, decisions_of, document_coverage
+from anonymisation.metrics.ner_schemas import SchemaCounts, corpus_counts, schema_report
 from anonymisation.metrics.protection import (
     LITERAL_ADVERSARY,
     collective_protection_rate,
@@ -29,7 +31,7 @@ from anonymisation.metrics.protection import (
     subject_outcomes_from_run,
 )
 from anonymisation.metrics.reidentification import reid_success_metric
-from anonymisation.metrics.spans import span_metrics, weighted_token_precision
+from anonymisation.metrics.spans import weighted_token_precision
 from anonymisation.metrics.tria import (
     TRIRUnavailable,
     evaluate_trir,
@@ -115,15 +117,18 @@ def _metric_dict(
     ).to_dict()
 
 
-def _aggregate_counts(
-    records: Iterable[tuple[Sequence[Any], Sequence[Any]]], *, match: str = "partial"
-) -> dict[str, Any]:
-    totals = {"tp": 0, "fp": 0, "fn": 0, "gold": 0, "pred": 0}
-    for gold, pred in records:
-        result = span_metrics(gold, pred, match=match)
-        for key in totals:
-            totals[key] += result[key] or 0
-    tp, fp, fn = totals["tp"], totals["fp"], totals["fn"]
+#: Schéma nervaluate des métriques de localisation publiées (H-8) : le
+#: ``partial`` ORIGINAL, qui ignore le type. La classification est publiée à
+#: part (``span_classification_f1`` = ``ent_type``, ``span_strict_f1``).
+SPAN_SCHEMA = "partial"
+SPAN_MATCH_LABEL = "nervaluate-partial"
+
+
+def _summary(counts: SchemaCounts) -> dict[str, Any]:
+    """Comptes nervaluate ``partial`` → bloc tp/fp/fn/P/R/F1/F2 historique."""
+    tp = counts.credit(SPAN_SCHEMA)
+    fp = counts.actual - tp
+    fn = counts.possible - tp
     precision = tp / (tp + fp) if tp + fp else None
     recall = tp / (tp + fn) if tp + fn else None
     f1 = None if precision is None or recall is None else (
@@ -135,17 +140,24 @@ def _aggregate_counts(
         else 5 * precision * recall / (4 * precision + recall)
     )
     return {
-        "match": match,
+        "match": SPAN_MATCH_LABEL,
         "tp": tp,
         "fp": fp,
         "fn": fn,
-        "gold": totals["gold"],
-        "pred": totals["pred"],
+        "gold": counts.possible,
+        "pred": counts.actual,
         "precision": precision,
         "recall": recall,
         "f1": f1,
         "f2": f2,
     }
+
+
+def _aggregate_counts(
+    records: Iterable[tuple[Sequence[Any], Sequence[Any]]],
+) -> dict[str, Any]:
+    total, _, _ = corpus_counts(records)
+    return _summary(total[SPAN_SCHEMA])
 
 
 def _percentile(values: Sequence[float], percentile: float) -> float | None:
@@ -158,15 +170,13 @@ def _percentile(values: Sequence[float], percentile: float) -> float | None:
 
 def _group_metric(
     rows: Sequence[tuple[Sequence[Any], Sequence[Any], str]],
-    *,
-    match: str,
 ) -> dict[str, dict[str, Any]]:
     grouped: dict[str, list[tuple[Sequence[Any], Sequence[Any]]]] = defaultdict(list)
     for gold, pred, group in rows:
         grouped[group].append((gold, pred))
     output: dict[str, dict[str, Any]] = {}
     for group, pairs in sorted(grouped.items()):
-        values = _aggregate_counts(pairs, match=match)
+        values = _aggregate_counts(pairs)
         values["documents"] = len(pairs)
         output[group] = values
     return output
@@ -238,7 +248,6 @@ def build_scorecard(
     reproducibility: Mapping[str, Any],
     system: Mapping[str, Any],
     requested_status: MetricStatus | str = MetricStatus.DIAGNOSTIC,
-    match: str = "partial",
     judge: Any = None,
     judge_name: str | None = None,
     downstream_results: Sequence[Any] | None = None,
@@ -283,10 +292,11 @@ def build_scorecard(
     proxy_risk = any(_has_proxy_risk(record) for record in predictions)
 
 
-    overall = _aggregate_counts(
-        [(gold, pred) for gold, pred, _ in rows],
-        match=match,
+    schema_totals, schema_per_document, unanchored_gold = corpus_counts(
+        (gold, pred) for gold, pred, _ in rows
     )
+    overall = _summary(schema_totals[SPAN_SCHEMA])
+    schema_details = schema_report(schema_totals, unanchored_gold)
     direct_recall, direct_total = _entity_recall_over_rows(rows, IdentifierType.DIRECT)
     quasi_recall, quasi_total = _entity_recall_over_rows(rows, IdentifierType.QUASI)
 
@@ -320,6 +330,18 @@ def build_scorecard(
                 f"{record.get('status')!r} sans `anonymized_text` str : run "
                 "corrompu, relancer `anonv2 predict`."
             )
+
+    # Couverture des masques APPLIQUÉS : lue dans les décisions, pas dans les
+    # annotations — une détection suivie de KEEP ne protège rien.
+    per_document_masks = [
+        document_coverage(
+            gold_by_doc.get(str(record.get("doc_id")), ()),
+            decisions_of(record),
+            str(field_value(documents_by_doc.get(str(record.get("doc_id"))), "text", "")),
+        )
+        for record in scored
+    ]
+    mask_total = sum(per_document_masks, MaskCoverage())
 
     per_document_leaks = [
         gold_leak_counts(
@@ -405,8 +427,9 @@ def build_scorecard(
 
     # Incertitude (H-7) : mêmes unités que les valeurs ponctuelles.
     intervals = scorecard_intervals(
+        schema_per_document=schema_per_document,
+        mask_coverage=per_document_masks,
         rows=rows,
-        match=match,
         token_scores=token_scores,
         rouge_scores=rouge_scores,
         leak_counts=per_document_leaks,
@@ -432,17 +455,42 @@ def build_scorecard(
         )
 
     diagnostic = {
+        # Localisation (type ignoré), puis classification : publiées à part.
         "span_precision": _gate(
             "span_precision", overall["precision"], status=diagnostic_status,
-            direction=MetricDirection.MAXIMIZE, details={"match": match},
+            direction=MetricDirection.MAXIMIZE, details={"match": SPAN_MATCH_LABEL},
         ),
         "span_recall": _gate(
             "span_recall", overall["recall"], status=diagnostic_status,
-            direction=MetricDirection.MAXIMIZE, details={"match": match},
+            direction=MetricDirection.MAXIMIZE, details={"match": SPAN_MATCH_LABEL},
         ),
         "span_f1": _gate(
             "span_f1", overall["f1"], status=diagnostic_status,
-            direction=MetricDirection.MAXIMIZE, details={"match": match},
+            direction=MetricDirection.MAXIMIZE, details={"match": SPAN_MATCH_LABEL},
+        ),
+        "span_classification_f1": _gate(
+            "span_classification_f1", schema_totals["ent_type"].scores("ent_type")["f1"],
+            status=diagnostic_status, direction=MetricDirection.MAXIMIZE,
+            details={"match": "nervaluate-ent_type"},
+        ),
+        "span_strict_f1": _gate(
+            "span_strict_f1", schema_totals["strict"].scores("strict")["f1"],
+            status=diagnostic_status, direction=MetricDirection.MAXIMIZE,
+            details={"match": "nervaluate-strict"},
+        ),
+        "span_schemas": _gate(
+            "span_schemas", schema_totals[SPAN_SCHEMA].scores(SPAN_SCHEMA)["f1"],
+            status=diagnostic_status, direction=MetricDirection.MAXIMIZE,
+            details=schema_details,
+        ),
+        "mask_coverage": _gate(
+            "mask_coverage", mask_total.char_rate, status=diagnostic_status,
+            direction=MetricDirection.MAXIMIZE, details={
+                **mask_total.to_dict(),
+                "definition": "caractères gold ancrés recouverts par les décisions "
+                              "appliquées (KEEP exclu)",
+                **({"reason": "aucune mention gold ancrée"} if not mask_total.gold_chars else {}),
+            },
         ),
         "weighted_token_precision": _gate(
             "weighted_token_precision", token_precision, status=diagnostic_status,
@@ -524,12 +572,11 @@ def build_scorecard(
                 (gold, pred, _label(group_getter(document)))
                 for gold, pred, document in rows
             ],
-            match=match,
         )
 
     by_language = grouped(lambda document: field_value(document, "language", "unknown"))
     by_domain = grouped(lambda document: field_value(document, "domain", "unknown"))
-    by_expression = _group_metric(_expression_rows(rows), match=match)
+    by_expression = _group_metric(_expression_rows(rows))
     by_difficulty = grouped(
         lambda document: (field_value(document, "meta", {}) or {}).get("difficulty", "unknown")
     )
@@ -561,7 +608,6 @@ def build_scorecard(
                 )
                 for gold, pred, _ in rows
             ],
-            match=match,
         )
         values["category"] = category
         values["documents"] = sum(
@@ -692,7 +738,7 @@ def build_scorecard(
             "macro_f1", macro_f1, protocol=protocol,
             protocol_version=protocol_version, status=diagnostic_status,
             direction=MetricDirection.MAXIMIZE,
-            details={"match": match, "categories": len(category_f1)},
+            details={"match": SPAN_MATCH_LABEL, "categories": len(category_f1)},
         ),
         "by_qi_category": by_category,
         "by_language": by_language,

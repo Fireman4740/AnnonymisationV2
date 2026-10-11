@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-from anonymisation.capabilities import CAP_RISK, CAP_SPANS
+from anonymisation.capabilities import CAP_DECISIONS, CAP_RISK, CAP_SPANS
 from anonymisation.metrics.contracts import MetricDirection, MetricStatus, MetricValue
 
 #: Capacités requises par métrique. Une métrique publiée absente de cette
@@ -32,6 +32,11 @@ METRIC_CAPABILITY_GATE: Final[Mapping[str, frozenset[str]]] = {
     "span_recall": frozenset({CAP_SPANS}),
     "span_f1": frozenset({CAP_SPANS}),
     "span_f2": frozenset({CAP_SPANS}),
+    "span_classification_f1": frozenset({CAP_SPANS}),
+    "span_strict_f1": frozenset({CAP_SPANS}),
+    "span_schemas": frozenset({CAP_SPANS}),
+    # Couverture des masques : lit les décisions appliquées.
+    "mask_coverage": frozenset({CAP_DECISIONS}),
     "macro_f1": frozenset({CAP_SPANS}),
     "weighted_token_precision": frozenset({CAP_SPANS}),
     "ER_di": frozenset({CAP_SPANS}),

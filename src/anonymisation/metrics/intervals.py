@@ -18,8 +18,9 @@ from typing import Any
 
 from anonymisation.metrics.entities import entity_protection_counts, same_identifier_type
 from anonymisation.metrics.leakage import LeakCounts
+from anonymisation.metrics.masking import MaskCoverage
+from anonymisation.metrics.ner_schemas import SchemaCounts
 from anonymisation.metrics.protection import SubjectOutcome
-from anonymisation.metrics.spans import span_metrics
 from anonymisation.metrics.tria import TRIRResult
 from anonymisation.metrics.uncertainty import (
     BOOTSTRAP_REPLICATES,
@@ -54,8 +55,9 @@ def _entity_counts_per_document(
 
 def scorecard_intervals(
     *,
+    schema_per_document: Sequence[Mapping[str, SchemaCounts]],
+    mask_coverage: Sequence[MaskCoverage],
     rows: Rows,
-    match: str,
     token_scores: Sequence[float],
     rouge_scores: Sequence[float],
     leak_counts: Sequence[LeakCounts],
@@ -71,10 +73,20 @@ def scorecard_intervals(
             units, statistic, unit=unit, replicates=replicates, seed=seed
         )
 
-    spans = [
-        (float(r["tp"] or 0), float(r["fp"] or 0), float(r["fn"] or 0))
-        for r in (span_metrics(gold, pred, match=match) for gold, pred, _ in rows)
-    ]
+    # Unités = documents, mêmes comptes nervaluate que la valeur ponctuelle :
+    # (crédit, prédits, gold) pour `partial`, (correct, prédits, gold) sinon.
+    def schema_units(schema: str) -> list[tuple[float, float, float]]:
+        return [
+            (counts[schema].credit(schema), float(counts[schema].actual),
+             float(counts[schema].possible))
+            for counts in schema_per_document
+        ]
+
+    def f1_units(schema: str) -> list[tuple[float, float, float]]:
+        return [(c, a - c, p - c) for c, a, p in schema_units(schema)]
+
+    spans = schema_units("partial")
+    masks = [(float(m.covered_chars), float(m.gold_chars)) for m in mask_coverage if m.gold_chars]
     direct = _entity_counts_per_document(rows, IdentifierType.DIRECT)
     quasi = _entity_counts_per_document(rows, IdentifierType.QUASI)
     gold_leaks = [
@@ -95,12 +107,15 @@ def scorecard_intervals(
     result: dict[str, dict[str, Any] | None] = {
         # Précision = tp / (tp + fp) : tuple (tp, tp + fp).
         "span_precision": interval(
-            [(tp, tp + fp) for tp, fp, _ in spans], ratio_of_sums(0, 1), "document"
+            [(c, a) for c, a, _ in spans], ratio_of_sums(0, 1), "document"
         ),
         "span_recall": interval(
-            [(tp, tp + fn) for tp, _, fn in spans], ratio_of_sums(0, 1), "document"
+            [(c, p) for c, _, p in spans], ratio_of_sums(0, 1), "document"
         ),
-        "span_f1": interval(spans, f1_of_counts, "document"),
+        "span_f1": interval(f1_units("partial"), f1_of_counts, "document"),
+        "span_classification_f1": interval(f1_units("ent_type"), f1_of_counts, "document"),
+        "span_strict_f1": interval(f1_units("strict"), f1_of_counts, "document"),
+        "mask_coverage": interval(masks, ratio_of_sums(0, 1), "document"),
         "weighted_token_precision": interval(list(token_scores), mean, "document"),
         "ER_di": interval(direct, ratio_of_sums(0, 1), "document"),
         "ER_qi": interval(quasi, ratio_of_sums(0, 1), "document"),

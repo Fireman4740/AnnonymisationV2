@@ -120,9 +120,28 @@ def _ordered(record: Mapping[str, int]) -> tuple[list[str], list[int]]:
 
 @dataclass(frozen=True)
 class RiskEstimate:
-    correctness: float
-    uniqueness: float
+    """Estimation figée : ``None`` = tous les tirages NaN (``np.mean([])`` officiel)."""
+
+    correctness: float | None
+    uniqueness: float | None
     columns: tuple[str, ...]
+    record: tuple[tuple[str, int], ...] = ()
+    correctness_draws: tuple[float | None, ...] = ()
+
+
+def nan_mean(values: Sequence[float]) -> float | None:
+    """``np.mean([v for v in values if not np.isnan(v)])`` du code officiel.
+
+    Seuls les NaN sont écartés ; une liste vide donne NaN chez l'officiel,
+    rendu ici par ``None`` (JSON valide) — jamais remplacé par 0. Une valeur
+    infinie, impossible pour une probabilité, lève plutôt que d'être figée.
+    """
+    import math
+
+    kept = [float(v) for v in values if not math.isnan(float(v))]
+    if any(math.isinf(v) for v in kept):
+        raise CorrectMatchUnavailable(f"estimation CorrectMatch infinie : {kept}")
+    return sum(kept) / len(kept) if kept else None
 
 
 class CorrectMatchRisk:
@@ -163,6 +182,7 @@ class CorrectMatchRisk:
 
         columns, values = _ordered(record)
         if not columns:
+            # Officiel : « No cols to fit » → correctness = uniqueness = 0.0.
             return RiskEstimate(0.0, 0.0, ())
         missing = [c for c in columns if c not in self._frame.columns]
         if missing:
@@ -185,22 +205,26 @@ class CorrectMatchRisk:
             self._models[key] = correctmatch.fit_model(dense.to_numpy())
         model = self._models[key]
         array = np.array(dense_values)
-        corr = [correctmatch.individual_correctness(model, array, n=self._n)
-                for _ in range(CORRECTMATCH_REPEATS)]
-        uniq = [correctmatch.individual_uniqueness(model, array, n=self._n)
-                for _ in range(CORRECTMATCH_REPEATS)]
-        corr_ok = [c for c in corr if np.isfinite(c) and 0 <= c <= 1]
-        uniq_ok = [u for u in uniq if np.isfinite(u) and 0 <= u <= 1]
-        if not corr_ok or not uniq_ok:
-            raise CorrectMatchUnavailable(f"CorrectMatch sans estimation finie dans [0, 1] pour {key}")
+        # Tirages entrelacés correctness/uniqueness, comme `compute_correctness`
+        # officiel : l'ordre des appels fixe la séquence aléatoire de Julia.
+        corr: list[float] = []
+        uniq: list[float] = []
+        for _ in range(CORRECTMATCH_REPEATS):
+            corr.append(correctmatch.individual_correctness(model, array, n=self._n))
+            uniq.append(correctmatch.individual_uniqueness(model, array, n=self._n))
         return RiskEstimate(
-            correctness=float(np.mean(corr_ok)),
-            uniqueness=float(np.mean(uniq_ok)),
+            correctness=nan_mean(corr),
+            uniqueness=nan_mean(uniq),
             columns=key,
+            record=tuple(zip(key, values, strict=True)),
+            correctness_draws=tuple(
+                None if float(c) != float(c) else float(c) for c in corr
+            ),
         )
 
 
 __all__ = [
+    "nan_mean",
     "CorrectMatchRisk",
     "CorrectMatchUnavailable",
     "RiskEstimate",
