@@ -150,7 +150,7 @@ def plan_hybrid_policy(
 ) -> tuple[list[AnonymizationDecision], dict[str, Any]]:
     """Planifie l'anonymisation d'un document selon la politique P0–P4.
 
-    ``attributes`` est l'ensemble Q(d) de l'étape ASSESS (QICR terminé :
+    ``attributes`` est l'ensemble Q(d) de l'étape ASSESS (dedup_q terminé :
     dédupliqué, coréférence fusionnée) ; ``risk_base`` est l'estimation du
     risque de l'état initial (niveaux 0) déjà calculée en ASSESS — elle est
     réutilisée telle quelle, jamais recalculée différemment (un document a

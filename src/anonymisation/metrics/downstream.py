@@ -14,9 +14,16 @@ classes rares — un classifieur qui ne prédit plus que la classe majoritaire
 après anonymisation garderait une accuracy flatteuse. L'accuracy reste publiée
 en détail.
 
-Limite déclarée : la variante « réentraînée sur anonymisé » exige un split
-d'entraînement anonymisé, que ``predict`` ne produit pas encore ; elle est
-signalée ``unavailable`` dans le résultat, jamais omise en silence.
+Deux variantes, toujours étiquetées (``variant``) :
+
+* ``frozen`` — protocole principal de TAU-Eval : classifieur entraîné sur le
+  train ORIGINAL, figé, appliqué au test original puis anonymisé ;
+* ``retrained`` — variante supplémentaire : un second classifieur est entraîné
+  sur le train ANONYMISÉ par le même système (run ``predict`` du split train),
+  appliqué au test anonymisé ; la référence reste le classifieur original sur
+  le test original. Un document de train en erreur d'anonymisation est exclu
+  du train anonymisé et compté (``train_excluded``), jamais remplacé par son
+  texte original.
 """
 
 from __future__ import annotations
@@ -31,6 +38,10 @@ from anonymisation.metrics.uncertainty import bootstrap_interval
 from anonymisation.schema.models import Document, TaskLabel
 
 PRIMARY_METRIC = "macro_f1"
+_VARIANTS = {
+    "frozen": "classifieur entraîné sur le train original, figé (protocole principal TAU-Eval)",
+    "retrained": "classifieur réentraîné sur le train anonymisé, évalué sur le test anonymisé",
+}
 
 
 @dataclass(frozen=True)
@@ -50,6 +61,8 @@ class DownstreamTaskResult:
     accuracy_original: float | None = None
     accuracy_anonymized: float | None = None
     ci95: dict[str, Any] | None = None
+    variant: str = "frozen"
+    train_excluded: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -67,8 +80,9 @@ class DownstreamTaskResult:
             "reason": self.reason,
             "accuracy_original": self.accuracy_original,
             "accuracy_anonymized": self.accuracy_anonymized,
-            "variant": "frozen (classifieur entraîné sur l'original, non réentraîné)",
-            "retrained_variant": "unavailable (split d'entraînement anonymisé non produit)",
+            "variant": self.variant,
+            "variant_definition": _VARIANTS[self.variant],
+            "train_excluded": self.train_excluded,
             "ci95": self.ci95,
         }
 
@@ -119,8 +133,10 @@ def evaluate_downstream_task(
     eval_tasks: Sequence[TaskLabel],
     protocol: str = "downstream-tfidf",
     protocol_version: str = "2",
+    train_texts_anon: dict[str, str] | None = None,
 ) -> DownstreamTaskResult:
-    """Évalue une tâche aval de classification textuelle."""
+    """Évalue une tâche aval ; ``train_texts_anon`` active la variante réentraînée."""
+    variant = "frozen" if train_texts_anon is None else "retrained"
     # Indexer les labels d'entraînement
     train_label_by_doc: dict[str, str] = {
         t.doc_id: str(t.label) for t in train_tasks if t.task == task_name
@@ -157,6 +173,7 @@ def evaluate_downstream_task(
             train_size=0,
             eval_size=len(eval_pairs_orig),
             method="tfidf_centroid",
+            variant=variant,
             status=MetricStatus.UNAVAILABLE,
             reason="données d'entraînement absentes pour cette tâche",
         )
@@ -173,6 +190,7 @@ def evaluate_downstream_task(
             train_size=len(train_pairs),
             eval_size=0,
             method="tfidf_centroid",
+            variant=variant,
             status=MetricStatus.UNAVAILABLE,
             reason="données d'évaluation absentes pour cette tâche",
         )
@@ -190,9 +208,33 @@ def evaluate_downstream_task(
     eval_vecs_orig = [vectorizer.transform_one(t) for t in eval_texts_orig]
     preds_orig = classifier.predict(eval_vecs_orig)
 
-    # Évaluer sur anonymisé
-    eval_vecs_anon = [vectorizer.transform_one(t) for t in eval_texts_anon]
-    preds_anon = classifier.predict(eval_vecs_anon)
+    # Évaluer sur anonymisé — classifieur figé, ou réentraîné sur le train anonymisé.
+    train_excluded = 0
+    if train_texts_anon is None:
+        eval_vecs_anon = [vectorizer.transform_one(t) for t in eval_texts_anon]
+        preds_anon = classifier.predict(eval_vecs_anon)
+    else:
+        anon_pairs = [
+            (train_texts_anon[doc.doc_id], train_label_by_doc[doc.doc_id])
+            for doc in train_docs
+            if doc.doc_id in train_label_by_doc and doc.doc_id in train_texts_anon
+        ]
+        train_excluded = len(train_pairs) - len(anon_pairs)
+        if not anon_pairs:
+            return DownstreamTaskResult(
+                task=task_name, metric=PRIMARY_METRIC, protocol=protocol,
+                protocol_version=protocol_version, score_original=None,
+                score_anonymized=None, utility_retention=None, train_size=0,
+                eval_size=len(eval_pairs_orig), method="tfidf_centroid", variant=variant,
+                train_excluded=train_excluded, status=MetricStatus.UNAVAILABLE,
+                reason="aucun document de train anonymisé sans erreur",
+            )
+        anon_texts, anon_labels = zip(*anon_pairs, strict=True)
+        anon_vectorizer = TfidfVectorizer().fit(anon_texts)
+        anon_classifier = CentroidClassifier().fit(
+            [anon_vectorizer.transform_one(t) for t in anon_texts], anon_labels)
+        preds_anon = anon_classifier.predict(
+            [anon_vectorizer.transform_one(t) for t in eval_texts_anon])
 
     f1_orig = macro_f1(eval_labels, preds_orig)
     f1_anon = macro_f1(eval_labels, preds_anon)
@@ -217,6 +259,7 @@ def evaluate_downstream_task(
             train_size=len(train_pairs),
             eval_size=len(eval_pairs_orig),
             method="tfidf_centroid",
+            variant=variant,
             status=MetricStatus.UNAVAILABLE,
             reason=(
                 f"classifieur aval non informatif : macro-F1 original {f1_orig:.3f} "
@@ -238,6 +281,7 @@ def evaluate_downstream_task(
             train_size=len(train_pairs),
             eval_size=len(eval_pairs_orig),
             method="tfidf_centroid",
+            variant=variant,
             status=MetricStatus.UNAVAILABLE,
             reason="macro-F1 original nul, rétention indéfinie",
             accuracy_original=acc_orig,
@@ -258,6 +302,8 @@ def evaluate_downstream_task(
         train_size=len(train_pairs),
         eval_size=len(eval_pairs_orig),
         method="tfidf_centroid",
+        variant=variant,
+        train_excluded=train_excluded,
         status=MetricStatus.DIAGNOSTIC,
         accuracy_original=acc_orig,
         accuracy_anonymized=acc_anon,

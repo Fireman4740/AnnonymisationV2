@@ -26,6 +26,8 @@
     "src/evaluate/gt_vs_llms/check_human_labels_gt.py": "95bdd63b1540116aa5bf4cdf984d152da897a1edb9638365f5c52f712b11ceed",
     "src/evaluate/privacy/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "src/evaluate/privacy/calculate_ipr_cpr.py": "78d6cd932bbfc8f58f1349da9c1e73f35158301bcda656705fd9a2fd9e63508f",
+    "src/evaluate/utility/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/evaluate/utility/utility_evaluator.py": "1e3ea7b69383cfa8b567b717ab2e1de9e9ddf797b39ecc0f05105d2d80431df4",
     "src/inference/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "src/inference/infer_spia.py": "e6959b3e031904df44ed15d2fce66a7d18015029a513972dbbcbd7d49f6c9e83",
     "src/llm/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

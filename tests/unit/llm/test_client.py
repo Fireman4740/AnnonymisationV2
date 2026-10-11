@@ -176,3 +176,26 @@ def test_anthropic_max_tokens_stop_is_truncation(tmp_path: Path, monkeypatch: py
     with pytest.raises(LlmEmptyResponseError, match="tronquée"):
         client.complete("bonjour")
     assert not (tmp_path / "cache").exists()
+
+
+def test_provider_default_sends_no_temperature_and_is_cached_apart(tmp_path: Path):
+    """Attaquant RAT-Bench officiel : aucune température envoyée au fournisseur."""
+    from types import SimpleNamespace
+
+    from anonymisation.llm.client import PROVIDER_DEFAULT
+
+    sent: list[dict] = []
+
+    class Completions:
+        def create(self, **kwargs):
+            sent.append(kwargs)
+            message = SimpleNamespace(content="ok")
+            return SimpleNamespace(choices=[SimpleNamespace(message=message, finish_reason="stop")])
+
+    client = LlmClient(_backend(), cache_dir=tmp_path / "cache", cache_enabled=True)
+    client._sdk_client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    client.complete("p", temperature=PROVIDER_DEFAULT)
+    client.complete("p", temperature=0.0)
+    assert "temperature" not in sent[0]
+    assert sent[1]["temperature"] == 0.0
+    assert len(sent) == 2  # deux entrées de cache distinctes

@@ -28,7 +28,7 @@ from anonymisation.schema.integrity import (
     verify_run_outputs,
 )
 from anonymisation.schema.io import read_jsonl, write_json
-from anonymisation.schema.models import Annotation, Document, TaskLabel
+from anonymisation.schema.models import Annotation, Combination, Document, TaskLabel
 from anonymisation.schema.taxonomy import TAXONOMY_VERSION
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -38,6 +38,7 @@ LOCK_NAME = "manifest.lock.json"
 PREDICTIONS_NAME = "predictions.jsonl"
 SCORECARD_NAME = "scorecard.json"
 TASKS_NAME = "tasks.jsonl"
+COMBINATIONS_NAME = "combinations.jsonl"
 DOCUMENTS_NAME = "documents.jsonl"
 
 
@@ -135,7 +136,7 @@ def _verify_inputs(
         pivot = verify_pivot_files(
             root,
             split,
-            (DOCUMENTS_NAME, "annotations.jsonl", TASKS_NAME),
+            (DOCUMENTS_NAME, "annotations.jsonl", TASKS_NAME, COMBINATIONS_NAME),
             files,
             context=context,
             required=(DOCUMENTS_NAME,),
@@ -282,6 +283,17 @@ def _load_frozen(
     return rows, lock
 
 
+def _load_combinations(dataset: str, split: str) -> list[Combination]:
+    """Combinaisons gold du split (vérifiées par `_verify_inputs`), ou liste vide."""
+    path = PROCESSED_ROOT / dataset / split / COMBINATIONS_NAME
+    if not path.is_file():
+        return []
+    try:
+        return list(read_jsonl(path, Combination))
+    except (OSError, ValueError) as exc:
+        raise ScoreError(f"Combinaisons gold illisibles ({path}) : {exc}") from exc
+
+
 SPIA_ATTACK_LOCK_NAME = "spia_attack.lock.json"
 SPIA_ATTACKS_NAME = "spia_attacks.jsonl"
 
@@ -382,7 +394,37 @@ def _tab_official(
     ).to_dict()
 
 
-def cmd_score(run: str | Path, protocol: str) -> int:
+def _anonymized_train(
+    train_run: Path, lock: Mapping[str, Any], dataset: str, system_block: Mapping[str, Any],
+) -> dict[str, str]:
+    """Textes anonymisés du split train, produits par le MÊME système sur la MÊME ingestion."""
+    train_lock = _read_json(train_run / LOCK_NAME)
+    run = train_lock.get("run") or {}
+    if run.get("dataset") != dataset or run.get("split") != "train":
+        raise ScoreError(f"--train-run {train_run} : run {run.get('dataset')}/{run.get('split')}, "
+                         f"attendu {dataset}/train")
+    identity = ("system_id", "system_version", "params_digest")
+    theirs = train_lock.get("system") or {}
+    if any(theirs.get(k) != system_block.get(k) for k in identity):
+        raise ScoreError(f"--train-run {train_run} : autre système ou autres paramètres "
+                         "— la variante réentraînée exige le même anonymiseur")
+    if (train_lock.get("run") or {}).get("policy") != (lock.get("run") or {}).get("policy"):
+        raise ScoreError(f"--train-run {train_run} : autre politique que le run évalué")
+    if (train_lock.get("data_version") or {}).get("files") != (lock.get("data_version") or {}).get("files"):
+        raise ScoreError(f"--train-run {train_run} : autre ingestion que le run évalué")
+    try:
+        verify_run_outputs(train_run, train_lock.get("outputs"), (PREDICTIONS_NAME,),
+                           context=f"Train-run {train_run}")
+    except DataIntegrityError as exc:
+        raise ScoreError(str(exc)) from exc
+    return {
+        str(record["doc_id"]): str(record["anonymized_text"])
+        for record in _read_predictions(train_run / PREDICTIONS_NAME)
+        if record.get("status") in ("ok", "partial") and isinstance(record.get("anonymized_text"), str)
+    }
+
+
+def cmd_score(run: str | Path, protocol: str, *, train_run: str | Path | None = None) -> int:
     """Calcule ``scorecard.json`` depuis un run figé, sans modèle.
 
     Retourne 1 si le taux d'erreur dépasse 5 % (avertissement bloquant C-5),
@@ -433,6 +475,11 @@ def cmd_score(run: str | Path, protocol: str) -> int:
     # reviendrait à mesurer la rétention d'utilité en train-sur-test, ce qui
     # gonfle mécaniquement `score_original` et donc `utility_retention`.
     downstream_eligible = bool(eval_tasks) and split != "train"
+    if train_run is not None and not downstream_eligible:
+        raise ScoreError(
+            f"--train-run fourni mais le split {split!r} de {dataset!r} n'a pas de tâche aval "
+            "évaluable : retirer --train-run (jamais ignoré en silence)."
+        )
     train_docs, train_tasks = _load_train_data(dataset) if downstream_eligible else ([], [])
 
     downstream_results = []
@@ -447,17 +494,23 @@ def cmd_score(run: str | Path, protocol: str) -> int:
         }
         eval_docs_orig = [doc for doc in documents.values() if doc.doc_id in anon_by_doc]
         eval_docs_anon = [anon_by_doc[doc.doc_id] for doc in eval_docs_orig]
+        train_anon = (
+            _anonymized_train(Path(train_run), lock, dataset, lock.get("system") or {})
+            if train_run is not None else None
+        )
         for t_name in sorted({t.task for t in eval_tasks}):
-            downstream_results.append(
-                evaluate_downstream_task(
-                    task_name=t_name,
-                    train_docs=train_docs,
-                    train_tasks=train_tasks,
-                    eval_docs_orig=eval_docs_orig,
-                    eval_docs_anon=eval_docs_anon,
-                    eval_tasks=eval_tasks,
+            for anonymized_train in ((None, train_anon) if train_anon is not None else (None,)):
+                downstream_results.append(
+                    evaluate_downstream_task(
+                        task_name=t_name,
+                        train_docs=train_docs,
+                        train_tasks=train_tasks,
+                        eval_docs_orig=eval_docs_orig,
+                        eval_docs_anon=eval_docs_anon,
+                        eval_tasks=eval_tasks,
+                        train_texts_anon=anonymized_train,
+                    )
                 )
-            )
     try:
         # L'identité du système commande quelles métriques sont applicables.
         # On refuse plutôt que de supposer : supposer la détection produirait
@@ -492,6 +545,7 @@ def cmd_score(run: str | Path, protocol: str) -> int:
                                    JUDGE_LOCK_NAME, JUDGMENTS_NAME,
                                    expected_doc_ids=expected_doc_ids,
                                    expected_protocol="mean-utility-spia"),
+            combinations=_load_combinations(dataset, split),
             spia_attack=_load_spia_attack(run_dir, lock, inputs["run"]["predictions.jsonl"],
                                           expected_doc_ids=expected_doc_ids),
             external_diagnostics=(

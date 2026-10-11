@@ -116,10 +116,22 @@ def test_downstream_result_declares_variant_and_interval():
     )
     payload = res.to_dict()
     assert payload["metric"] == "macro_f1"
-    assert payload["variant"].startswith("frozen")
-    assert payload["retrained_variant"].startswith("unavailable")
+    assert payload["variant"] == "frozen"
+    assert "figé" in payload["variant_definition"]
     assert payload["accuracy_original"] == 1.0
     assert res.ci95 is not None and res.ci95["low"] <= 1.0 <= res.ci95["high"]
+
+    # Variante réentraînée : train anonymisé (un document en erreur exclu).
+    anon_train = {"t0": "[X] mot de passe", "t2": "paiement [X]", "t3": "facture [X]"}
+    retrained = evaluate_downstream_task(
+        task_name="cat", train_docs=train_docs, train_tasks=train_tasks,
+        eval_docs_orig=eval_docs, eval_docs_anon=[d.text for d in eval_docs],
+        eval_tasks=eval_tasks, train_texts_anon=anon_train,
+    ).to_dict()
+    assert retrained["variant"] == "retrained"
+    assert retrained["train_excluded"] == 1
+    assert retrained["score_original"] == payload["score_original"]
+    assert retrained["utility_retention"] is not None
 
 
 def test_empty_text_predicts_prior_class_not_alphabetical_first():

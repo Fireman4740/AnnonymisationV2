@@ -1,8 +1,8 @@
-"""Risque de ré-identification hybride : QICR + copule gaussienne (SPEC-06 §6-§7).
+"""Risque de ré-identification hybride : dedup_q + copule gaussienne (SPEC-06 §6-§7).
 
 Contrastes avec l'estimateur naïf du noyau v1 :
 
-- **QICR** : les attributs sont normalisés (JSON canonique), dédupliqués sur
+- **dedup_q** (renommé : la métrique QICR d'EPIC-H est autre chose) : les attributs sont normalisés (JSON canonique), dédupliqués sur
   ``(catégorie, valeur, coréférence)`` et fusionnés par coréférence — deux
   mentions du même âge n'entrent qu'une fois dans le produit ;
 - **copule gaussienne** : la masse conjointe du tuple d'attributs est
@@ -98,7 +98,7 @@ class UniquenessClaim(BaseModel):
 
 class QiAttribute(BaseModel):
     """Un quasi-identifiant du document : catégorie, valeur normalisée et
-    provenance — l'entrée du risque (QICR)."""
+    provenance — l'entrée du risque (dedup_q)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -135,7 +135,7 @@ class QiAttribute(BaseModel):
 
     @property
     def key(self) -> tuple[str, str, str | None]:
-        """Clé QICR : ``(catégorie, valeur JSON canonique, coréférence)``."""
+        """Clé dedup_q : ``(catégorie, valeur JSON canonique, coréférence)``."""
         return (self.category, _canonical_json(self.value), self.entity_ref)
 
 
@@ -758,7 +758,7 @@ def build_qi_attributes(
 
 
 def _dedup_attributes(attributes: list[QiAttribute]) -> tuple[QiAttribute, ...]:
-    """Dédup QICR : même ``(catégorie, valeur canonique, coréférence)`` →
+    """Dédup dedup_q (déduplication interne de Q(d), distincte de la métrique QICR) : même ``(catégorie, valeur canonique, coréférence)`` →
     une seule entrée (la plus confiante) ; même coréférence et même
     catégorie → fusion des mentions."""
     best: dict[tuple[str, str, str | None], QiAttribute] = {}
@@ -852,7 +852,7 @@ class HybridRiskEstimator:
         claims: tuple[UniquenessClaim, ...] = (),
         levels: Mapping[str, int] | None = None,
     ) -> HybridRiskEstimate:
-        """Évalue le risque du document : QICR → produit copule → intervalle
+        """Évalue le risque du document : dedup_q → produit copule → intervalle
         (résidus calibrés) → décision sur la borne haute.
 
         - claim d'unicité vraie (confiance ≥ 0.70) → k = 1, risque 1.0 ;

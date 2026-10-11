@@ -168,3 +168,28 @@ def test_llm_failure_swallowed_by_the_original_becomes_a_document_error():
     row = _run(_Client(fail="Below I give you two PII annotation values", spnc=spnc))
     assert row["status"] == "error"
     assert row["error"].startswith("llm:")
+
+
+def test_utility_judge_prompt_is_the_original_spia_prompt():
+    """Le juge Mean Utility envoie exactement le prompt de `UtilityEvaluator` SPIA."""
+    import ast
+    from typing import Any, Dict
+
+    from anonymisation.attack.spia.vendored import ROOT
+    from anonymisation.judge.utility import judge_prompt
+
+    source = (ROOT / "src/evaluate/utility/utility_evaluator.py").read_text(encoding="utf-8")
+    cls = next(n for n in ast.parse(source).body if isinstance(n, ast.ClassDef))
+    method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
+                  and n.name == "compute_llm_utility")
+    namespace: dict[str, Any] = {"json": json, "Dict": Dict, "Any": Any}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), "<spia>", "exec"), namespace)
+    sent: list[str] = []
+
+    class Evaluator:
+        def _call_llm(self, system_prompt, user_prompt):
+            sent.append(f"{system_prompt}\n\n{user_prompt}")  # `_call_llm` original
+            return "{}"
+
+    namespace["compute_llm_utility"](Evaluator(), "Original {x} text.", "Adapted text.")
+    assert sent == [judge_prompt("Original {x} text.", "Adapted text.")]

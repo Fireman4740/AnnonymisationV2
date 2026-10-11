@@ -58,6 +58,9 @@ METRIC_CAPABILITY_GATE: Final[Mapping[str, frozenset[str]]] = {
     "direct_leak_rate": frozenset(),
     "reid_success_rate": frozenset(),
     "utility_retention": frozenset(),
+    # --- combinaisons : QICR lit les spans, RCR@k le risque estimé ---------- #
+    "qicr": frozenset({CAP_SPANS}),
+    "rcr_at_k": frozenset({CAP_RISK}),
     # --- calibration : suppose une estimation de risque -------------------- #
     "male_k": frozenset({CAP_RISK}),
     "ece": frozenset({CAP_RISK}),

@@ -13,6 +13,7 @@ from statistics import median
 from typing import Any
 
 from anonymisation.metrics.accounting import RunAccounting, publication_blockers
+from anonymisation.metrics.combinations import combination_metrics
 from anonymisation.metrics.contracts import MetricDirection, MetricStatus, MetricValue
 from anonymisation.metrics.entities import (
     entity_protection_counts,
@@ -256,6 +257,8 @@ def build_scorecard(
     judgments: tuple[Sequence[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     external_diagnostics: Mapping[str, Mapping[str, Any]] | None = None,
     spia_attack: tuple[Sequence[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+    combinations: Sequence[Any] | None = None,
+    k_threshold: int = 10,
 ) -> dict[str, Any]:
     """Agrège un run figé en scorecard SPEC-07 §10.
 
@@ -411,7 +414,9 @@ def build_scorecard(
     retentions = [
         float(r.utility_retention)
         for r in (downstream_results or ())
-        if r.utility_retention is not None
+        # Rétention principale = variante FIGÉE (protocole TAU-Eval) ; la
+        # réentraînée reste publiée dans `tasks`, étiquetée.
+        if r.utility_retention is not None and getattr(r, "variant", "frozen") == "frozen"
     ]
     retention_mean = sum(retentions) / len(retentions) if retentions else None
 
@@ -442,7 +447,9 @@ def build_scorecard(
     # Rétention aval : intervalle apparié propre à la tâche. Une moyenne de
     # plusieurs tâches n'a pas d'intervalle défini ici (chaque tâche porte le
     # sien dans `downstream_tasks`).
-    evaluated_tasks = [r for r in (downstream_results or ()) if r.utility_retention is not None]
+    evaluated_tasks = [r for r in (downstream_results or ())
+                       if r.utility_retention is not None
+                       and getattr(r, "variant", "frozen") == "frozen"]
     intervals["utility_retention"] = (
         evaluated_tasks[0].ci95 if len(evaluated_tasks) == 1 else None
     )
@@ -577,6 +584,46 @@ def build_scorecard(
             direction=MetricDirection.MAXIMIZE, details=protection_details,
         ),
     }
+    # QICR / RCR@k / calibration (H-4, H-6) : vérité terrain indépendante
+    # requise (combinaisons gold liées à leurs annotations, k_true compté).
+    if combinations:
+        combo = combination_metrics(
+            combinations, gold_by_doc,
+            {str(r.get("doc_id")): r for r in scored},
+            k_threshold=k_threshold, rcr_k=k_threshold, split=split,
+        )
+        combo_reason = None
+    else:
+        combo = None
+        combo_reason = ("aucune combinaison gold à k_true indépendant pour ce corpus "
+                        "(combinations.jsonl absent) : QICR/RCR@k et calibration non définis")
+    calibration = (combo or {}).get("calibration") or {}
+    fit_reason = ("split d'ajustement : statistiques fit_*, pas une calibration (SPEC-07 §4)"
+                  if calibration.get("fit_split") else None)
+
+    def combo_metric(name: str, value: float | None, direction: MetricDirection,
+                     details: Mapping[str, Any]) -> dict[str, Any]:
+        reason = combo_reason or (fit_reason if name in ("male_k", "ece", "brier") else None)
+        return _gate(name, value, status=diagnostic_status, direction=direction, details={
+            **details, **({"reason": reason} if reason else {})})
+
+    diagnostic["qicr"] = combo_metric(
+        "qicr", (combo or {}).get("qicr"), MetricDirection.MAXIMIZE,
+        {k: v for k, v in (combo or {}).items() if k not in ("calibration", "rcr", "qicr")},
+    )
+    diagnostic["rcr_at_k"] = combo_metric(
+        "rcr_at_k", (combo or {}).get("rcr"), MetricDirection.MAXIMIZE,
+        {"k": (combo or {}).get("rcr_k"), **((combo or {}).get("rcr_counts") or {}),
+         "published_with": "qicr"},
+    )
+    for name, direction in (("male_k", MetricDirection.MINIMIZE),
+                            ("ece", MetricDirection.MINIMIZE),
+                            ("brier", MetricDirection.MINIMIZE)):
+        diagnostic[name] = combo_metric(name, calibration.get(name), direction, {
+            "pairs": calibration.get("pairs"), "target": calibration.get("target"),
+            **({"ece_by_bins": calibration.get("ece_by_bins")} if name == "ece" else {}),
+        })
+
     # Évaluateurs ORIGINAUX propres à un corpus (TAB), calculés par `score`
     # qui seul lit les fichiers source : publiés tels quels, sous leur nom.
     for name, metric in (external_diagnostics or {}).items():

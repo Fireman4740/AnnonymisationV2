@@ -44,7 +44,12 @@ from anonymisation.attack.ratbench.risk import (
     encode_correct_attributes,
 )
 from anonymisation.datasets._local import fingerprint
-from anonymisation.llm.client import LlmBackendUnavailableError, LlmClient, LlmError
+from anonymisation.llm.client import (
+    PROVIDER_DEFAULT,
+    LlmBackendUnavailableError,
+    LlmClient,
+    LlmError,
+)
 from anonymisation.schema.integrity import locked_files, verify_pivot_files, verify_run_outputs
 from anonymisation.schema.io import atomic_write, read_jsonl, sha256_file, write_json
 from anonymisation.schema.models import Profile
@@ -122,8 +127,11 @@ def _complete_with_retries(
         if delay:
             sleep(delay)
         try:
+            # L'attaquant officiel ne fixe pas de température (`responses.create`
+            # sans `temperature`) : défaut du fournisseur, comme lui.
             completion = client.complete(prompt, system=SYSTEM_PROMPT,
-                                         max_tokens=ATTACKER_MAX_TOKENS)
+                                         max_tokens=ATTACKER_MAX_TOKENS,
+                                         temperature=PROVIDER_DEFAULT)
             return completion.content, completion.cached
         except LlmBackendUnavailableError:
             if attempt == len(RETRY_DELAYS_S):
@@ -246,7 +254,7 @@ def run_attack(
         "attacker": {
             "backend": client.backend.name,
             "model": client.backend.model,
-            "temperature": client.backend.temperature,
+            "temperature": "provider-default (officiel : non fixée)",
             "max_tokens": ATTACKER_MAX_TOKENS,
             "parser": "parse_output_gpt (ligne à ligne, officiel)",
             "system_prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest(),

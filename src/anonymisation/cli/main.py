@@ -633,6 +633,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     score_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
     score_p.add_argument("--protocol", required=True, help="Protocole d'évaluation.")
+    score_p.add_argument(
+        "--train-run", default=None,
+        help="Run predict du split train par le MÊME système : active la variante "
+             "d'utilité aval réentraînée sur anonymisé.",
+    )
 
     attack_p = sub.add_parser(
         "attack",
@@ -762,7 +767,7 @@ def main(argv: list[str] | None = None) -> int:
         from anonymisation.cli.score import ScoreError, cmd_score
 
         try:
-            return cmd_score(args.run, args.protocol)
+            return cmd_score(args.run, args.protocol, train_run=args.train_run)
         except ScoreError as exc:
             print(f"Erreur d'usage : {exc}", file=sys.stderr)
             return 2

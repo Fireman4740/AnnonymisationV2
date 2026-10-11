@@ -36,6 +36,20 @@ _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[3]
 _TRUNCATION_REASONS: Final[frozenset[str]] = frozenset({"length", "max_tokens"})
 
 
+class _ProviderDefault:
+    """Marqueur : ne PAS envoyer de température (défaut du fournisseur).
+
+    Certains protocoles originaux n'en fixent aucune (attaquant RAT-Bench) ;
+    imposer celle du backend changerait l'attaquant. Explicite, jamais implicite.
+    """
+
+    def __repr__(self) -> str:
+        return "PROVIDER_DEFAULT"
+
+
+PROVIDER_DEFAULT: Final = _ProviderDefault()
+
+
 class LlmError(RuntimeError):
     """Racine des erreurs LLM. Ne représente jamais un résultat vide valide."""
 
@@ -212,12 +226,15 @@ class LlmClient:
         messages = [{"role": "user", "content": prompt}]
         if system is not None:
             messages.insert(0, {"role": "system", "content": system})
+        sampling: dict[str, Any] = {} if temperature is PROVIDER_DEFAULT else {
+            "temperature": temperature if temperature is not None else backend.temperature
+        }
         try:
             response = client.chat.completions.create(
                 model=backend.model,
                 messages=messages,
-                temperature=temperature if temperature is not None else backend.temperature,
                 extra_body=dict(backend.extra_body) or None,
+                **sampling,
                 **({"max_tokens": max_tokens} if max_tokens is not None else {}),
             )
         except Exception as exc:  # noqa: BLE001 — toute panne réseau devient LlmBackendUnavailableError
@@ -240,11 +257,12 @@ class LlmClient:
         backend = self._backend
         client = self._ensure_sdk_client()
         extra = {"system": system} if system is not None else {}
+        if temperature is not PROVIDER_DEFAULT:
+            extra["temperature"] = temperature if temperature is not None else backend.temperature
         try:
             response = client.messages.create(
                 model=backend.model,
                 max_tokens=max_tokens if max_tokens is not None else 4096,
-                temperature=temperature if temperature is not None else backend.temperature,
                 messages=[{"role": "user", "content": prompt}],
                 **extra,
             )
@@ -288,7 +306,10 @@ class LlmClient:
         if max_tokens is not None and max_tokens < 1:
             raise LlmConfigError("max_tokens doit être strictement positif")
         params: dict[str, Any] = {
-            "temperature": temperature if temperature is not None else backend.temperature
+            "temperature": (
+                "provider-default" if temperature is PROVIDER_DEFAULT
+                else temperature if temperature is not None else backend.temperature
+            )
         }
         if backend.extra_body:
             params["extra_body"] = dict(backend.extra_body)
@@ -366,6 +387,7 @@ class LlmClient:
 
 
 __all__ = [
+    "PROVIDER_DEFAULT",
     "LlmBackendUnavailableError",
     "LlmClient",
     "LlmCompletion",

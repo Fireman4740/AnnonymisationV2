@@ -38,6 +38,8 @@ JUDGMENTS_NAME = "judgments.jsonl"
 JUDGE_LOCK_NAME = "judge.lock.json"
 RETRY_DELAYS_S = (5, 15, 30)
 MAX_ERROR_RATE = 0.05
+#: Défaut de `call_api_with_param` dans le code SPIA d'origine.
+JUDGE_TEMPERATURE = 0.1
 
 SYSTEM_PROMPT = (
     "You are an expert text similarity scorer that carefully compares two texts and gives a "
@@ -151,7 +153,8 @@ def _complete(client: LlmClient, prompt: str, sleep: Callable[[float], None] = t
         if delay:
             sleep(delay)
         try:
-            completion = client.complete(prompt)
+            # `call_api_with_param` SPIA : température 0,1 par défaut.
+            completion = client.complete(prompt, temperature=JUDGE_TEMPERATURE)
             return completion.content, completion.cached
         except LlmBackendUnavailableError:
             if attempt == len(RETRY_DELAYS_S):
@@ -203,7 +206,7 @@ def run_judge(
         "judge": {
             "backend": client.backend.name,
             "model": client.backend.model,
-            "temperature": client.backend.temperature,
+            "temperature": JUDGE_TEMPERATURE,
             "prompt_module_sha256": sha256_file(Path(__file__)),
         },
         "inputs": {

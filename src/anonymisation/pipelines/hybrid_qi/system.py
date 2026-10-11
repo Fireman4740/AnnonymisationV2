@@ -3,7 +3,7 @@
 Architecture complète (SPEC-10 §3, plan ``hybrid-qi``) :
 
 - **Noyau déterministe, hors ligne (C1)** — détecteur natif (motifs +
-  règles) → fusion → ensemble de Q(d) (QICR) → risque copule calibré sur
+  règles) → fusion → ensemble de Q(d) (dedup_q) → risque copule calibré sur
   la population synthétique versionnée ``hybrid-diagnostic-v1`` → planning
   local P0–P4 (boucle ratio Δrisque/coût) → transformation → validation
   hors-ligne. Aucune étape du noyau n'ouvre de socket, ne charge de
@@ -550,7 +550,7 @@ class HybridQiSystem(SystemBase):
         )
 
         # ---------------------------------------------------------------- #
-        # 3. ASSESS — Q(d) (QICR) + risque copule calibré (DIAGNOSTIC)
+        # 3. ASSESS — Q(d) (dedup_q) + risque copule calibré (DIAGNOSTIC)
         # ---------------------------------------------------------------- #
         attributes = build_qi_attributes(annotations=annotations, extraction=extraction)
         claims = tuple(extraction.uniqueness_claims) if extraction else ()

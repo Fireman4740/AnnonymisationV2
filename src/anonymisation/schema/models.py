@@ -256,6 +256,10 @@ class Combination(BaseModel):
     scope: Scope
     doc_ids: tuple[str, ...]
     qi_set: tuple[QiValue, ...]
+    #: Annotations gold exigées par la combinaison (EPIC-H H-4). Sans ce lien,
+    #: QICR ne peut pas savoir QUELLE mention couvrir : la combinaison est
+    #: alors exclue du dénominateur et comptée (`unlinked_at_risk`).
+    annotation_ids: tuple[str, ...] = ()
     k_true: int | None = None
     risk_true: float | None = None
     risk_model: RiskModel
