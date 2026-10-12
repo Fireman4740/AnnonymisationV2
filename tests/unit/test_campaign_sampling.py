@@ -103,3 +103,36 @@ def test_dataset_budget_can_leave_a_split_empty_explicitly():
 ])
 def test_stage_failures_check_score_and_replay_exit_codes(stages, replay_identical, expected):
     assert campaign.stage_failures(stages, replay_identical) == expected
+
+
+def _campaign_cfg():
+    import json
+
+    return json.loads((Path(__file__).resolve().parents[2] / "configs/evaluation/campaign.json").read_text())
+
+
+def test_variants_run_every_policy_but_judge_only_reference_runs():
+    variants = {v["name"]: v for v in campaign.system_variants(_campaign_cfg(), remote_allowed=True)}
+    assert {f"deterministic-P{i}" for i in range(5)} <= set(variants)
+    assert {f"hybrid-qi-P{i}" for i in range(5)} <= set(variants)
+    assert {"passthrough", "redact-all", "oracle-mask", "regex-only", "llm-full"} <= set(variants)
+    judged = sorted(name for name, v in variants.items() if v["llm_stages"])
+    assert judged == ["deterministic-P2", "hybrid-qi-P2", "llm-full", "oracle-mask",
+                      "passthrough", "redact-all", "regex-only"]
+
+
+def test_real_corpus_without_authorization_never_runs_llm_full():
+    names = {v["name"] for v in campaign.system_variants(_campaign_cfg(), remote_allowed=False)}
+    assert "llm-full" not in names and "deterministic-P0" in names
+
+
+def test_predict_args_carry_policy_and_explicit_parameters(tmp_path):
+    cfg = _campaign_cfg()
+    variants = {v["name"]: v for v in campaign.system_variants(cfg, remote_allowed=True)}
+    args = campaign.predict_args(cfg, "ratbench", "eval", variants["hybrid-qi-P3"], tmp_path)
+    assert args[args.index("--policy") + 1] == "P3"
+    assert args[args.index("--profile") + 1] == "hybrid_qi"
+    redact = campaign.predict_args(cfg, "ratbench", "eval", variants["redact-all"], tmp_path)
+    assert "replacement=" in redact
+    llm = campaign.predict_args(cfg, "ratbench", "eval", variants["llm-full"], tmp_path)
+    assert f"backend={cfg['anonymizer_backend']}" in llm

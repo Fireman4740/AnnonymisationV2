@@ -1,29 +1,110 @@
 {
-  "purpose": "functional_multi_corpus_only",
+  "purpose": "aligned_original_implementations_20_documents",
   "remote_real_corpora_authorized": false,
   "anonymizer_backend": "openrouter_liquid_2_6b",
   "attacker_backend": "openrouter_nemotron_super",
   "judge_backend": "openrouter_nemotron_super",
   "legacy_root": "/mnt/f/IA/Anonymisation/eval/datasets",
-  "documents_per_split": 20,
   "documents_per_dataset": 20,
-  "systems": ["llm-full"],
   "llm_full_max_output_tokens": 8192,
   "llm_full_max_entities": 256,
   "sampling_seed": 20261008,
   "max_document_chars": 16000,
   "train_documents": 20,
   "datasets": {
-    "ratbench": ["eval"],
-    "quasifr": ["anonymization", "hard_quasi_id", "max_anonymization"],
-    "personalreddit": ["test"],
-    "tab": ["test"],
-    "conll2003": ["test"],
-    "dbbio": ["test"],
-    "supporttickets": ["test"],
-    "bitextsupport": ["test"],
-    "spia": ["test"],
-    "panorama": ["train"],
-    "openpii": ["validation"]
-  }
+    "ratbench": [
+      "eval"
+    ],
+    "quasifr": [
+      "anonymization",
+      "hard_quasi_id",
+      "max_anonymization"
+    ],
+    "personalreddit": [
+      "test"
+    ],
+    "tab": [
+      "test"
+    ],
+    "conll2003": [
+      "test"
+    ],
+    "dbbio": [
+      "test"
+    ],
+    "supporttickets": [
+      "test"
+    ],
+    "bitextsupport": [
+      "test"
+    ],
+    "spia": [
+      "test"
+    ],
+    "panorama": [
+      "train"
+    ],
+    "openpii": [
+      "validation"
+    ]
+  },
+  "systems": [
+    {
+      "system": "passthrough",
+      "llm_stages": true
+    },
+    {
+      "system": "redact-all",
+      "params": {
+        "replacement": ""
+      },
+      "llm_stages": true
+    },
+    {
+      "system": "oracle-mask",
+      "llm_stages": true
+    },
+    {
+      "system": "regex-only",
+      "llm_stages": true
+    },
+    {
+      "system": "deterministic",
+      "policies": [
+        "P0",
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
+      "llm_stage_policies": [
+        "P2"
+      ]
+    },
+    {
+      "system": "hybrid-qi",
+      "policies": [
+        "P0",
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
+      "llm_stage_policies": [
+        "P2"
+      ]
+    },
+    {
+      "system": "llm-full",
+      "remote_only": true,
+      "llm_stages": true
+    }
+  ],
+  "documents_per_split": 20,
+  "not_executable_here": [
+    "configuration d'attaque/juge locale <30B (qwen_local) : serveur sur le poste Windows de l'utilisateur, injoignable depuis openresearch-box",
+    "QICR/RCR@k et calibration hors ajustement : aucun corpus disponible avec combinaisons gold liées et k_true indépendant (hr_qi sans adaptateur)",
+    "portée auteur des politiques P3/P4 (S5) : non implémentée par les moteurs, écart déclaré dans chaque lock",
+    "validation du juge local contre annotations humaines : aucune annotation humaine disponible"
+  ]
 }

@@ -105,11 +105,12 @@ def _utils_assignments(node: ast.stmt) -> bool:
 
 
 def build_official(sources: dict[str, str]) -> dict[str, Any]:
-    import Levenshtein  # dépendance du code officiel (`str_is_close`)
-    from typing import List, Tuple, Union
+    from typing import List, Tuple, Union  # noqa: UP035 — noms attendus par le code officiel
 
-    ns: dict[str, Any] = {"re": re, "json": json, "pickle": pickle, "Levenshtein": Levenshtein,
-                          "List": List, "Tuple": Tuple, "Union": Union}
+    import Levenshtein  # dépendance du code officiel (`str_is_close`)
+
+    ns: dict[str, Any] = {"re": re, "json": json, "pickle": pickle,  # noqa: UP006
+                          "Levenshtein": Levenshtein, "List": List, "Tuple": Tuple, "Union": Union}  # noqa: UP006
     utils = sources["pii_benchmark/utils.py"]
     extract(utils, _utils_assignments, ns)
     extract(utils, lambda n: isinstance(n, ast.FunctionDef) and n.name != "load_data", ns)
@@ -122,7 +123,7 @@ def build_official(sources: dict[str, str]) -> dict[str, Any]:
     # (`PUMS_MAPS_PATH`, `pums_cols`) diffèrent de celles de `utils.py`.
     import numpy as np
 
-    uniq: dict[str, Any] = {"pickle": pickle, "np": np, "List": List}
+    uniq: dict[str, Any] = {"pickle": pickle, "np": np, "List": List}  # noqa: UP006
     uniqueness = sources["pii_benchmark/uniqueness.py"]
     extract(uniqueness, _named("PUMS_MAPS_PATH", "PUMS_DOB_MAP_PATH", "pums_cols",
                                "REID_CORRECTNESS_THRESHOLD", "process_col", "_is_reided"), uniq)

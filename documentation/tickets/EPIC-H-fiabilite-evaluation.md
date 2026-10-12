@@ -89,6 +89,29 @@ denses et écarte aussi les estimations hors de [0, 1], là où l'officiel
 n'écarte que les NaN ; le mode `partial` exige encore une catégorie compatible,
 contrairement à nervaluate (H-8).
 
+### Lot alignement (2026-10-12) — implémentations originales, fin du plan
+
+Décision utilisateur : se calquer sur les implémentations originales des
+benchmarks. État par lot (les tests cités échouaient avant correctif ou
+vérifient la parité avec l'original) :
+
+| Lot | État | Preuve |
+|---|---|---|
+| H-0 socle | ✅ lock : modèles, empreintes des prompts, paramètres effectifs, empreinte `backends.yaml`, portée de politique demandée/appliquée ; Python ≥ 3.11 (nervaluate, CorrectMatch) ; `uv lock --check` | `cli/predict.py`, `tests/unit/test_predict_lock.py` |
+| H-5 fuites | ✅ code (lot précédent) ; scorecards historiques remplacées par la campagne de ce lot | `metrics/leakage.py` |
+| H-8 spans | ✅ nervaluate 1.2.1 épinglé + adaptateur d'offsets ; localisation / classification séparées ; couverture des masques appliqués ; évaluateur TAB **original** recopié (sha vérifié) | `metrics/ner_schemas.py`, `metrics/masking.py`, `metrics/vendor/tab_evaluation.py`, `tests/unit/test_ner_schemas.py`, `tests/unit/test_tab_official.py` |
+| H-3 RAT-Bench | ✅ `parse_output_gpt` porté (ligne à ligne seul), attribut omis = devinette fausse, `max_tokens=4096`, température non fixée, tirages CorrectMatch entrelacés, NaN seuls écartés ; contrôle d'équivalence `scripts/parity_ratbench.py` contre le code officiel téléchargé au commit figé (prompt, lecture, jugement, encodage PUMS, moyenne, décision) | `attack/ratbench/`, `tests/unit/test_frozen_evaluation.py` |
+| H-2 SPIA | ✅ code SPIA original recopié (MIT, manifeste d'empreintes) ; seul le transport LLM remplacé ; CPR/IPR réservés au protocole, littéral renommé `literal_*` | `attack/spia/`, `metrics/spia_protection.py`, `tests/unit/test_spia_protocol.py` |
+| H-1 définitions | ✅ SPEC-07 v2.2 ; comparaison à attaquant/juge/modèle de risque identiques et même vérité terrain | `metrics/comparison.py` |
+| H-4 QICR/RCR | ✅ code + `Combination.annotation_ids` ; `dedup_q` renommé ; ⬜ aucun corpus disponible avec k_true indépendant → `UNAVAILABLE` motivé | `metrics/combinations.py`, `tests/unit/test_combination_metrics.py` |
+| H-6 calibration | ✅ MALE/Brier/ECE (+ bacs) hors split d'ajustement ; ⬜ même limite de vérité terrain | idem |
+| H-7 utilité | ✅ variante réentraînée (`score --train-run`), étiquetée ; parité du prompt du juge avec `UtilityEvaluator` SPIA, température 0,1 ; ⬜ validation du juge local contre annotations humaines (aucune annotation) | `metrics/downstream.py`, `judge/utility.py` |
+| H-9 audit | ✅ fiches par document (reconstruction exacte depuis les décisions, offsets, règle de succès) ; S1–S6 automatisés sur cas contrôlés ; ancre `oracle-mask` ; ⬜ S5 non vérifiable : la portée auteur de P3/P4 n'est implémentée par aucun moteur (écart déclaré dans chaque lock) | `scripts/audit_fiches.py`, `tests/integration/test_sanity_invariants.py` |
+
+Hors de portée de ce serveur : configuration attaque/juge locale <30B
+(`qwen_local` tourne sur le poste Windows de l'utilisateur) ; corpus réels vers
+OpenRouter (autorisation non donnée) ; PANORAMA (HTTP 403).
+
 ## 2. Constats vérifiés
 
 Gravité : **B** = bloquant (chiffre faux ou trompeur), **M** = majeur (non

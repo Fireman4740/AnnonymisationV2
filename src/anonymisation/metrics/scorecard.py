@@ -32,8 +32,8 @@ from anonymisation.metrics.protection import (
     subject_outcomes_from_run,
 )
 from anonymisation.metrics.reidentification import reid_success_metric
-from anonymisation.metrics.spia_protection import spia_protection
 from anonymisation.metrics.spans import weighted_token_precision
+from anonymisation.metrics.spia_protection import spia_protection
 from anonymisation.metrics.tria import (
     TRIRUnavailable,
     evaluate_trir,

@@ -93,11 +93,25 @@ Les dénominateurs proviennent de `.validation.json`
 
 ### Correspondance de spans
 
-| Mode | Règle | Usage |
-|------|-------|-------|
-| `exact` | Offsets identiques | Rapport strict |
-| `partial` | Chevauchement + label correct (SemEval-2013 task 9.1, paquet `nervaluate`) | **Défaut** |
-| `entity` | Toutes les mentions de l'entité masquées | Rapport privacy — voir ER_di/ER_qi |
+Depuis la v2.2, les schémas sont calculés par le paquet **`nervaluate` 1.2.1
+épinglé** (`metrics/ner_schemas.py`), via un adaptateur explicite : fins
+exclusives du pivot → fins incluses de nervaluate (`end - 1`), une entité par
+couple (span, catégorie). La v2.1 réimplémentait `partial` en exigeant le type,
+contrairement à l'original.
+
+| Schéma nervaluate | Règle | Publié sous | Rôle |
+|------|-------|-------|-------|
+| `partial` | Chevauchement à demi-crédit, **type ignoré** | `span_precision/recall/f1` | Localisation — **défaut** |
+| `exact` | Bornes identiques, type ignoré | `span_schemas` | Localisation stricte |
+| `ent_type` | Chevauchement, type exact | `span_classification_f1` | Classification |
+| `strict` | Bornes et type exacts | `span_strict_f1` | Classification stricte |
+| `entity` | Toutes les mentions de l'entité couvertes | `ER_di/ER_qi` | Rapport privacy |
+
+**Couverture des masques appliqués** (`mask_coverage`) : part des caractères
+gold ancrés recouverts par les **décisions** du run (`KEEP` exclu). Une
+détection ne prouve pas un masquage. Sur TAB, l'évaluateur **original** de
+TAB (`metrics/vendor/tab_evaluation.py`, recopié tel quel) est appelé sur le
+gold source et les masques appliqués (`tab_official`).
 
 Le mode utilisé DOIT être déclaré avec tout score.
 
@@ -311,14 +325,22 @@ d'impact sur le classement des méthodes**.
 > de SPIA (295 documents) la corrélation de Spearman du classement des
 > méthodes et l'écart absolu avec les valeurs publiées (EPIC-H, H-3).
 
-#### Adversaire littéral (état actuel)
+#### Protocole SPIA original (v2.2) et adversaire littéral
 
-Tant que l'adversaire d'inférence n'est pas implémenté, `score` calcule CPR et
-IPR avec un **adversaire littéral** : une PII est « encore inférable » si sa
-surface gold reste présente dans le texte anonymisé (forme normalisée NFC +
-casse repliée + espaces fusionnés, mots entiers). Ce n'est **ni une borne
-inférieure ni une borne supérieure** de l'inférabilité, et ce n'est pas
-comparable aux CPR/IPR de SPIA : ces valeurs sont publiées en `PROXY`.
+`cpr` / `ipr` sont **réservés** au protocole SPIA original
+(`anonv2 attack --attacker spia`) : code de `maisonOP/spia@3fa78a1` recopié
+tel quel (empreintes vérifiées), inférence SA/SPC/SPNC sur le texte
+anonymisé, alignement des sujets (3 passes puis `gt_only_subject`), scores
+d'accord 1 / 0,5 / 0 (décideur `rule_model` — l'arbitrage humain de l'original
+n'est pas automatisable), `calculate_ipr_cpr` original avec
+`min_certainty = 3`. Sans attaque SPIA figée, `cpr` / `ipr` sont
+`UNAVAILABLE`. Une panne de modèle que le code original avale est une erreur
+du document (C3).
+
+L'**adversaire littéral** (présence d'une surface gold, forme normalisée, mots
+entiers) reste publié comme diagnostic de présence textuelle sous
+`literal_cpr` / `literal_ipr` ; il n'est **jamais** substitué aux valeurs du
+protocole.
 
 ### TRIR — le risque de ré-identification de référence
 
@@ -599,5 +621,6 @@ Un pipeline qui échoue S3 ou S5 a un bug, quelles que soient ses autres valeurs
 | Version | Date | Changement |
 |---------|------|-----------|
 | 1.0 | 2026-08-30 | Création. Cinq niveaux, QICR/RCR@k, garde-fou de circularité, format de rapport, six tests de sanité. |
+| **2.2** | 2026-10-12 | Alignement sur les implémentations originales : `nervaluate` 1.2.1 épinglé (partial sans type), couverture des masques appliqués, évaluateur TAB original, protocole SPIA original pour CPR/IPR (littéral renommé `literal_*`), RAT-Bench `parse_output_gpt` et attribut omis = devinette fausse, QICR/RCR@k sur vérité indépendante (`Combination.annotation_ids`), rétention aval réentraînée en variante étiquetée. |
 | **2.1** | 2026-10-02 | Audit EPIC-H. Protocole TRIR v2 (connaissance auxiliaire disjointe des cibles, plus de repli `doc_id`). Adversaire littéral normalisé et requalifié (ni borne inf. ni sup.). Hypothèse « LLM local » requalifiée. MALE-k unique ; cible de Brier/ECE précisée ; sensibilité de l'ECE aux bacs. Rétention en macro-F1. Intervalles de confiance et chaîne d'empreintes obligatoires. |
 | **2.0** | 2026-08-30 | Intégration de la revue d'avril 2026 ([04-datasets-et-metriques](../rapport/04-datasets-et-metriques-2026.md)). Hiérarchie à 7 rangs adossée aux 4 axes. **CPR/IPR deviennent les métriques principales** ; $R_{succ}$ devient dérivée. Ajout de TRIA/TRIR, de l'AAC et de sa limite mono-sujet, du partial-match `nervaluate` par défaut, d'ER_di/ER_qi, des trois limites chiffrées du F1, et de Mean Utility. |

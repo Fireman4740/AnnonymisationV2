@@ -71,7 +71,7 @@ def test_s2_fully_removed_text_leaks_nothing_and_loses_utility():
 
 
 @pytest.mark.parametrize("system", ["deterministic", "hybrid-qi"])
-def test_s3_stricter_policy_masks_more_and_keeps_less_text(micro_pivot: Path, tmp_path, system):
+def test_s3_stricter_policy_masks_more_and_keeps_less_text(micro_pivot: Path, tmp_path, system):  # noqa: F811
     micro = load_micro()
     docs = {d.doc_id: d for d in micro["documents"]}
     gold: dict[str, list] = {}
@@ -101,7 +101,7 @@ def test_s4_non_standard_expression_is_harder_to_detect():
             < explicit_counts["partial"].scores("partial")["recall"])
 
 
-def test_s5_author_scope_gap_is_declared_not_silently_dropped(micro_pivot: Path, tmp_path):
+def test_s5_author_scope_gap_is_declared_not_silently_dropped(micro_pivot: Path, tmp_path):  # noqa: F811
     """P3/P4 demandent la portée auteur, non implémentée : le lock doit le dire."""
     out = tmp_path / "p4"
     assert main(["predict", "--dataset", "micro", "--split", "train", "--system", "deterministic",

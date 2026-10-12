@@ -173,7 +173,7 @@ def test_llm_failure_swallowed_by_the_original_becomes_a_document_error():
 def test_utility_judge_prompt_is_the_original_spia_prompt():
     """Le juge Mean Utility envoie exactement le prompt de `UtilityEvaluator` SPIA."""
     import ast
-    from typing import Any, Dict
+    from typing import Any, Dict  # noqa: UP035,UP006
 
     from anonymisation.attack.spia.vendored import ROOT
     from anonymisation.judge.utility import judge_prompt
@@ -182,7 +182,7 @@ def test_utility_judge_prompt_is_the_original_spia_prompt():
     cls = next(n for n in ast.parse(source).body if isinstance(n, ast.ClassDef))
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
                   and n.name == "compute_llm_utility")
-    namespace: dict[str, Any] = {"json": json, "Dict": Dict, "Any": Any}
+    namespace: dict[str, Any] = {"json": json, "Dict": Dict, "Any": Any}  # noqa: UP035,UP006
     exec(compile(ast.Module(body=[method], type_ignores=[]), "<spia>", "exec"), namespace)
     sent: list[str] = []
 

@@ -18,7 +18,7 @@ audit = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(audit)
 
 
-def test_clean_run_has_no_gap_and_reconstructs_every_text(micro_pivot: Path, tmp_path: Path):
+def test_clean_run_has_no_gap_and_reconstructs_every_text(micro_pivot: Path, tmp_path: Path):  # noqa: F811
     run = tmp_path / "run"
     assert _predict(run) == 0
     out = tmp_path / "audit"
@@ -30,7 +30,9 @@ def test_clean_run_has_no_gap_and_reconstructs_every_text(micro_pivot: Path, tmp
     assert len(list(out.glob("*.md"))) == payload["summary"]["documents"]
 
 
-def test_frozen_text_that_does_not_follow_the_decisions_is_flagged(micro_pivot: Path, tmp_path: Path):
+def test_frozen_text_that_does_not_follow_the_decisions_is_flagged(  # noqa: F811
+    micro_pivot: Path, tmp_path: Path,  # noqa: F811
+):
     run = tmp_path / "run"
     assert _predict(run) == 0
     path = run / "predictions.jsonl"

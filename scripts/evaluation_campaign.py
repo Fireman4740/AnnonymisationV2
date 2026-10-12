@@ -266,7 +266,57 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
     return info
 
 
+def system_variants(cfg: dict[str, Any], remote_allowed: bool) -> list[dict[str, Any]]:
+    """Runs à produire : un par (système, politique), étages LLM explicités.
+
+    ``llm_stages`` désigne les runs jugés (utilité) : le palier gratuit ne
+    permet pas de juger chaque politique ; l'attaque RAT-Bench, elle, porte
+    sur tous les runs. ``llm-full`` n'est lancé que si l'envoi externe est
+    autorisé pour ce corpus.
+    """
+    variants = []
+    for spec in cfg["systems"]:
+        if spec.get("remote_only") and not remote_allowed:
+            continue
+        policies = spec.get("policies") or [None]
+        for policy in policies:
+            name = spec["system"] + (f"-{policy}" if policy else "")
+            llm_stages = spec.get("llm_stages", False) or policy in spec.get("llm_stage_policies", ())
+            variants.append({"name": name, "system": spec["system"], "policy": policy,
+                             "params": dict(spec.get("params") or {}), "llm_stages": llm_stages})
+    return variants
+
+
+def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, Any],
+                 directory: Path) -> list[str]:
+    profile = {"llm-full": "llm_full", "hybrid-qi": "hybrid_qi"}.get(variant["system"], "deterministic")
+    args = ["predict", "--dataset", key, "--split", split, "--system", variant["system"],
+            "--profile", profile, "--out", str(directory)]
+    if variant["policy"]:
+        args += ["--policy", variant["policy"]]
+    params = dict(variant["params"])
+    if variant["system"] == "llm-full":
+        params.update(backend=cfg["anonymizer_backend"],
+                      max_output_tokens=cfg["llm_full_max_output_tokens"],
+                      max_entities=cfg["llm_full_max_entities"])
+    for name, value in sorted(params.items()):
+        args += ["--param", f"{name}={value}"]
+    return args
+
+
+def _subprocess(args: list[str]) -> tuple[int, str]:
+    import subprocess
+
+    print("COMMAND", " ".join(args), flush=True)
+    proc = subprocess.run(args, capture_output=True, text=True, check=False)
+    tail = (proc.stdout + proc.stderr)[-4000:]
+    print(tail, flush=True)
+    return proc.returncode, tail
+
+
 def run_campaign() -> int:
+    import sys
+
     from evaluation_smoke import command, load_key
 
     load_key()
@@ -285,14 +335,12 @@ def run_campaign() -> int:
     # Clé de pseudonymisation réservée à ce test public, jamais une clé réelle.
     os.environ["ANONV2_PSEUDO_SECRET"] = "functional-evaluation-public-not-for-production"
     summary: dict[str, Any] = {"purpose": cfg["purpose"], "models": models,
-                              "requested_systems": cfg.get("systems"),
+                              "systems": cfg["systems"],
                               "documents_per_dataset": cfg.get("documents_per_dataset"),
                               "datasets": [], "results": [], "failures": [],
-                              "remote_skipped": [],
-                              "unimplemented": ["datasets hr_qi/synthpai (adaptateurs absents)",
-                                                "SPIA adversarial subject matching",
-                                                "QICR/RCR@k", "ECE/Brier/MALE dans scorecard",
-                                                "utility downstream réentraînée / TAU-Eval"]}
+                              "remote_skipped": [], "parity": {}, "audit": [],
+                              "not_executable_here": cfg["not_executable_here"]}
+    ratbench_runs: list[Path] = []
     for key, splits in cfg["datasets"].items():
         try:
             info = prepare(key, splits, cfg, cache, official_rat_root)
@@ -304,8 +352,10 @@ def run_campaign() -> int:
         summary["datasets"].append(info)
         remote_allowed = info["synthetic"] or cfg["remote_real_corpora_authorized"]
         if not remote_allowed:
-            summary["remote_skipped"].append({"dataset": key, "stages": ["llm-full", "judge"],
+            summary["remote_skipped"].append({"dataset": key,
+                "stages": ["llm-full", "judge", "attaque SPIA"],
                 "reason": "autorisation explicite d'envoi externe des textes réels en attente"})
+        with_train = "train" in info["sampling"] and "train" not in info["evaluation_splits"]
 
         def call(args: list[str], *, allow_api: bool = remote_allowed) -> int:
             guard = nullcontext() if allow_api else patch(
@@ -315,66 +365,94 @@ def run_campaign() -> int:
                 return command(args)
 
         for split in info["evaluation_splits"]:
-            systems = cfg.get("systems", ["regex-only", "deterministic", "hybrid-qi", "llm-full"])
-            if not remote_allowed:
-                systems = [system for system in systems if system != "llm-full"]
-            if key == "ratbench" and "systems" not in cfg:
-                systems = ["passthrough", "redact-all", *systems]
-            for system in systems:
-                directory = Path("runs/campaign") / key / split / system
-                entry: dict[str, Any] = {"dataset": key, "split": split, "system": system, "stages": {}}
+            for variant in system_variants(cfg, remote_allowed):
+                name = variant["name"]
+                directory = Path("runs/campaign") / key / split / name
+                entry: dict[str, Any] = {"dataset": key, "split": split, "system": name,
+                                         "stages": {}, "llm_stages": variant["llm_stages"]}
                 stages = entry["stages"]
-                profile = {"llm-full": "llm_full", "hybrid-qi": "hybrid_qi"}.get(
-                    system, "deterministic")
-                args = ["predict", "--dataset", key, "--split", split, "--system", system,
-                        "--profile", profile,
-                        "--out", str(directory)]
-                if system in ("deterministic", "hybrid-qi"):
-                    args += ["--policy", "P2"]
-                elif system == "redact-all":
-                    args += ["--param", "replacement="]
-                elif system == "llm-full":
-                    args += ["--param", f"backend={cfg['anonymizer_backend']}",
-                             "--param", f"max_output_tokens={cfg.get('llm_full_max_output_tokens', 4096)}",
-                             "--param", f"max_entities={cfg.get('llm_full_max_entities', 60)}"]
                 try:
-                    stages["predict"] = call(args)
+                    stages["predict"] = call(predict_args(cfg, key, split, variant, directory))
                     if not (directory / "manifest.lock.json").is_file():
                         raise ValueError("prédiction sans lock")
+                    score_args = ["score", "--run", str(directory), "--protocol", info["protocol"]]
+                    if with_train:
+                        train_dir = directory.with_name(f"{name}--train")
+                        stages["predict_train"] = call(
+                            predict_args(cfg, key, "train", variant, train_dir))
+                        score_args += ["--train-run", str(train_dir)]
                     if key == "ratbench":
+                        ratbench_runs.append(directory)
                         stages["attack"] = call(["attack", "--run", str(directory), "--attacker",
                             "ratbench", "--backend", cfg["attacker_backend"], "--workers", "1"])
-                    if remote_allowed:
+                    if key == "spia" and remote_allowed and variant["llm_stages"]:
+                        stages["attack_spia"] = call(["attack", "--run", str(directory), "--attacker",
+                            "spia", "--backend", cfg["attacker_backend"], "--workers", "1"])
+                    if remote_allowed and variant["llm_stages"]:
                         stages["judge"] = call(["judge", "--run", str(directory), "--backend",
                                                 cfg["judge_backend"], "--workers", "1"])
-                    args = ["score", "--run", str(directory), "--protocol", info["protocol"]]
                     with patch("anonymisation.llm.client.LlmClient.complete",
                                side_effect=RuntimeError("Scoring hors ligne : LLM interdit")):
-                        stages["score"] = command(args)
+                        stages["score"] = command(score_args)
                         card = json.loads((directory / "scorecard.json").read_text())
                         before = sha256_file(directory / "scorecard.json")
-                        stages["replay"] = command(args)
+                        stages["replay"] = command(score_args)
                         entry["replay_identical"] = before == sha256_file(directory / "scorecard.json")
-                    entry.update({name: card[name] for name in (
-                        "primary", "diagnostic", "publishable", "publication_blockers")})
+                    entry.update({field: card[field] for field in (
+                        "primary", "diagnostic", "publishable", "publication_blockers", "status")})
                     entry["scorecard_sha256"] = before
                     entry["prediction_counts"] = card["accounting"]
                     failed = stage_failures(stages, entry["replay_identical"])
+                    if stages.get("predict_train"):
+                        failed.append("predict_train")
+                    if stages.get("attack_spia"):
+                        failed.append("attack_spia")
                     if failed:
-                        summary["failures"].append({"dataset": key, "split": split, "system": system,
+                        summary["failures"].append({"dataset": key, "split": split, "system": name,
                                                     "stage": "pipeline", "failed": failed,
                                                     "stages": stages})
                 except (OSError, ValueError, KeyError, RuntimeError) as exc:
                     entry["error"] = f"{type(exc).__name__}: {exc}"
                     summary["failures"].append({"dataset": key, "split": split,
-                                                "system": system, "error": entry["error"]})
+                                                "system": name, "error": entry["error"]})
                 summary["results"].append(entry)
                 print("CAMPAIGN_RESULT", json.dumps(entry, ensure_ascii=False, sort_keys=True), flush=True)
                 write_json(Path("runs/campaign/summary.json"), summary)
+
+    # Contrôles bloquants hors modèle : équivalence avec le code RAT-Bench
+    # officiel sur les sorties figées, puis fiches d'audit de chaque run.
+    attacked = [run for run in ratbench_runs if (run / "attacks.jsonl").is_file()]
+    if attacked:
+        lock = json.loads((attacked[0] / "manifest.lock.json").read_text())
+        source_dir = Path(lock["data_version"]["source"]["directory"])
+        split = lock["run"]["split"]
+        code, tail = _subprocess([
+            "uv", "run", "--isolated", "--no-project", "--with", "levenshtein==0.27.3", "--with", "rapidfuzz==3.14.3",
+            "--with", "numpy", "python", "scripts/parity_ratbench.py",
+            "--profiles", f"data/processed/ratbench/{split}/profiles.jsonl",
+            "--maps", str(source_dir / "cache" / "maps"),
+            "--out", "runs/campaign/parity-ratbench.json", *map(str, attacked)])
+        summary["parity"] = {"exit_code": code, "report": "runs/campaign/parity-ratbench.json",
+                             "tail": tail[-800:]}
+        if code:
+            summary["failures"].append({"stage": "parity-ratbench", "exit_code": code})
+    for entry in summary["results"]:
+        directory = Path("runs/campaign") / entry["dataset"] / entry["split"] / entry["system"]
+        if not (directory / "manifest.lock.json").is_file():
+            continue
+        out = Path("runs/campaign/audit") / entry["dataset"] / entry["split"] / entry["system"]
+        code, _ = _subprocess([sys.executable, "scripts/audit_fiches.py", str(directory),
+                               "--processed", "data/processed", "--out", str(out)])
+        audit = json.loads((out / "audit.json").read_text())["summary"] if (out / "audit.json").is_file() else None
+        summary["audit"].append({"run": str(directory), "exit_code": code, "summary": audit})
+        if code:
+            summary["failures"].append({"stage": "audit", "run": str(directory), "exit_code": code})
     write_json(Path("runs/campaign/summary.json"), summary)
     compact = {"purpose": summary["purpose"], "models": models, "failures": summary["failures"],
-               "unimplemented": summary["unimplemented"], "remote_skipped": summary["remote_skipped"],
+               "not_executable_here": summary["not_executable_here"],
+               "remote_skipped": summary["remote_skipped"], "parity": summary["parity"],
                "results": [{k: r.get(k) for k in ("dataset", "split", "system", "stages",
-                   "prediction_counts", "replay_identical", "publishable", "error")} for r in summary["results"]]}
+                   "prediction_counts", "replay_identical", "publishable", "status", "error")}
+                   for r in summary["results"]]}
     print("FINAL_CAMPAIGN_SUMMARY", json.dumps(compact, ensure_ascii=False, sort_keys=True), flush=True)
     return 1 if summary["failures"] else 0
