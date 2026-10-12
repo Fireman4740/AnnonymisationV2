@@ -16,6 +16,7 @@ exclu et compté ; au-delà de 5 % la métrique est ``UNAVAILABLE`` (C4).
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -60,7 +61,10 @@ def reid_success_metric(
         probability = None if raw is None else float(raw)
         direct = row["correct_direct_ids"]
         by_correctness = probability is not None and probability >= 0.2
-        if ((probability is not None and not 0 <= probability <= 1)
+        # CorrectMatch est un estimateur Monte-Carlo : une moyenne peut dépasser
+        # 1 de quelques millièmes (1,0006 observé). L'original la garde telle
+        # quelle ; seule une valeur non finie ou négative est incohérente.
+        if ((probability is not None and not (math.isfinite(probability) and probability >= 0))
                 or not isinstance(direct, list)
                 or not isinstance(row["reidentified"], bool)
                 or row["reidentified"] != (bool(direct) or by_correctness)):
@@ -74,6 +78,10 @@ def reid_success_metric(
         "mean_correctmatch_correctness": mean([float(r["correctmatch_correctness"]) for r in ok
                                                if r["correctmatch_correctness"] is not None]),
         "correctmatch_all_nan": sum(r["correctmatch_correctness"] is None for r in ok),
+        "correctmatch_above_one": sum(
+            r["correctmatch_correctness"] is not None and float(r["correctmatch_correctness"]) > 1
+            for r in ok
+        ),
         "by_difficulty": {
             level: {"documents": len(values), "value": mean(values)}
             for level, values in sorted(by_difficulty.items())

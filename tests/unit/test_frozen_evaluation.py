@@ -203,3 +203,19 @@ def test_reid_success_requires_actual_direct_hit_or_threshold():
     rows[0]["reidentified"] = True
     with pytest.raises(ValueError, match="incohérent"):
         reid_success_metric(rows, {})
+
+
+def test_correctmatch_monte_carlo_estimate_above_one_is_kept_like_the_original():
+    """CorrectMatch est stochastique : une moyenne de 1,0006 a été observée (campagne
+    40fc5bb5, ratbench:L2:70). L'original la conserve telle quelle ; le scoring ne
+    doit pas la rejeter comme incohérente."""
+    rows = [{"doc_id": "d1", "status": "ok", "correct_direct_ids": [],
+             "correctmatch_correctness": 1.0006444880321659, "reidentified": True},
+            {"doc_id": "d2", "status": "ok", "correct_direct_ids": [],
+             "correctmatch_correctness": 0.1, "reidentified": False}]
+    metric = reid_success_metric(rows, {})
+    assert metric["value"] == 0.5
+    assert metric["details"]["correctmatch_above_one"] == 1
+    rows[0]["correctmatch_correctness"] = float("inf")
+    with pytest.raises(ValueError, match="incohérent"):
+        reid_success_metric(rows, {})
