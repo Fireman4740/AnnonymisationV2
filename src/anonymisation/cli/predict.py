@@ -276,6 +276,31 @@ def _system_reproducibility(pipe: SystemBase) -> dict[str, Any]:
     return block
 
 
+#: Portée de risque effectivement appliquée par les systèmes : le document.
+#: Aucun moteur n'agrège encore l'historique d'un auteur (EPIC-H H-9, S5).
+APPLIED_POLICY_SCOPE = "document"
+
+
+def _policy_scope(policy_id: str) -> dict[str, Any]:
+    """Portée demandée par la politique vs portée appliquée — jamais un écart muet.
+
+    P3/P4 déclarent ``scope: author`` (« tient compte de l'historique ») ; les
+    systèmes actuels évaluent le risque document par document. Le lock le dit,
+    pour qu'aucun chiffre P3/P4 ne soit lu comme un résultat à portée auteur.
+    """
+    from anonymisation.policy.models import load_policy_set
+
+    policy_set = load_policy_set(POLICY_FILE)
+    requested = policy_set.policies[policy_id].scope or policy_set.defaults.scope
+    block: dict[str, Any] = {"scope_requested": requested, "scope_applied": APPLIED_POLICY_SCOPE}
+    if requested != APPLIED_POLICY_SCOPE:
+        block["scope_gap"] = (
+            f"portée {requested!r} demandée par {policy_id}, non implémentée : risque "
+            f"évalué par document — S5 non vérifiable"
+        )
+    return block
+
+
 def _build_lock(
     *,
     key: str,
@@ -334,6 +359,7 @@ def _build_lock(
                 "id": policy_id,
                 "source": str(POLICY_FILE.relative_to(REPO_ROOT)),
                 "sha256": sha256_file(POLICY_FILE),
+                **_policy_scope(policy_id),
             }
             if policy_id
             # Absence DÉCLARÉE, jamais déduite du silence : sans `reason`, on
