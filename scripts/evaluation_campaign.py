@@ -266,6 +266,20 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
     return info
 
 
+def remote_authorized(cfg: dict[str, Any], key: str, synthetic: bool) -> bool:
+    """Envoi externe (OpenRouter) autorisé pour ce corpus ?
+
+    Corpus synthétique : oui. Corpus réel : seulement s'il est nommé dans
+    ``remote_authorized_datasets`` (autorisation explicite de l'utilisateur,
+    corpus par corpus) ou si l'autorisation globale est donnée. Les deux clés
+    sont obligatoires : leur absence n'est jamais lue comme un refus implicite.
+    """
+    listed = cfg["remote_authorized_datasets"]
+    if not isinstance(listed, list):
+        raise ValueError("campaign.json : `remote_authorized_datasets` doit être une liste")
+    return bool(synthetic or cfg["remote_real_corpora_authorized"] or key in listed)
+
+
 def system_variants(cfg: dict[str, Any], remote_allowed: bool) -> list[dict[str, Any]]:
     """Runs à produire : un par (système, politique), étages LLM explicités.
 
@@ -350,7 +364,7 @@ def run_campaign() -> int:
             print("CAMPAIGN_ERROR", json.dumps(failure, ensure_ascii=False), flush=True)
             continue
         summary["datasets"].append(info)
-        remote_allowed = info["synthetic"] or cfg["remote_real_corpora_authorized"]
+        remote_allowed = remote_authorized(cfg, key, info["synthetic"])
         if not remote_allowed:
             summary["remote_skipped"].append({"dataset": key,
                 "stages": ["llm-full", "judge", "attaque SPIA"],

@@ -1,5 +1,5 @@
 {
-  "purpose": "aligned_original_implementations_20_documents",
+  "purpose": "spia_original_protocol_openrouter_20_documents",
   "remote_real_corpora_authorized": false,
   "anonymizer_backend": "openrouter_liquid_2_6b",
   "attacker_backend": "openrouter_nemotron_super",
@@ -12,40 +12,8 @@
   "max_document_chars": 16000,
   "train_documents": 20,
   "datasets": {
-    "ratbench": [
-      "eval"
-    ],
-    "quasifr": [
-      "anonymization",
-      "hard_quasi_id",
-      "max_anonymization"
-    ],
-    "personalreddit": [
-      "test"
-    ],
-    "tab": [
-      "test"
-    ],
-    "conll2003": [
-      "test"
-    ],
-    "dbbio": [
-      "test"
-    ],
-    "supporttickets": [
-      "test"
-    ],
-    "bitextsupport": [
-      "test"
-    ],
     "spia": [
       "test"
-    ],
-    "panorama": [
-      "train"
-    ],
-    "openpii": [
-      "validation"
     ]
   },
   "systems": [
@@ -106,5 +74,9 @@
     "QICR/RCR@k et calibration hors ajustement : aucun corpus disponible avec combinaisons gold liées et k_true indépendant (hr_qi sans adaptateur)",
     "portée auteur des politiques P3/P4 (S5) : non implémentée par les moteurs, écart déclaré dans chaque lock",
     "validation du juge local contre annotations humaines : aucune annotation humaine disponible"
-  ]
+  ],
+  "remote_authorized_datasets": [
+    "spia"
+  ],
+  "remote_authorization_note": "Autorisation utilisateur du 2026-10-12 : textes SPIA seulement (OpenRouter). Autres corpus réels non autorisés."
 }

@@ -136,3 +136,12 @@ def test_predict_args_carry_policy_and_explicit_parameters(tmp_path):
     assert "replacement=" in redact
     llm = campaign.predict_args(cfg, "ratbench", "eval", variants["llm-full"], tmp_path)
     assert f"backend={cfg['anonymizer_backend']}" in llm
+
+
+def test_remote_authorization_is_per_dataset_and_explicit():
+    cfg = {"remote_real_corpora_authorized": False, "remote_authorized_datasets": ["spia"]}
+    assert campaign.remote_authorized(cfg, "spia", synthetic=False)
+    assert not campaign.remote_authorized(cfg, "tab", synthetic=False)
+    assert campaign.remote_authorized(cfg, "ratbench", synthetic=True)
+    with pytest.raises(KeyError):
+        campaign.remote_authorized({"remote_real_corpora_authorized": False}, "spia", False)
