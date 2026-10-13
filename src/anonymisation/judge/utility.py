@@ -36,8 +36,13 @@ PROTOCOL_VERSION = "1"
 SOURCE = {"repo": "maisonOP/spia", "commit": "3fa78a1b3c75788c6294f40024fc79e1ef42923f"}
 JUDGMENTS_NAME = "judgments.jsonl"
 JUDGE_LOCK_NAME = "judge.lock.json"
-RETRY_DELAYS_S = (5, 15, 30)
+RETRY_DELAYS_S = (5, 15, 30, 60, 120)
 MAX_ERROR_RATE = 0.05
+#: Nouveaux échantillons (cache contourné) quand la réponse du juge n'est pas
+#: un JSON exploitable. Écart déclaré à SPIA, qui note alors 1/1/0 en
+#: silence : on préfère un nouvel échantillon tracé à une note inventée ;
+#: au-delà, le document reste en erreur.
+PARSE_RESAMPLES = 2
 #: Défaut de `call_api_with_param` dans le code SPIA d'origine.
 JUDGE_TEMPERATURE = 0.1
 
@@ -118,17 +123,30 @@ def rouge_scores(original: str, anonymized: str) -> dict[str, float]:
 
 def judge_one(
     doc_id: str, original: str, anonymized: str, complete: Callable[[str], tuple[str, bool]],
+    resample: Callable[[str], tuple[str, bool]] | None = None,
 ) -> dict[str, Any]:
     prompt = judge_prompt(original, anonymized)
     base: dict[str, Any] = {
         "doc_id": doc_id,
         "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
     }
+    rejected: list[dict[str, Any]] = []
     try:
         response, cached = complete(prompt)
-        scores = parse_judgment(response)
+        while True:
+            try:
+                scores = parse_judgment(response)
+                break
+            except JudgeError as exc:
+                if resample is None or len(rejected) >= PARSE_RESAMPLES:
+                    raise
+                rejected.append({"error": str(exc), "response": response, "cached": cached})
+                response, cached = resample(prompt)
     except (LlmError, JudgeError) as exc:
-        return {**base, "status": "error", "error": f"{type(exc).__name__}: {exc}"}
+        return {**base, "status": "error", "error": f"{type(exc).__name__}: {exc}",
+                **({"rejected_responses": rejected} if rejected else {})}
+    if rejected:
+        base["rejected_responses"] = rejected
     rouge = rouge_scores(original, anonymized)
     readability = scores["readability"] / 10
     meaning = scores["meaning"] / 10
@@ -148,13 +166,15 @@ def judge_one(
     }
 
 
-def _complete(client: LlmClient, prompt: str, sleep: Callable[[float], None] = time.sleep) -> tuple[str, bool]:
+def _complete(
+    client: LlmClient, prompt: str, sleep: Callable[[float], None] = time.sleep, *, use_cache: bool = True,
+) -> tuple[str, bool]:
     for attempt, delay in enumerate((0, *RETRY_DELAYS_S)):
         if delay:
             sleep(delay)
         try:
             # `call_api_with_param` SPIA : température 0,1 par défaut.
-            completion = client.complete(prompt, temperature=JUDGE_TEMPERATURE)
+            completion = client.complete(prompt, temperature=JUDGE_TEMPERATURE, use_cache=use_cache)
             return completion.content, completion.cached
         except LlmBackendUnavailableError:
             if attempt == len(RETRY_DELAYS_S):
@@ -190,7 +210,8 @@ def run_judge(
     def task(record: Mapping[str, Any]) -> dict[str, Any]:
         doc_id = str(record["doc_id"])
         return judge_one(doc_id, texts[doc_id], str(record["anonymized_text"]),
-                         lambda prompt: _complete(client, prompt))
+                         lambda prompt: _complete(client, prompt),
+                         resample=lambda prompt: _complete(client, prompt, use_cache=False))
 
     with ThreadPoolExecutor(max_workers=max(1, workers or client.backend.max_concurrency)) as pool:
         rows = sorted(pool.map(task, targets), key=lambda row: row["doc_id"])
@@ -207,6 +228,8 @@ def run_judge(
             "backend": client.backend.name,
             "model": client.backend.model,
             "temperature": JUDGE_TEMPERATURE,
+            "parse_resamples_max": PARSE_RESAMPLES,
+            "deviation": "JSON invalide : rééchantillonnage tracé au lieu des notes par défaut SPIA",
             "prompt_module_sha256": sha256_file(Path(__file__)),
         },
         "inputs": {

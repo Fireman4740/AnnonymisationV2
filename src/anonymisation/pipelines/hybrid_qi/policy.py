@@ -529,7 +529,37 @@ def plan_hybrid_policy(
 
             if level > 0:
                 value = annotation.value_normalized or {}
-                generalized = generalize(value, category, steps=level)
+                try:
+                    generalized = generalize(value, category, steps=level)
+                except (MalformedValueNormalizedError, UnknownGeneralizationCategoryError) as exc:
+                    # Le niveau est porté par la catégorie : une autre mention
+                    # de la catégorie a été généralisée, celle-ci n'a pas de
+                    # valeur normalisée exploitable. Repli explicite en
+                    # suppression (plus protecteur que le niveau visé) —
+                    # jamais un KEEP silencieux ni un document en erreur.
+                    check_action_allowed(
+                        "QUASI", annotation.granularity, Action.SUPPRESS
+                    )
+                    decisions.append(
+                        AnonymizationDecision(
+                            start=start,
+                            end=end,
+                            original=original,
+                            action=Action.SUPPRESS,
+                            replacement=f"[{category}_SUPPRIME]",
+                            qi_category=category,
+                            reason=(
+                                f"Politique {policy.label} : {category} "
+                                f"généralisé au niveau {level} mais cette "
+                                f"mention n'est pas généralisable ({exc}) — "
+                                "repli en suppression explicite."
+                            ),
+                            risk_before=risk_base.risk,
+                            risk_after=risk,
+                            meta={**base_meta, "fallback": "valeur_non_generalisable"},
+                        )
+                    )
+                    continue
                 if generalized is None:
                     # Hiérarchie épuisée pour cette mention (niveaux
                     # incohérents entre valeur et hiérarchie) : repli

@@ -90,6 +90,24 @@ backends:
         max_price: {prompt: 0, completion: 0}
 
 
+  # Campagne du 2026-10-13 : un seul modèle pour tous les rôles distants
+  # (anonymiseur llm-full, attaquants RAT-Bench et SPIA, juge), choisi par
+  # l'utilisateur. MoE 560B (25B actifs) : référence EXTERNE, au-delà de la
+  # contrainte « < 30 B » des modèles locaux. Raisonnement hybride activé
+  # par défaut chez le fournisseur : il consomme le budget `max_tokens`.
+  openrouter_ling_3_1_flash:
+    kind: openai_compatible
+    base_url: "https://openrouter.ai/api/v1"
+    model: "inclusionai/ling-3.1-flash"
+    api_key_env: "OPENROUTER_API_KEY"
+    timeout_s: 600
+    max_retries: 5
+    max_concurrency: 2          # pool gratuit partagé : 429 fréquents
+    temperature: 0.0
+    extra_body:
+      provider:
+        max_price: {prompt: 0, completion: 0}
+
   # --- Sans LLM : CI, tests, pipeline dégradé ----------------------------- #
   # Permet de faire tourner le pipeline de bout en bout sans GPU (SPEC-10 §6.4).
   null_backend:
@@ -117,9 +135,9 @@ roles:
   attacker_b: sonnet
   # Référence EXTERNE gratuite : Gemma a renvoyé 429 sur le pool partagé.
   # Ce choix explicite ne change pas la contrainte des modèles LOCAUX évalués.
-  attacker_ratbench: openrouter_nemotron_super
-  attacker_spia: openrouter_nemotron_super
-  utility_judge: openrouter_nemotron_super
+  attacker_ratbench: openrouter_ling_3_1_flash
+  attacker_spia: openrouter_ling_3_1_flash
+  utility_judge: openrouter_ling_3_1_flash
   paraphrase: qwen_local
 
 cache:

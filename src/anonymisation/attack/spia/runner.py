@@ -47,7 +47,7 @@ PROTOCOL = "spia-original"
 PROTOCOL_VERSION = "1"
 ATTACKS_NAME = "spia_attacks.jsonl"
 ATTACK_LOCK_NAME = "spia_attack.lock.json"
-RETRY_DELAYS_S = (5, 15, 30)
+RETRY_DELAYS_S = (5, 15, 30, 60, 120)
 MAX_ERROR_RATE = 0.05
 #: Configuration officielle (`config/evaluate_gt_config.yaml`), sauf le décideur.
 CHECK_CONFIG: Mapping[str, Any] = {

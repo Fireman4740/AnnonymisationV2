@@ -1,19 +1,48 @@
 {
-  "purpose": "spia_original_protocol_openrouter_20_documents",
+  "purpose": "full_bench_10_documents_ling_3_1_flash",
   "remote_real_corpora_authorized": false,
-  "anonymizer_backend": "openrouter_liquid_2_6b",
-  "attacker_backend": "openrouter_nemotron_super",
-  "judge_backend": "openrouter_nemotron_super",
+  "anonymizer_backend": "openrouter_ling_3_1_flash",
+  "attacker_backend": "openrouter_ling_3_1_flash",
+  "judge_backend": "openrouter_ling_3_1_flash",
   "legacy_root": "/mnt/f/IA/Anonymisation/eval/datasets",
-  "documents_per_dataset": 20,
+  "documents_per_dataset": 10,
   "llm_full_max_output_tokens": 8192,
   "llm_full_max_entities": 256,
   "sampling_seed": 20261008,
   "max_document_chars": 16000,
-  "train_documents": 20,
+  "train_documents": 10,
   "datasets": {
+    "ratbench": [
+      "eval"
+    ],
+    "quasifr": [
+      "anonymization",
+      "hard_quasi_id",
+      "max_anonymization"
+    ],
+    "personalreddit": [
+      "test"
+    ],
+    "tab": [
+      "test"
+    ],
+    "conll2003": [
+      "test"
+    ],
+    "dbbio": [
+      "test"
+    ],
+    "supporttickets": [
+      "test"
+    ],
+    "bitextsupport": [
+      "test"
+    ],
     "spia": [
       "test"
+    ],
+    "openpii": [
+      "validation"
     ]
   },
   "systems": [
@@ -68,12 +97,13 @@
       "llm_stages": true
     }
   ],
-  "documents_per_split": 20,
+  "documents_per_split": 10,
   "not_executable_here": [
     "configuration d'attaque/juge locale <30B (qwen_local) : serveur sur le poste Windows de l'utilisateur, injoignable depuis openresearch-box",
     "QICR/RCR@k et calibration hors ajustement : aucun corpus disponible avec combinaisons gold liées et k_true indépendant (hr_qi sans adaptateur)",
     "portée auteur des politiques P3/P4 (S5) : non implémentée par les moteurs, écart déclaré dans chaque lock",
-    "validation du juge local contre annotations humaines : aucune annotation humaine disponible"
+    "validation du juge local contre annotations humaines : aucune annotation humaine disponible",
+    "PANORAMA : dataset Hugging Face « gated » (srirxml/PANORAMA) — HTTP 403 tant que les conditions ne sont pas acceptées sur huggingface.co avec le compte du token ; aucun contournement"
   ],
   "remote_authorized_datasets": [
     "spia"

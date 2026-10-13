@@ -59,7 +59,7 @@ PROTOCOL_VERSION = "2"
 ATTACKS_NAME = "attacks.jsonl"
 ATTACK_LOCK_NAME = "attack.lock.json"
 #: Attentes entre réessais quand le palier gratuit renvoie 429/502.
-RETRY_DELAYS_S = (5, 15, 30)
+RETRY_DELAYS_S = (5, 15, 30, 60, 120)
 #: ``max_output_tokens=4096`` de l'attaquant officiel (``attackers/gpt.py``).
 ATTACKER_MAX_TOKENS = 4096
 MAX_ERROR_RATE = 0.05

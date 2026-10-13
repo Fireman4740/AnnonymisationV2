@@ -23,7 +23,7 @@ from anonymisation.datasets import REGISTRY
 from anonymisation.datasets.base import DatasetAdapter
 from anonymisation.datasets.ingest import ingest
 from anonymisation.datasets.manifest import load_manifest
-from anonymisation.llm.config import load_backends_config
+from anonymisation.llm.config import LlmBackendsConfig, load_backends_config
 from anonymisation.schema.io import sha256_file, write_json
 
 CONFIG = Path("configs/evaluation/campaign.json")
@@ -87,7 +87,7 @@ def choose(candidates: Iterable[Any], key: str, split: str, count: int,
         if quotas[group] == 0:
             continue
         rank = int.from_bytes(hashlib.sha256(
-            f"{seed}\0{key}\0{split}\0{doc.doc_id}".encode("utf-8")
+            f"{seed}\0{key}\0{split}\0{doc.doc_id}".encode()
         ).digest(), "big")
         heap = heaps[group]
         item = (-rank, doc.doc_id, doc)
@@ -328,6 +328,21 @@ def _subprocess(args: list[str]) -> tuple[int, str]:
     return proc.returncode, tail
 
 
+def campaign_models(cfg: dict[str, Any], llm_cfg: LlmBackendsConfig) -> dict[str, Any]:
+    """Verrouille le routage gratuit OpenRouter, même sans suffixe ``:free``."""
+    models = {}
+    for role in ("anonymizer_backend", "attacker_backend", "judge_backend"):
+        backend = llm_cfg.resolve(name=cfg[role])
+        if (backend.kind != "openai_compatible"
+                or backend.base_url != "https://openrouter.ai/api/v1"
+                or not backend.model
+                or backend.extra_body.get("provider", {}).get("max_price")
+                != {"prompt": 0, "completion": 0}):
+            raise ValueError(f"Backend non garanti gratuit : {role}")
+        models[role] = {"backend": backend.name, "model": backend.model}
+    return models
+
+
 def run_campaign() -> int:
     import sys
 
@@ -336,13 +351,7 @@ def run_campaign() -> int:
     load_key()
     cfg = json.loads(CONFIG.read_text())
     llm_cfg = load_backends_config()
-    models = {}
-    for role in ("anonymizer_backend", "attacker_backend", "judge_backend"):
-        backend = llm_cfg.resolve(name=cfg[role])
-        if not backend.model.endswith(":free") or backend.extra_body.get("provider", {}).get(
-                "max_price") != {"prompt": 0, "completion": 0}:
-            raise ValueError(f"Backend non garanti gratuit : {role}")
-        models[role] = {"backend": backend.name, "model": backend.model}
+    models = campaign_models(cfg, llm_cfg)
     print("CAMPAIGN_CONFIG", json.dumps({**cfg, "models": models}, sort_keys=True), flush=True)
     official_rat_root = Path(os.environ["ANONV2_V1_DATASETS"])
     cache = Path.home() / ".cache/anonymisation-v2/datasets"

@@ -606,34 +606,33 @@ def _sigma_for(
     off_diagonal: float,
     parent: list[list[float]] | None = None,
 ) -> list[list[float]]:
-    """Sigma bloc-diagonale : sous-matrice corrélée (ordre canonique) ⊕
-    identité pour les catégories indépendantes présentes."""
-    corr_idx = [correlated_order.index(c) for c in present if c in correlated_order]
-    n_corr = len(corr_idx)
-    if parent is not None:
-        block = [
-            [parent[i][j] for j in corr_idx] for i in corr_idx
-        ]
-    else:
-        block = [
-            [1.0 if i == j else off_diagonal for j in range(n_corr)]
-            for i in range(n_corr)
-        ]
-    n_ind = len(present) - n_corr
-    if n_ind:
-        ident = [[1.0 if i == j else 0.0 for j in range(n_ind)] for i in range(n_ind)]
-        width = n_corr + n_ind
-        full: list[list[float]] = [
-            [0.0] * width for _ in range(width)
-        ]
-        for i in range(n_corr):
-            for j in range(n_corr):
-                full[i][j] = block[i][j]
-        for i in range(n_ind):
-            for j in range(n_ind):
-                full[n_corr + i][n_corr + j] = ident[i][j]
-        return full
-    return block
+    """Σ alignée sur ``present`` : la ligne ``i`` décrit l'attribut ``i``,
+    exactement comme ``z[i]`` dans ``copula_factor``.
+
+    Deux catégories corrélées distinctes reçoivent le coefficient de
+    ``parent`` (ou ``off_diagonal`` sans parent) ; tout le reste est
+    indépendant. La seconde occurrence d'une même catégorie (deux villes,
+    deux âges) est traitée comme indépendante : dupliquer sa ligne rendrait
+    Σ singulière (défaut ratbench:L1:8 de la campagne 40fc5bb5). Σ reste
+    alors une sous-matrice principale de ``parent`` ⊕ identité, donc
+    définie positive.
+    """
+    index: list[int | None] = []
+    seen: set[str] = set()
+    for category in present:
+        if category in correlated_order and category not in seen:
+            index.append(correlated_order.index(category))
+            seen.add(category)
+        else:
+            index.append(None)
+    n = len(present)
+    sigma = [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
+    for i, ci in enumerate(index):
+        for j, cj in enumerate(index):
+            if i == j or ci is None or cj is None:
+                continue
+            sigma[i][j] = parent[ci][cj] if parent is not None else off_diagonal
+    return sigma
 
 
 _CALIBRATION: CalibrationStats | None = None
@@ -915,10 +914,9 @@ class HybridRiskEstimator:
         ]
         z = [_inv_cdf(p) for p in probabilities]
 
-        # Sigma bloc-diagonale : attributs corrélés (ordre canonique de la
-        # population) ⊕ indépendants. L'ordre de ``attrs`` trié par rareté
-        # ne change PAS la matrice : seules les catégories présentes
-        # comptent, dans l'ordre canonique.
+        # Σ alignée sur ``attrs`` (même ordre que ``z``) : corrélation de la
+        # population entre catégories corrélées distinctes, indépendance
+        # sinon.
         sigma = _sigma_for(tuple(a.category for a in attrs), pop.correlated_attributes, 0.0, parent=self._sigma)
         factor = copula_factor(z, sigma)
         k_raw = pop.size * math.prod(probabilities) * factor

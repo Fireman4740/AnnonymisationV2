@@ -55,7 +55,7 @@ def test_twenty_exact_hash_bottom_k_order_independent(key, field, groups, counts
     assert [d.doc_id for d in selected] == [d.doc_id for d in other]
     assert report == other_report
     assert len(selected) == len({d.doc_id for d in selected}) == 20
-    for group, count in zip(groups, counts):
+    for group, count in zip(groups, counts, strict=True):
         expected = sorted(
             (d for d in docs if d.meta[field] == group),
             key=lambda d: hashlib.sha256(f"42\0{key}\0test\0{d.doc_id}".encode()).digest(),
@@ -109,6 +109,26 @@ def _campaign_cfg():
     import json
 
     return json.loads((Path(__file__).resolve().parents[2] / "configs/evaluation/campaign.json").read_text())
+
+
+def test_ling_without_free_suffix_accepts_only_zero_price_openrouter_routes():
+    from dataclasses import replace
+
+    from anonymisation.llm.config import load_backends_config
+
+    cfg = _campaign_cfg()
+    llm_cfg = load_backends_config()
+    models = campaign.campaign_models(cfg, llm_cfg)
+    assert all(m["model"] == "inclusionai/ling-3.1-flash" for m in models.values())
+    backend = llm_cfg.resolve(name=cfg["anonymizer_backend"])
+    for changes in (
+        {"extra_body": {}},
+        {"extra_body": {"provider": {"max_price": {"prompt": 0, "completion": 0.1}}}},
+        {"base_url": "https://another-provider.example/v1"},
+    ):
+        invalid = replace(llm_cfg, backends={**llm_cfg.backends, backend.name: replace(backend, **changes)})
+        with pytest.raises(ValueError, match="non garanti gratuit"):
+            campaign.campaign_models(cfg, invalid)
 
 
 def test_variants_run_every_policy_but_judge_only_reference_runs():

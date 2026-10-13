@@ -12,7 +12,11 @@ import json
 import pytest
 
 from anonymisation.capabilities import CAP_DECISIONS, CAP_SPANS
-from anonymisation.llm.client import LlmCompletion
+from anonymisation.llm.client import (
+    LlmBackendUnavailableError,
+    LlmCompletion,
+    LlmEmptyResponseError,
+)
 from anonymisation.pipelines.llm_full.prompts import LlmMalformedResponseError
 from anonymisation.pipelines.llm_full.system import LlmFullSystem
 from anonymisation.schema.models import Document, Domain
@@ -52,6 +56,48 @@ def test_identity_and_capabilities():
     assert system.capabilities == frozenset({CAP_SPANS, CAP_DECISIONS})
     assert system.uses_policy is False
     assert system.offline_only is False
+
+
+def test_transport_retries_recover_but_do_not_retry_empty_answers(monkeypatch):
+    system = _system()
+    observed = []
+    replies = iter([LlmBackendUnavailableError("429"), _stub_completion([])])
+
+    def complete(*args, **kwargs):
+        observed.append(kwargs)
+        response = next(replies)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(system._client, "complete", complete)
+    sleeps = []
+    assert system._complete_with_retries("prompt", sleep=sleeps.append).content == '{"entities": []}'
+    assert sleeps == [5]
+    assert observed[0] == observed[1]
+    assert observed[0]["max_tokens"] == 4096
+    replies = iter([LlmEmptyResponseError("empty")])
+    with pytest.raises(LlmEmptyResponseError):
+        system._complete_with_retries("prompt", sleep=sleeps.append)
+    assert sleeps == [5]
+
+
+def test_transport_retries_stop_and_propagate_the_error(monkeypatch):
+    from anonymisation.pipelines.llm_full.system import RETRY_DELAYS_S
+
+    system = _system()
+    calls = []
+
+    def unavailable(*args, **kwargs):
+        calls.append(1)
+        raise LlmBackendUnavailableError("429")
+
+    monkeypatch.setattr(system._client, "complete", unavailable)
+    sleeps = []
+    with pytest.raises(LlmBackendUnavailableError, match="429"):
+        system._complete_with_retries("prompt", sleep=sleeps.append)
+    assert len(calls) == 1 + len(RETRY_DELAYS_S)
+    assert sleeps == list(RETRY_DELAYS_S)
 
 
 def test_same_mention_can_have_multiple_categories(monkeypatch):

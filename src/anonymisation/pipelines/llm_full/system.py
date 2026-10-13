@@ -37,13 +37,15 @@ masquées, conformément à la règle d'or du projet) :
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from anonymisation.capabilities import CAP_DECISIONS, CAP_SPANS
 from anonymisation.detect.base import Candidate, candidates_to_annotations
-from anonymisation.llm.client import LlmClient
+from anonymisation.llm.client import LlmBackendUnavailableError, LlmClient, LlmCompletion
 from anonymisation.llm.config import load_backends_config
 from anonymisation.pipeline.orchestrator import _merge_overlapping
 from anonymisation.pipeline.traces import PipelineResult
@@ -72,6 +74,10 @@ from anonymisation.transform.decisions import (
     AnonymizationDecision,
     check_action_allowed,
 )
+
+#: Attentes avant chaque nouvelle tentative d'un backend injoignable ; mêmes
+#: valeurs que l'attaquant et le juge (``attack/ratbench/runner.py``).
+RETRY_DELAYS_S: tuple[int, ...] = (5, 15, 30, 60, 120)
 
 #: Repli par type d'identifiant quand l'action proposée par le LLM est
 #: illégale (SPEC-01 §8) ou que son remplacement est vide.
@@ -260,6 +266,25 @@ class LlmFullSystem(SystemBase):
         )
         return candidate, entity.action, entity.replacement
 
+    def _complete_with_retries(
+        self, prompt: str, sleep: Callable[[float], None] = time.sleep,
+    ) -> LlmCompletion:
+        """Ré-essaie un backend injoignable (429 du pool partagé OpenRouter)
+        avec les mêmes attentes que l'attaquant et le juge. Une panne qui
+        persiste après la dernière attente remonte : le document est en
+        erreur, jamais vide. Une réponse vide ou tronquée n'est pas
+        ré-essayée (C3)."""
+        for attempt, delay in enumerate((0, *RETRY_DELAYS_S)):
+            if delay:
+                sleep(delay)
+            try:
+                return self._client.complete(prompt, temperature=self._temperature,
+                                             max_tokens=self._max_output_tokens)
+            except LlmBackendUnavailableError:
+                if attempt == len(RETRY_DELAYS_S):
+                    raise
+        raise AssertionError("inatteignable")
+
     def _execute(
         self,
         doc: Document,
@@ -273,8 +298,7 @@ class LlmFullSystem(SystemBase):
         # tels quels et ``SystemBase.run`` les convertit en status="error"
         # nommé — jamais interprétés comme « aucune entité trouvée » (C3).
         prompt = build_anonymization_prompt(doc.text)
-        completion = self._client.complete(prompt, temperature=self._temperature,
-                                           max_tokens=self._max_output_tokens)
+        completion = self._complete_with_retries(prompt)
         parsed = parse_llm_entities(completion.content)
 
         candidates: list[Candidate] = []

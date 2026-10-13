@@ -53,6 +53,19 @@ def test_bad_response_never_becomes_low_utility():
     assert metric.status.value == "unavailable"
 
 
+def test_unparsable_judge_reply_is_resampled_then_recorded():
+    replies = iter(["not JSON", _reply(9, 7)])
+    row = judge_one("d1", "Alice works.", "Someone works.", lambda _: ("{truncated", False),
+                    resample=lambda _: (next(replies), False))
+    assert row["status"] == "ok"
+    assert len(row["rejected_responses"]) == 2
+    assert [r["response"] for r in row["rejected_responses"]] == ["{truncated", "not JSON"]
+    exhausted = judge_one("d1", "Alice works.", "Someone works.", lambda _: ("{", False),
+                          resample=lambda _: ("still not JSON", False))
+    assert exhausted["status"] == "error"
+    assert len(exhausted["rejected_responses"]) == 2
+
+
 def _write_frozen(root: Path, rows):
     root.mkdir(exist_ok=True)
     name = "judgments.jsonl"
