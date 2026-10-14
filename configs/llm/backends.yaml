@@ -111,6 +111,24 @@ backends:
       provider:
         max_price: {prompt: 0, completion: 0}
 
+  # Relance du 2026-10-14 : Ling 3.0 Flash demandé par l'utilisateur.
+  # Plafonds en dollars par million de tokens, route Novita courante.
+  openrouter_ling_3_0_flash:
+    kind: openai_compatible
+    base_url: "https://openrouter.ai/api/v1"
+    model: "inclusionai/ling-3.0-flash"
+    api_key_env: "OPENROUTER_API_KEY"
+    timeout_s: 120
+    max_retries: 0
+    max_output_tokens: 8192
+    max_concurrency: 2
+    temperature: 0.0
+    extra_body:
+      reasoning:
+        enabled: false
+      provider:
+        max_price: {prompt: 0.021, completion: 0.063}
+
   # --- Sans LLM : CI, tests, pipeline dégradé ----------------------------- #
   # Permet de faire tourner le pipeline de bout en bout sans GPU (SPEC-10 §6.4).
   null_backend:
@@ -136,11 +154,11 @@ roles:
   generation: qwen_local        # à changer quand un second modèle local existe
   attacker_a: qwen_local
   attacker_b: sonnet
-  # Référence EXTERNE gratuite : Gemma a renvoyé 429 sur le pool partagé.
+  # Référence EXTERNE : Ling 3.0 Flash, relance demandée le 2026-10-14.
   # Ce choix explicite ne change pas la contrainte des modèles LOCAUX évalués.
-  attacker_ratbench: openrouter_ling_3_1_flash
-  attacker_spia: openrouter_ling_3_1_flash
-  utility_judge: openrouter_ling_3_1_flash
+  attacker_ratbench: openrouter_ling_3_0_flash
+  attacker_spia: openrouter_ling_3_0_flash
+  utility_judge: openrouter_ling_3_0_flash
   paraphrase: qwen_local
 
 cache:

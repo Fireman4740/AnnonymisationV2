@@ -111,7 +111,7 @@ def _campaign_cfg():
     return json.loads((Path(__file__).resolve().parents[2] / "configs/evaluation/campaign.json").read_text())
 
 
-def test_ling_without_free_suffix_accepts_only_zero_price_openrouter_routes():
+def test_ling_3_0_accepts_only_declared_price_openrouter_routes():
     from dataclasses import replace
 
     from anonymisation.llm.config import load_backends_config
@@ -119,7 +119,7 @@ def test_ling_without_free_suffix_accepts_only_zero_price_openrouter_routes():
     cfg = _campaign_cfg()
     llm_cfg = load_backends_config()
     models = campaign.campaign_models(cfg, llm_cfg)
-    assert all(m["model"] == "inclusionai/ling-3.1-flash" for m in models.values())
+    assert all(m["model"] == "inclusionai/ling-3.0-flash" for m in models.values())
     backend = llm_cfg.resolve(name=cfg["anonymizer_backend"])
     for changes in (
         {"extra_body": {}},

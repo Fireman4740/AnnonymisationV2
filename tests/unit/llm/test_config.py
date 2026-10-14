@@ -50,7 +50,7 @@ def test_load_real_project_config_is_valid():
 
 
 def test_ling_generation_is_bounded_and_reasoning_is_explicitly_disabled():
-    backend = load_backends_config().resolve(name="openrouter_ling_3_1_flash")
+    backend = load_backends_config().resolve(name="openrouter_ling_3_0_flash")
     assert backend.max_output_tokens == 8192
     assert backend.extra_body["reasoning"] == {"enabled": False}
     assert backend.max_retries == 0
