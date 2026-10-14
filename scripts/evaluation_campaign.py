@@ -15,9 +15,11 @@ import os
 import urllib.request
 from collections.abc import Iterable, Iterator
 from contextlib import nullcontext
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+from urllib.parse import quote
 
 from anonymisation.datasets import REGISTRY
 from anonymisation.datasets.base import DatasetAdapter
@@ -328,8 +330,24 @@ def _subprocess(args: list[str]) -> tuple[int, str]:
     return proc.returncode, tail
 
 
+def provider_price_caps(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Plafonds explicites en dollars par million de tokens ; zéro par défaut."""
+    caps = cfg.get("provider_max_price", {"prompt": 0, "completion": 0})
+    if not isinstance(caps, dict) or set(caps) != {"prompt", "completion"}:
+        raise ValueError("provider_max_price : plafonds prompt/completion requis")
+    for value in caps.values():
+        try:
+            price = Decimal(str(value))
+        except InvalidOperation as exc:
+            raise ValueError("provider_max_price : prix invalide") from exc
+        if not price.is_finite() or price < 0:
+            raise ValueError("provider_max_price : prix positif ou nul requis")
+    return caps
+
+
 def campaign_models(cfg: dict[str, Any], llm_cfg: LlmBackendsConfig) -> dict[str, Any]:
-    """Verrouille le routage gratuit OpenRouter, même sans suffixe ``:free``."""
+    """Verrouille le routage OpenRouter aux plafonds déclarés par la campagne."""
+    caps = provider_price_caps(cfg)
     models = {}
     for role in ("anonymizer_backend", "attacker_backend", "judge_backend"):
         backend = llm_cfg.resolve(name=cfg[role])
@@ -337,10 +355,47 @@ def campaign_models(cfg: dict[str, Any], llm_cfg: LlmBackendsConfig) -> dict[str
                 or backend.base_url != "https://openrouter.ai/api/v1"
                 or not backend.model
                 or backend.extra_body.get("provider", {}).get("max_price")
-                != {"prompt": 0, "completion": 0}):
-            raise ValueError(f"Backend non garanti gratuit : {role}")
-        models[role] = {"backend": backend.name, "model": backend.model}
+                != caps):
+            raise ValueError(f"Backend incompatible avec le plafond tarifaire : {role}")
+        models[role] = {"backend": backend.name, "model": backend.model,
+                        "extra_body": backend.extra_body,
+                        "default_max_output_tokens": backend.max_output_tokens}
     return models
+
+
+def validate_provider_routes(cfg: dict[str, Any], models: dict[str, Any]) -> list[dict[str, Any]]:
+    """Échoue avant les appels si aucune route ne respecte les prix déclarés.
+
+    L'API publique expose des prix par token, mais ``max_price`` utilise des
+    dollars par million de tokens. Le plafond reste aussi envoyé à chaque
+    requête : un changement de prix après ce préflight ne permet aucun repli
+    plus cher.
+    """
+    caps = provider_price_caps(cfg)
+    reports = []
+    for model in sorted({spec["model"] for spec in models.values()}):
+        url = f"https://openrouter.ai/api/v1/models/{quote(model, safe='/')}/endpoints"
+        with urllib.request.urlopen(url, timeout=30) as response:
+            endpoints = json.load(response)["data"]["endpoints"]
+        allowed = []
+        for endpoint in endpoints:
+            pricing = endpoint.get("pricing") or {}
+            prices = {}
+            try:
+                for key in ("prompt", "completion"):
+                    price = Decimal(str(pricing[key])) * 1_000_000
+                    if not price.is_finite() or price < 0:
+                        break
+                    prices[key] = price
+            except (KeyError, InvalidOperation):
+                continue
+            if len(prices) == 2 and all(prices[key] <= Decimal(str(caps[key])) for key in prices):
+                allowed.append({"provider": endpoint.get("provider_name"),
+                                "prices_per_million": {key: str(value) for key, value in prices.items()}})
+        if not allowed:
+            raise ValueError(f"Aucune route {model} sous le plafond tarifaire {caps} ; campagne non lancée")
+        reports.append({"model": model, "allowed_routes": allowed})
+    return reports
 
 
 def run_campaign() -> int:
@@ -352,13 +407,15 @@ def run_campaign() -> int:
     cfg = json.loads(CONFIG.read_text())
     llm_cfg = load_backends_config()
     models = campaign_models(cfg, llm_cfg)
+    routes = validate_provider_routes(cfg, models)
+    print("PROVIDER_PREFLIGHT", json.dumps(routes, sort_keys=True), flush=True)
     print("CAMPAIGN_CONFIG", json.dumps({**cfg, "models": models}, sort_keys=True), flush=True)
     official_rat_root = Path(os.environ["ANONV2_V1_DATASETS"])
     cache = Path.home() / ".cache/anonymisation-v2/datasets"
     # Clé de pseudonymisation réservée à ce test public, jamais une clé réelle.
     os.environ["ANONV2_PSEUDO_SECRET"] = "functional-evaluation-public-not-for-production"
     summary: dict[str, Any] = {"purpose": cfg["purpose"], "models": models,
-                              "systems": cfg["systems"],
+                              "systems": cfg["systems"], "provider_preflight": routes,
                               "documents_per_dataset": cfg.get("documents_per_dataset"),
                               "datasets": [], "results": [], "failures": [],
                               "remote_skipped": [], "parity": {}, "audit": [],

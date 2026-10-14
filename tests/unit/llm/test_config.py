@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from anonymisation.llm.config import LlmConfigError, load_backends_config
+from anonymisation.llm.config import BackendSpec, LlmConfigError, load_backends_config
 
 
 def _write(tmp_path: Path, content: str) -> Path:
@@ -47,6 +47,15 @@ def test_load_real_project_config_is_valid():
     assert cfg.default in cfg.backends
     for role, backend_key in cfg.roles.items():
         assert backend_key in cfg.backends, role
+
+
+def test_ling_generation_is_bounded_and_reasoning_is_explicitly_disabled():
+    backend = load_backends_config().resolve(name="openrouter_ling_3_1_flash")
+    assert backend.max_output_tokens == 8192
+    assert backend.extra_body["reasoning"] == {"enabled": False}
+    assert backend.max_retries == 0
+    with pytest.raises(LlmConfigError, match="max_output_tokens"):
+        BackendSpec(name="invalid", kind="stub", max_output_tokens=0)
 
 
 def test_resolve_by_explicit_name(tmp_path: Path):

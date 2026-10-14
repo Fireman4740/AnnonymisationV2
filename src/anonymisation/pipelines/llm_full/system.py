@@ -280,8 +280,8 @@ class LlmFullSystem(SystemBase):
             try:
                 return self._client.complete(prompt, temperature=self._temperature,
                                              max_tokens=self._max_output_tokens)
-            except LlmBackendUnavailableError:
-                if attempt == len(RETRY_DELAYS_S):
+            except LlmBackendUnavailableError as exc:
+                if not exc.retryable or attempt == len(RETRY_DELAYS_S):
                     raise
         raise AssertionError("inatteignable")
 

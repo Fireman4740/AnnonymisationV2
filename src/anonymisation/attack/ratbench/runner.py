@@ -133,8 +133,8 @@ def _complete_with_retries(
                                          max_tokens=ATTACKER_MAX_TOKENS,
                                          temperature=PROVIDER_DEFAULT)
             return completion.content, completion.cached
-        except LlmBackendUnavailableError:
-            if attempt == len(RETRY_DELAYS_S):
+        except LlmBackendUnavailableError as exc:
+            if not exc.retryable or attempt == len(RETRY_DELAYS_S):
                 raise
     raise AssertionError("inatteignable")
 
@@ -256,6 +256,7 @@ def run_attack(
             "model": client.backend.model,
             "temperature": "provider-default (officiel : non fixée)",
             "max_tokens": ATTACKER_MAX_TOKENS,
+            "extra_body": client.backend.extra_body,
             "parser": "parse_output_gpt (ligne à ligne, officiel)",
             "system_prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
             "prompt_module_sha256": sha256_file(Path(__file__).with_name("prompts.py")),

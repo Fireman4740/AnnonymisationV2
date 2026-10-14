@@ -57,6 +57,14 @@ class LlmError(RuntimeError):
 class LlmBackendUnavailableError(LlmError):
     """Le backend n'a pas répondu (connexion refusée, timeout, HTTP d'erreur)."""
 
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        # Un routage absent (404), une clé invalide ou un crédit manquant
+        # ne se réparent pas en répétant la même requête.
+        self.retryable = (status_code is None or status_code in (408, 409, 429)
+                          or 500 <= status_code < 600)
+
 
 class LlmEmptyResponseError(LlmError):
     """Réponse vide ou tronquée (``finish_reason='length'``) — jamais « aucune entité »."""
@@ -240,7 +248,8 @@ class LlmClient:
         except Exception as exc:  # noqa: BLE001 — toute panne réseau devient LlmBackendUnavailableError
             hint = f" {backend.health.hint}" if backend.health.hint else ""
             raise LlmBackendUnavailableError(
-                f"Backend {backend.name!r} injoignable : {type(exc).__name__}: {exc}.{hint}"
+                f"Backend {backend.name!r} injoignable : {type(exc).__name__}: {exc}.{hint}",
+                status_code=getattr(exc, "status_code", None),
             ) from exc
         if not response.choices:
             raise LlmEmptyResponseError(
@@ -268,7 +277,8 @@ class LlmClient:
             )
         except Exception as exc:  # noqa: BLE001
             raise LlmBackendUnavailableError(
-                f"Backend {backend.name!r} injoignable : {type(exc).__name__}: {exc}."
+                f"Backend {backend.name!r} injoignable : {type(exc).__name__}: {exc}.",
+                status_code=getattr(exc, "status_code", None),
             ) from exc
         text_blocks = [block.text for block in response.content if getattr(block, "type", None) == "text"]
         content = "".join(text_blocks)
@@ -303,6 +313,8 @@ class LlmClient:
         document ne contient aucune entité » (contrainte C3).
         """
         backend = self._backend
+        if max_tokens is None:
+            max_tokens = backend.max_output_tokens
         if max_tokens is not None and max_tokens < 1:
             raise LlmConfigError("max_tokens doit être strictement positif")
         params: dict[str, Any] = {

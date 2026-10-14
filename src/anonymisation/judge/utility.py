@@ -176,8 +176,8 @@ def _complete(
             # `call_api_with_param` SPIA : température 0,1 par défaut.
             completion = client.complete(prompt, temperature=JUDGE_TEMPERATURE, use_cache=use_cache)
             return completion.content, completion.cached
-        except LlmBackendUnavailableError:
-            if attempt == len(RETRY_DELAYS_S):
+        except LlmBackendUnavailableError as exc:
+            if not exc.retryable or attempt == len(RETRY_DELAYS_S):
                 raise
     raise AssertionError("inatteignable")
 
@@ -227,6 +227,8 @@ def run_judge(
         "judge": {
             "backend": client.backend.name,
             "model": client.backend.model,
+            "extra_body": client.backend.extra_body,
+            "default_max_output_tokens": client.backend.max_output_tokens,
             "temperature": JUDGE_TEMPERATURE,
             "parse_resamples_max": PARSE_RESAMPLES,
             "deviation": "JSON invalide : rééchantillonnage tracé au lieu des notes par défaut SPIA",

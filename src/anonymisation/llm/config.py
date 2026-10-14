@@ -46,6 +46,7 @@ class BackendSpec:
     api_key_env: str | None = None
     timeout_s: float = 60.0
     max_retries: int = 2
+    max_output_tokens: int | None = None
     max_concurrency: int = 1
     temperature: float = 0.1
     extra_body: dict[str, Any] = field(default_factory=dict)
@@ -54,6 +55,8 @@ class BackendSpec:
     def __post_init__(self) -> None:
         if self.max_retries < 0:
             raise LlmConfigError(f"Backend {self.name!r} : max_retries doit être positif ou nul.")
+        if self.max_output_tokens is not None and self.max_output_tokens < 1:
+            raise LlmConfigError(f"Backend {self.name!r} : max_output_tokens doit être positif.")
 
     def resolve_api_key(self) -> str | None:
         """Résout la clé d'API à l'exécution. Ne la met jamais en cache disque."""
@@ -130,6 +133,7 @@ def _backend_from_dict(name: str, raw: dict[str, Any]) -> BackendSpec:
         api_key_env=raw.get("api_key_env"),
         timeout_s=float(raw.get("timeout_s", 60.0)),
         max_retries=int(raw.get("max_retries", 2)),
+        max_output_tokens=(int(raw["max_output_tokens"]) if raw.get("max_output_tokens") is not None else None),
         max_concurrency=int(raw.get("max_concurrency", 1)),
         temperature=float(raw.get("temperature", 0.1)),
         extra_body=dict(raw.get("extra_body") or {}),

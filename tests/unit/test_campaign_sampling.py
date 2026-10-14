@@ -127,8 +127,60 @@ def test_ling_without_free_suffix_accepts_only_zero_price_openrouter_routes():
         {"base_url": "https://another-provider.example/v1"},
     ):
         invalid = replace(llm_cfg, backends={**llm_cfg.backends, backend.name: replace(backend, **changes)})
-        with pytest.raises(ValueError, match="non garanti gratuit"):
+        with pytest.raises(ValueError, match="plafond tarifaire"):
             campaign.campaign_models(cfg, invalid)
+
+
+def test_route_preflight_respects_price_units_and_current_cap(monkeypatch):
+    import io
+    import json
+
+    models = {"anonymizer_backend": {"model": "inclusionai/ling-3.1-flash"}}
+    requests = []
+
+    def urlopen(url, **kwargs):
+        requests.append(url)
+        return io.BytesIO(json.dumps({"data": {"endpoints": [{
+            "provider_name": "Novita", "pricing": {
+                "prompt": "0.000000075", "completion": "0.000000225"},
+        }]}}).encode())
+
+    monkeypatch.setattr(campaign.urllib.request, "urlopen", urlopen)
+    with pytest.raises(ValueError, match="Aucune route"):
+        campaign.validate_provider_routes({}, models)
+    caps = {"prompt": 0.075, "completion": 0.225}
+    report = campaign.validate_provider_routes({"provider_max_price": caps}, models)
+    assert report[0]["allowed_routes"][0]["prices_per_million"] == {
+        "prompt": "0.075000000", "completion": "0.225000000"}
+    assert requests[-1].endswith("/inclusionai/ling-3.1-flash/endpoints")
+    with pytest.raises(ValueError, match="Aucune route"):
+        campaign.validate_provider_routes({"provider_max_price": {**caps, "completion": 0.2}}, models)
+
+
+@pytest.mark.parametrize("caps", [None, {}, {"prompt": 0},
+                                   {"prompt": -1, "completion": 0},
+                                   {"prompt": "NaN", "completion": 0},
+                                   {"prompt": True, "completion": 0}])
+def test_invalid_price_caps_are_rejected(caps):
+    with pytest.raises(ValueError, match="provider_max_price"):
+        campaign.provider_price_caps({"provider_max_price": caps})
+
+
+def test_nonzero_price_cap_must_be_explicit_and_identical_in_every_backend():
+    from dataclasses import replace
+
+    from anonymisation.llm.config import load_backends_config
+
+    cfg = _campaign_cfg()
+    llm_cfg = load_backends_config()
+    backend = llm_cfg.resolve(name=cfg["anonymizer_backend"])
+    caps = {"prompt": 0.075, "completion": 0.225}
+    paid = replace(backend, extra_body={**backend.extra_body, "provider": {"max_price": caps}})
+    llm_cfg = replace(llm_cfg, backends={**llm_cfg.backends, backend.name: paid})
+    with pytest.raises(ValueError, match="plafond tarifaire"):
+        campaign.campaign_models(cfg, llm_cfg)
+    cfg = {**cfg, "provider_max_price": caps}
+    assert campaign.campaign_models(cfg, llm_cfg)["anonymizer_backend"]["extra_body"]["provider"]["max_price"] == caps
 
 
 def test_variants_run_every_policy_but_judge_only_reference_runs():

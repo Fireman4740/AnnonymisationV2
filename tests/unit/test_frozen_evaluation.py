@@ -66,6 +66,40 @@ def test_unparsable_judge_reply_is_resampled_then_recorded():
     assert len(exhausted["rejected_responses"]) == 2
 
 
+@pytest.mark.parametrize("stage", ["anonymizer", "ratbench", "spia", "judge"])
+@pytest.mark.parametrize("status_code", [400, 401, 402, 403, 404, 422])
+def test_permanent_http_error_is_not_retried_in_any_stage(stage, status_code):
+    from anonymisation.attack.ratbench.runner import _complete_with_retries
+    from anonymisation.attack.spia.runner import _Transport
+    from anonymisation.judge.utility import _complete
+    from anonymisation.llm.client import LlmBackendUnavailableError
+    from anonymisation.pipelines.llm_full.system import LlmFullSystem
+    from anonymisation.systems.base import SystemConfig
+
+    calls, sleeps = [], []
+
+    def unavailable(*args, **kwargs):
+        calls.append(1)
+        raise LlmBackendUnavailableError("No endpoint", status_code=status_code)
+
+    client = SimpleNamespace(complete=unavailable)
+    with pytest.raises(LlmBackendUnavailableError):
+        if stage == "anonymizer":
+            system = LlmFullSystem(SystemConfig(params={"backend": "stub"}))
+            system._client = client
+            system._complete_with_retries("p", sleep=sleeps.append)
+        elif stage == "ratbench":
+            _complete_with_retries(client, "p", sleep=sleeps.append)
+        elif stage == "spia":
+            transport = _Transport(client, sleep=sleeps.append)
+            transport.begin()
+            transport("p", 0.1, 4096)
+        else:
+            _complete(client, "p", sleep=sleeps.append)
+    assert calls == [1]
+    assert sleeps == []
+
+
 def _write_frozen(root: Path, rows):
     root.mkdir(exist_ok=True)
     name = "judgments.jsonl"

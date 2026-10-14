@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from anonymisation.llm.client import (
+    LlmBackendUnavailableError,
     LlmClient,
     LlmEmptyResponseError,
 )
@@ -199,3 +200,48 @@ def test_provider_default_sends_no_temperature_and_is_cached_apart(tmp_path: Pat
     assert "temperature" not in sent[0]
     assert sent[1]["temperature"] == 0.0
     assert len(sent) == 2  # deux entrées de cache distinctes
+
+
+@pytest.mark.parametrize(("status", "retryable"), [
+    (400, False), (401, False), (402, False), (403, False), (404, False),
+    (422, False), (408, True), (409, True), (429, True), (503, True), (None, True),
+])
+@pytest.mark.parametrize("kind", ["openai_compatible", "anthropic"])
+def test_sdk_http_status_controls_transport_retries(status, retryable, kind):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    class RequestFailure(Exception):
+        status_code = status
+
+    def create(**kwargs):
+        raise RequestFailure("provider failure")
+
+    client = LlmClient(replace(_backend(), kind=kind), cache_enabled=False)
+    client._sdk_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
+        messages=SimpleNamespace(create=create),
+    )
+    with pytest.raises(LlmBackendUnavailableError) as caught:
+        client.complete("prompt")
+    assert caught.value.status_code == status
+    assert caught.value.retryable is retryable
+
+
+def test_default_output_budget_is_sent_cached_and_can_be_overridden(tmp_path):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    sent = []
+
+    def create(**kwargs):
+        sent.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="ok"), finish_reason="stop")])
+
+    client = LlmClient(replace(_backend(), max_output_tokens=8192), cache_dir=tmp_path)
+    client._sdk_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    assert not client.complete("p").cached
+    assert client.complete("p", max_tokens=8192).cached
+    assert not client.complete("p", max_tokens=4096).cached
+    assert [r["max_tokens"] for r in sent] == [8192, 4096]

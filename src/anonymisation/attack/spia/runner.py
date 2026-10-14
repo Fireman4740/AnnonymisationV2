@@ -97,7 +97,7 @@ class _Transport:
                 record.update(ok=True, cached=completion.cached)
                 return completion.content
             except LlmBackendUnavailableError as exc:
-                if attempt == len(RETRY_DELAYS_S):
+                if not exc.retryable or attempt == len(RETRY_DELAYS_S):
                     record.update(ok=False, error=f"{type(exc).__name__}: {exc}")
                     raise
             except LlmError as exc:
@@ -259,6 +259,8 @@ def run_spia_attack(
         "official": {"repo": OFFICIAL_REPO, "commit": OFFICIAL_COMMIT,
                      "vendored_tree_sha256": tree_sha256()},
         "attacker": {"backend": client.backend.name, "model": client.backend.model,
+                     "extra_body": client.backend.extra_body,
+                     "default_max_output_tokens": client.backend.max_output_tokens,
                      "temperature": 0.1, "temperature_source": "défaut de call_api_with_param officiel"},
         "config": {**CHECK_CONFIG, "min_certainty": MIN_CERTAINTY, "allow_fallback": False,
                    "deviation": "decider rule_model (arbitrage humain officiel non automatisable)"},

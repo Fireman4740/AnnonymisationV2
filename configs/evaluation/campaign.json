@@ -1,6 +1,7 @@
 {
-  "purpose": "full_bench_10_documents_ling_3_1_flash",
+  "purpose": "full_bench_10_documents_ling_flash_routing_preflight",
   "remote_real_corpora_authorized": false,
+  "provider_max_price": {"prompt": 0, "completion": 0},
   "anonymizer_backend": "openrouter_ling_3_1_flash",
   "attacker_backend": "openrouter_ling_3_1_flash",
   "judge_backend": "openrouter_ling_3_1_flash",

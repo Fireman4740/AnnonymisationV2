@@ -93,18 +93,21 @@ backends:
   # Campagne du 2026-10-13 : un seul modèle pour tous les rôles distants
   # (anonymiseur llm-full, attaquants RAT-Bench et SPIA, juge), choisi par
   # l'utilisateur. MoE 560B (25B actifs) : référence EXTERNE, au-delà de la
-  # contrainte « < 30 B » des modèles locaux. Raisonnement hybride activé
-  # par défaut chez le fournisseur : il consomme le budget `max_tokens`.
+  # contrainte « < 30 B » des modèles locaux. Raisonnement désactivé
+  # explicitement : sinon il peut épuiser le budget avant toute réponse.
   openrouter_ling_3_1_flash:
     kind: openai_compatible
     base_url: "https://openrouter.ai/api/v1"
     model: "inclusionai/ling-3.1-flash"
     api_key_env: "OPENROUTER_API_KEY"
-    timeout_s: 600
-    max_retries: 5
-    max_concurrency: 2          # pool gratuit partagé : 429 fréquents
+    timeout_s: 120
+    max_retries: 0             # une seule couche de retries, dans les étapes
+    max_output_tokens: 8192    # juge et appels SPIA sans budget explicite
+    max_concurrency: 2         # concurrence bornée pour la campagne externe
     temperature: 0.0
     extra_body:
+      reasoning:
+        enabled: false
       provider:
         max_price: {prompt: 0, completion: 0}
 
