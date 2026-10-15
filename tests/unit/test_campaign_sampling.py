@@ -16,6 +16,22 @@ campaign = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(campaign)
 
 
+def test_auxiliary_train_excludes_test_texts_people_threads_without_using_labels():
+    def doc(key, **changes):
+        return SimpleNamespace(**{"doc_id": key, "text": key, "author_id": None,
+                                  "subject_ids": (), "thread_id": None, **changes})
+
+    held_out = [doc("test", author_id="person", thread_id="thread")]
+    candidates = [doc("test"), doc("same-text", text="test"),
+                  doc("same-author", author_id="person"),
+                  doc("same-subject", subject_ids=("person",)),
+                  doc("same-thread", thread_id="thread"), doc("independent")]
+    excluded = {}
+    selected = list(campaign.disjoint_training_documents(candidates, held_out, excluded))
+    assert [d.doc_id for d in selected] == ["independent"]
+    assert excluded == {"overlap": 5}
+
+
 def test_population_evaluation_sample_keeps_only_complete_combinations():
     source = SimpleNamespace(key="mini", manifest=None, raw_dir=Path("."),
         iter_combinations=lambda split: iter([

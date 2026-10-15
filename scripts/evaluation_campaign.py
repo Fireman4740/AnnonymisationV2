@@ -213,6 +213,27 @@ def stage_failures(stages: dict[str, int], replay_identical: bool) -> list[str]:
     return failed
 
 
+def disjoint_training_documents(candidates: Iterable[Any], held_out: Iterable[Any],
+                                excluded: dict[str, int]) -> Iterator[Any]:
+    """Retire les chevauchements avant l'échantillonnage du train auxiliaire.
+
+    Ne consulte aucun label du test. L'évaluateur garde son propre contrôle
+    train/test après ingestion : ce filtrage ne remplace pas cette vérification.
+    """
+    documents = tuple(held_out)
+    ids = {d.doc_id for d in documents}
+    texts = {d.text for d in documents}
+    people = {p for d in documents for p in (*d.subject_ids, d.author_id) if p}
+    threads = {d.thread_id for d in documents if d.thread_id}
+    for document in candidates:
+        if (document.doc_id in ids or document.text in texts
+                or people.intersection((*document.subject_ids, document.author_id))
+                or document.thread_id and document.thread_id in threads):
+            excluded["overlap"] = excluded.get("overlap", 0) + 1
+            continue
+        yield document
+
+
 def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
             official_rat_root: Path) -> dict[str, Any]:
     os.environ["ANONV2_V1_DATASETS"] = str(official_rat_root if key == "ratbench"
@@ -260,9 +281,19 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
         count = budget[split]
         if count == 0:
             continue
+        candidates = adapter.iter_documents(split)
+        excluded_overlap: dict[str, int] = {}
+        if split == auxiliary_train:
+            candidates = disjoint_training_documents(
+                candidates, (d for part in splits for d in selected[part]), excluded_overlap)
         selected[split], sampling[split] = choose(
-            adapter.iter_documents(split), key, split, count,
+            candidates, key, split, count,
             cfg["max_document_chars"], cfg["sampling_seed"])
+        if split == auxiliary_train:
+            sampling[split]["train_test_disjointness"] = {
+                "excluded_overlap": excluded_overlap.get("overlap", 0),
+                "fields": ["doc_id", "text", "author_id", "subject_ids", "thread_id"],
+            }
     sampled = CompleteSample(adapter, selected)
     result = ingest(sampled, loaded.manifest, split="all", output_root=Path("data/processed"),
                     resolution=loaded.resolution)

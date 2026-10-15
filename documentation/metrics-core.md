@@ -81,15 +81,16 @@ ni attaque applicable, n'ont plus de score de qualité dans ce noyau. Le banc
 le déclare au lieu d'inventer une mesure d'utilité. Les contrôles d'exécution
 et les temps de traitement restent disponibles.
 
-La campagne active conserve donc sept corpus évaluables par ce noyau :
-RAT-Bench, QUASIFR, TAB, CoNLL2003, DBBIO, SPIA et OpenPII. PersonalReddit,
-SupportTickets et BitextSupport sont déclarés dans `excluded_datasets` avec
-leur motif ; leurs adaptateurs, sources et résultats historiques sont conservés.
+Le noyau de base couvre sept corpus : RAT-Bench, QUASIFR, TAB, CoNLL2003,
+DBBIO, SPIA et OpenPII. La campagne de dix documents ajoute SupportTickets et
+BitextSupport avec une tâche aval explicite et un train auxiliaire de 2000
+documents disjoints du test. PersonalReddit reste dans `excluded_datasets` :
+ses attributs personnels ne sont pas une tâche d'utilité validée et aucune
+attaque adaptée n'est configurée. Les sources et résultats historiques sont conservés.
 Une scorecard sans aucune mesure de qualité applicable est bloquée, même si
 son exécution est techniquement sans erreur.
-Les corpus de tâche peuvent revenir dans une campagne configurée explicitement,
-à condition de fournir train/test et un évaluateur informatif ; leur exclusion
-dans la configuration courante ne constitue pas une incompatibilité du scorer.
+Les mesures de tâche restent indisponibles si l'évaluateur ne dépasse pas
+la référence majoritaire, même sur un corpus activé dans la campagne.
 
 Les anciennes campagnes et leurs scorecards 2.0 restent immuables. Une nouvelle
 version peut être recalculée hors ligne à partir des sorties figées, avec sa

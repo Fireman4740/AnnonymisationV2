@@ -1,6 +1,17 @@
 {
-  "purpose": "bench_reliable_conditional_metrics_v3_1_7_corpora_10_documents",
-  "conditional_evaluations": {},
+  "purpose": "bench_reliable_conditional_metrics_v3_1_9_corpora_10_documents",
+  "conditional_evaluations": {
+    "supporttickets": {
+      "task": "ticket_routing",
+      "train_split": "train",
+      "training_documents": 2000
+    },
+    "bitextsupport": {
+      "task": "intent",
+      "train_split": "train",
+      "training_documents": 2000
+    }
+  },
   "remote_real_corpora_authorized": false,
   "provider_max_price": {
     "prompt": 0.021,
@@ -15,6 +26,12 @@
   "sampling_seed": 20261008,
   "max_document_chars": 16000,
   "datasets": {
+    "supporttickets": [
+      "test"
+    ],
+    "bitextsupport": [
+      "test"
+    ],
     "ratbench": [
       "eval"
     ],
@@ -94,7 +111,9 @@
   "documents_per_split": 10,
   "not_executable_here": [
     "portée auteur des politiques P3/P4 (S5) : non implémentée par les moteurs, écart déclaré dans chaque lock",
-    "PANORAMA : dataset Hugging Face « gated » (srirxml/PANORAMA) — HTTP 403 tant que les conditions ne sont pas acceptées sur huggingface.co avec le compte du token ; aucun contournement"
+    "PANORAMA : dataset Hugging Face « gated » (srirxml/PANORAMA) — HTTP 403 tant que les conditions ne sont pas acceptées sur huggingface.co avec le compte du token ; aucun contournement",
+    "QICR/MALE-k : aucune population indépendante complète fournie pour les corpus réels ; aucune vérité k fabriquée",
+    "Brier/ECE : les systèmes courants n'émettent pas de prévision validée du succès de l'attaque après anonymisation ; aucune conversion de 1/k"
   ],
   "remote_authorized_datasets": [
     "spia"
@@ -105,19 +124,7 @@
       "splits": [
         "test"
       ],
-      "reason": "labels de tâche aval seuls, sans gold de spans ni attaque applicable au noyau réduit"
-    },
-    "supporttickets": {
-      "splits": [
-        "test"
-      ],
-      "reason": "labels de tâche aval seuls, sans gold de spans ni attaque applicable au noyau réduit"
-    },
-    "bitextsupport": {
-      "splits": [
-        "test"
-      ],
-      "reason": "labels de tâche aval seuls, sans gold de spans ni attaque applicable au noyau réduit"
+      "reason": "attributs personnels inférés sans spans ancrés ni attaque adaptée ; personality_prediction n'est pas une tâche d'utilité validée"
     }
   }
 }

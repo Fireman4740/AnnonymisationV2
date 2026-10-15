@@ -172,9 +172,11 @@ La campagne accepte une configuration explicite, par exemple :
 Cet extrait complète les autres paramètres de campagne. Le train auxiliaire
 est ingéré et verrouillé, sans prédiction d'anonymisation ; il ne consomme pas
 le budget des documents évalués. Une référence populationnelle peut être
-déclarée avec `population` et `k_threshold`. La configuration courante laisse
-`conditional_evaluations` vide : les corpus et prérequis manquants ne sont pas
-activés artificiellement. Aucune campagne distante n'a été relancée pour cette intégration.
+déclarée avec `population` et `k_threshold`. La campagne de dix documents
+active `ticket_routing` sur SupportTickets et `intent` sur BitextSupport, avec
+2000 documents de train chacun. Le train est échantillonné après exclusion des
+textes, personnes et fils présents dans le test ; les exclusions sont comptées.
+Les populations indépendantes et prévisions d'événement manquantes ne sont pas fabriquées.
 
 RCR, le juge global d'utilité, ROUGE comme mesure du sens et TRIR lexical
 restent hors du banc actif. Les anciennes scorecards ne sont pas modifiées.
