@@ -42,6 +42,8 @@ models = [
 metrics = [
   "numpy>=1.26",
   "scipy>=1.13",
+  # Calculs de référence F1, Brier, courbes de calibration et évaluateur aval.
+  "scikit-learn==1.8.0",
 ]
 # Métriques d'utilité textuelle (secondaires — voir SPEC-07 §6.A).
 metrics_text = [

@@ -27,44 +27,14 @@ from anonymisation.metrics.contracts import MetricDirection, MetricStatus, Metri
 #: table est un défaut : le test ``test_gate_table_covers_published_metrics``
 #: échoue, ce qui force à décider explicitement de son portillon.
 METRIC_CAPABILITY_GATE: Final[Mapping[str, frozenset[str]]] = {
-    # --- axe A : suppose que le système localise des spans ----------------- #
-    "span_precision": frozenset({CAP_SPANS}),
-    "span_recall": frozenset({CAP_SPANS}),
-    "span_f1": frozenset({CAP_SPANS}),
-    "span_f2": frozenset({CAP_SPANS}),
-    "span_classification_f1": frozenset({CAP_SPANS}),
-    "span_strict_f1": frozenset({CAP_SPANS}),
-    "span_schemas": frozenset({CAP_SPANS}),
-    # Couverture des masques : lit les décisions appliquées.
+    **{name: frozenset({CAP_SPANS}) for name in
+       ("span_precision", "span_recall", "span_f1", "span_strict_f1")},
     "mask_coverage": frozenset({CAP_DECISIONS}),
     "tab_official": frozenset({CAP_DECISIONS}),
-    "macro_f1": frozenset({CAP_SPANS}),
-    "weighted_token_precision": frozenset({CAP_SPANS}),
-    "ER_di": frozenset({CAP_SPANS}),
-    "ER_qi": frozenset({CAP_SPANS}),
-    "entity_recall_direct": frozenset({CAP_SPANS}),
-    "entity_recall_quasi": frozenset({CAP_SPANS}),
-    # --- axes B/C/D : mesurés sur le TEXTE, donc universels ---------------- #
-    # C'est le résultat central de cette architecture : une boîte noire reste
-    # pleinement évaluable sur la protection et l'utilité.
-    "cpr": frozenset(),
-    "ipr": frozenset(),
-    "literal_cpr": frozenset(),
-    "literal_ipr": frozenset(),
-    "trir": frozenset(),
-    "rouge_l": frozenset(),
-    "mean_utility": frozenset(),
-    "gold_leak_rate": frozenset(),
-    "direct_leak_rate": frozenset(),
-    "reid_success_rate": frozenset(),
-    "utility_retention": frozenset(),
-    # --- combinaisons : QICR lit les spans, RCR@k le risque estimé ---------- #
     "qicr": frozenset({CAP_SPANS}),
-    "rcr_at_k": frozenset({CAP_RISK}),
-    # --- calibration : suppose une estimation de risque -------------------- #
-    "male_k": frozenset({CAP_RISK}),
-    "ece": frozenset({CAP_RISK}),
-    "brier": frozenset({CAP_RISK}),
+    **{name: frozenset({CAP_RISK}) for name in ("male_k", "brier", "ece")},
+    **{name: frozenset() for name in ("utility_retention", "task_f1_delta")},
+    **{name: frozenset() for name in ("cpr", "ipr", "reid_success_rate", "gold_leak_rate", "direct_leak_rate")},
 }
 
 

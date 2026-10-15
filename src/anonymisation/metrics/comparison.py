@@ -36,34 +36,53 @@ __all__ = [
 _CHECKED_METRICS: tuple[tuple[str, str], ...] = (
     ("primary", "cpr"),
     ("primary", "ipr"),
-    ("primary", "trir"),
-    ("primary", "utility_retention"),
     ("primary", "reid_success_rate"),
-    ("diagnostic", "mean_utility"),
-    ("diagnostic", "literal_cpr"),
-    ("diagnostic", "literal_ipr"),
-    ("diagnostic", "ER_di"),
-    ("diagnostic", "ER_qi"),
+    ("diagnostic", "span_precision"),
+    ("diagnostic", "span_recall"),
+    ("diagnostic", "span_f1"),
+    ("diagnostic", "span_strict_f1"),
     ("diagnostic", "gold_leak_rate"),
     ("diagnostic", "direct_leak_rate"),
+    ("diagnostic", "mask_coverage"),
+    ("diagnostic", "tab_official"),
+    ("diagnostic", "utility_retention"),
+    ("diagnostic", "task_f1_delta"),
+    ("diagnostic", "qicr"),
+    ("diagnostic", "male_k"),
+    ("diagnostic", "brier"),
+    ("diagnostic", "ece"),
 )
 
 #: Configuration d'un modèle évaluateur (attaquant, juge) qui conditionne la
 #: valeur : deux anonymiseurs ne se comparent qu'à évaluateur identique (H-1).
-_EVALUATOR_FIELDS: tuple[str, ...] = ("backend", "model", "temperature")
+_EVALUATOR_FIELDS: tuple[str, ...] = (
+    "backend",
+    "model",
+    "temperature",
+    "extra_body",
+    "max_tokens",
+    "default_max_output_tokens",
+)
 
 
 def _evaluator_signature(details: dict[str, Any]) -> tuple[Any, ...]:
     """Attaquant, juge et modèle de risque déclarés par la métrique, s'il y en a."""
     signature: list[Any] = []
-    for role in ("attacker", "judge"):
+    for role in ("attacker",):
         block = details.get(role)
         if isinstance(block, dict):
             signature.append((role, *(block.get(name) for name in _EVALUATOR_FIELDS)))
     risk = details.get("risk")
     if isinstance(risk, dict):
-        signature.append(("risk", *(risk.get(name) for name in
-                                    ("population_n", "threshold", "repeats", "population_sha256"))))
+        signature.append(
+            (
+                "risk",
+                *(
+                    risk.get(name)
+                    for name in ("population_n", "threshold", "repeats", "population_sha256")
+                ),
+            )
+        )
     return tuple(signature)
 
 
@@ -76,8 +95,7 @@ def _assert_same_ground_truth(scorecards: Sequence[dict[str, Any]]) -> None:
     carte qui n'en porte pas (ancien scorer) n'est pas vérifiable ici.
     """
     pivots = [
-        (idx, (sc.get("inputs") or {}).get("pivot"))
-        for idx, sc in enumerate(scorecards, start=1)
+        (idx, (sc.get("inputs") or {}).get("pivot")) for idx, sc in enumerate(scorecards, start=1)
     ]
     known = [(idx, pivot) for idx, pivot in pivots if isinstance(pivot, dict)]
     if not known:
@@ -148,6 +166,14 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                 f"Scorecard #{idx} protocole incompatible : attendu {ref_protocol}/{ref_proto_ver}, obtenu {proto}/{proto_ver}"
             )
 
+    versions = {sc.get("schema_version") for sc in scorecards}
+    if len(versions) > 1:
+        raise MetricComparisonError(
+            "Schémas de scorecards différents : rescorer avec le même noyau"
+        )
+    scoring = [sc.get("scoring") for sc in scorecards]
+    if any(s is not None for s in scoring) and any(s != scoring[0] for s in scoring[1:]):
+        raise MetricComparisonError("Code de scoring différent : rescorer avec le même noyau")
     _assert_same_ground_truth(scorecards)
 
     # Chaque métrique prend pour référence sa première valeur disponible,
@@ -156,6 +182,8 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
         reference: tuple[str, tuple[Any, ...]] | None = None
         values = 0
         for idx, sc in enumerate(scorecards, start=1):
+            if sc.get("publishable") is False:
+                continue
             block = (sc.get(section) or {}).get(metric)
             status = _status_of(block)
             if status is None or status in _NO_VALUE or block.get("value") is None:
@@ -168,6 +196,13 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                 details.get("definition_id"),
                 details.get("denominator"),
                 _evaluator_signature(details),
+                details.get("evaluation_context"),
+                details.get("event_contract"),
+                details.get("evaluator"),
+                details.get("model_sha256"),
+                details.get("task"),
+                details.get("labels"),
+                details.get("k_threshold"),
             )
             if reference is None:
                 reference = status, signature
@@ -184,8 +219,12 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                     f"attendu {ref_signature!r}, obtenu {signature!r}. "
                     "Recalculer les anciennes scorecards avec le même scorer."
                 )
-        if (metric in ("gold_leak_rate", "direct_leak_rate") and values > 1
-                and reference is not None and reference[1][2] is None):
+        if (
+            metric in ("gold_leak_rate", "direct_leak_rate")
+            and values > 1
+            and reference is not None
+            and reference[1][2] is None
+        ):
             raise MetricComparisonError(
                 f"Définition non versionnée pour {metric!r} : comparaison invérifiable. "
                 "Recalculer les anciennes scorecards avec le même scorer."
@@ -213,93 +252,91 @@ def _cell(block: Any) -> str:
 
 
 def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
-    """Rend un rapport Markdown stable de comparaison inter-systèmes."""
+    """Affiche seulement le catalogue actif et les colonnes effectivement mesurées."""
     assert_comparable_across_systems(scorecards)
-
-    # Trier par system_id puis version
-    sorted_scs = sorted(
+    cards = sorted(
         scorecards,
         key=lambda s: (
-            str((s.get("system") or {}).get("system_id", "")),
-            str((s.get("system") or {}).get("system_version", "")),
+            str(s.get("system", {}).get("system_id", "")),
+            str(s.get("system", {}).get("system_version", "")),
         ),
     )
-
-    first = sorted_scs[0]
-    dataset = first.get("dataset", "unknown")
-    split = first.get("split", "unknown")
-    protocol = first.get("protocol", "unknown")
-    proto_ver = first.get("protocol_version", "unknown")
-
-    lines = [
-        f"# Comparaison des systèmes — {dataset} ({split})",
-        "",
-        f"**Protocole :** `{protocol}` (version `{proto_ver}`)  ",
-        f"**Nombre de systèmes comparés :** {len(sorted_scs)}",
-        "",
-        "> Les valeurs suffixées `PROX`, `DIAG` ou `SAMP` ne sont pas des "
-        "chiffres publiables : elles ne portent aucune garantie de "
-        "comparabilité externe (SPEC-07). Elles ne se lisent qu'entre runs de "
-        "même statut, tel que vérifié ci-dessus.",
-        "",
-        "| Système | Version | CPR | IPR | TRIR | R_succ | Utility Ret. | Mean Utility | ROUGE-L | ER_di | ER_qi | Gold Leak | Latence p50 (ms) | Erreur |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
-    ]
-
-    unavailable_provenance: list[str] = []
-
-    for sc in sorted_scs:
-        sys_block = sc.get("system") or {}
-        sys_id = sys_block.get("system_id", "unknown")
-        sys_ver = sys_block.get("system_version", "1")
-
-        primary = sc.get("primary") or {}
-        diag = sc.get("diagnostic") or {}
-        eff = sc.get("efficiency") or {}
-
-        cpr = _cell(primary.get("cpr"))
-        ipr = _cell(primary.get("ipr"))
-        trir = _cell(primary.get("trir"))
-        reid = _cell(primary.get("reid_success_rate"))
-        util_ret = _cell(primary.get("utility_retention"))
-        mean_util = _cell(diag.get("mean_utility"))
-        rouge = _cell(diag.get("rouge_l"))
-        er_di = _cell(diag.get("ER_di"))
-        er_qi = _cell(diag.get("ER_qi"))
-        leak = _cell(diag.get("gold_leak_rate"))
-
-        lat = eff.get("latency_p50_ms")
-        lat_str = f"{float(lat):.2f}" if lat is not None else "—"
-
-        err = sc.get("error_rate", 0.0)
-        err_str = f"{float(err):.1%}"
-
-        lines.append(
-            f"| `{sys_id}` | `{sys_ver}` | {cpr} | {ipr} | {trir} | {reid} | {util_ret} | {mean_util} | {rouge} | {er_di} | {er_qi} | {leak} | {lat_str} | {err_str} |"
+    first = cards[0]
+    labels = {
+        "cpr": "CPR",
+        "ipr": "IPR",
+        "reid_success_rate": "R_succ",
+        "span_precision": "Précision spans",
+        "span_recall": "Rappel spans",
+        "span_f1": "F1 spans",
+        "span_strict_f1": "F1 strict",
+        "gold_leak_rate": "Fuite gold",
+        "direct_leak_rate": "Fuite directe",
+        "mask_coverage": "Couverture gold",
+        "tab_official": "Rappel TAB officiel",
+        "utility_retention": "Rétention tâche",
+        "task_f1_delta": "Δ F1 tâche",
+        "qicr": "QICR (détection)",
+        "male_k": "MALE-k",
+        "brier": "Brier (événement)",
+        "ece": "ECE (événement)",
+    }
+    columns = [
+        (section, name)
+        for section, name in _CHECKED_METRICS
+        if any(
+            sc.get(section, {}).get(name, {}).get("value") is not None
+            for sc in cards
+            if sc.get("publishable") is not False
         )
-
-        # Collecter les raisons des indisponibilités
-        for name, blk in [
-            ("CPR", primary.get("cpr")),
-            ("IPR", primary.get("ipr")),
-            ("TRIR", primary.get("trir")),
-            ("R_succ", primary.get("reid_success_rate")),
-            ("Utility Retention", primary.get("utility_retention")),
-            ("Mean Utility", diag.get("mean_utility")),
-            ("ER_di", diag.get("ER_di")),
-            ("ER_qi", diag.get("ER_qi")),
-        ]:
-            if isinstance(blk, dict) and (blk.get("status") in ("unavailable", "failed") or blk.get("value") is None):
-                reason = (blk.get("details") or {}).get("reason") or blk.get("status")
-                unavailable_provenance.append(f"- **{sys_id}** `{name}` : {reason}")
-
-    if unavailable_provenance:
-        lines.extend([
-            "",
-            "## Provenance et statut des métriques indisponibles",
-            "",
-        ])
-        lines.extend(unavailable_provenance)
-
-    lines.append("")
-    return "\n".join(lines)
+    ]
+    lines = [
+        f"# Comparaison des systèmes — {first.get('dataset')} ({first.get('split')})",
+        "",
+        f"**Protocole :** `{first.get('protocol')}` (version `{first.get('protocol_version')}`)",
+        f"**Nombre de systèmes comparés :** {len(cards)}",
+        "",
+        "> DIAG, SAMP et PROX désignent des statuts diagnostiques, échantillonnés ou historiques approchés. "
+        "Les scores des runs bloqués ne sont pas utilisés pour classer les systèmes.",
+        "",
+        "| Système | Version | "
+        + " | ".join([labels[n] for _, n in columns] + ["Latence p50 (ms)", "Erreur"])
+        + " |",
+        "|" + "---|" * (len(columns) + 4),
+    ]
+    reasons = []
+    for card in cards:
+        identity = card.get("system") or {}
+        name = identity.get("system_id", "unknown")
+        blocked = card.get("publishable") is False
+        values = [
+            "—" if blocked else _cell(card.get(section, {}).get(key)) for section, key in columns
+        ]
+        latency = card.get("efficiency", {}).get("latency_p50_ms")
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{name}`",
+                    f"`{identity.get('system_version', '1')}`",
+                    *values,
+                    f"{latency:.2f}" if latency is not None else "—",
+                    f"{card.get('error_rate', 0.0):.1%}",
+                ]
+            )
+            + " |"
+        )
+        if blocked:
+            reasons.extend(
+                f"- **{name}** : {reason}"
+                for reason in card.get("publication_blockers", ["run bloqué"])
+            )
+        for section, key in columns:
+            metric = card.get(section, {}).get(key)
+            if isinstance(metric, dict) and metric.get("value") is None:
+                reasons.append(
+                    f"- **{name}** `{key}` : {metric.get('details', {}).get('reason', metric.get('status'))}"
+                )
+    if reasons:
+        lines.extend(["", "## Provenance et statut des métriques indisponibles", "", *reasons])
+    return "\n".join(lines) + "\n"

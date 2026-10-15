@@ -16,6 +16,17 @@ campaign = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(campaign)
 
 
+def test_population_evaluation_sample_keeps_only_complete_combinations():
+    source = SimpleNamespace(key="mini", manifest=None, raw_dir=Path("."),
+        iter_combinations=lambda split: iter([
+            SimpleNamespace(combination_id="complete", doc_ids=("a", "b")),
+            SimpleNamespace(combination_id="partial", doc_ids=("a", "outside")),
+        ]))
+    selected = [SimpleNamespace(doc_id=key, subject_ids=(), author_id=None) for key in ("a", "b")]
+    sample = campaign.CompleteSample(source, {"test": selected})
+    assert [c.combination_id for c in sample.iter_combinations("test")] == ["complete"]
+
+
 def test_sample_keeps_all_annotations_tasks_and_late_linked_profiles():
     selected = SimpleNamespace(doc_id="chosen", subject_ids=("subject",), author_id=None)
     source = SimpleNamespace(
@@ -183,12 +194,12 @@ def test_nonzero_price_cap_must_be_explicit_and_identical_in_every_backend():
     assert campaign.campaign_models(cfg, llm_cfg)["anonymizer_backend"]["extra_body"]["provider"]["max_price"] == caps
 
 
-def test_variants_run_every_policy_but_judge_only_reference_runs():
+def test_variants_run_every_policy_but_spia_attacks_only_reference_runs():
     variants = {v["name"]: v for v in campaign.system_variants(_campaign_cfg(), remote_allowed=True)}
     assert {f"deterministic-P{i}" for i in range(5)} <= set(variants)
     assert {f"hybrid-qi-P{i}" for i in range(5)} <= set(variants)
     assert {"passthrough", "redact-all", "oracle-mask", "regex-only", "llm-full"} <= set(variants)
-    judged = sorted(name for name, v in variants.items() if v["llm_stages"])
+    judged = sorted(name for name, v in variants.items() if v["spia_attack"])
     assert judged == ["deterministic-P2", "hybrid-qi-P2", "llm-full", "oracle-mask",
                       "passthrough", "redact-all", "regex-only"]
 

@@ -633,11 +633,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     score_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
     score_p.add_argument("--protocol", required=True, help="Protocole d'évaluation.")
-    score_p.add_argument(
-        "--train-run", default=None,
-        help="Run predict du split train par le MÊME système : active la variante "
-             "d'utilité aval réentraînée sur anonymisé.",
-    )
+
+    evaluate_p = sub.add_parser("evaluate", help="Fige un évaluateur aval local et/ou une référence populationnelle indépendante.")
+    evaluate_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
+    evaluate_p.add_argument("--task", help="Tâche single-label déclarée dans tasks.jsonl.")
+    evaluate_p.add_argument("--train-split", default="train", help="Split d'entraînement original verrouillé.")
+    evaluate_p.add_argument("--population", help="Population complète JSON pour un comptage exact des combinaisons.")
+    evaluate_p.add_argument("--k-threshold", type=int, default=10)
+
 
     attack_p = sub.add_parser(
         "attack",
@@ -653,17 +656,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Backend LLM de configs/llm/backends.yaml (défaut : rôle attacker_<attaquant>).",
     )
     attack_p.add_argument("--workers", type=int, default=None, help="Appels LLM parallèles.")
-
-    judge_p = sub.add_parser(
-        "judge",
-        help="Étape figée optionnelle : juge LLM Mean Utility (lisibilité, sens, ROUGE-L).",
-    )
-    judge_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
-    judge_p.add_argument(
-        "--backend", default=None,
-        help="Backend LLM de configs/llm/backends.yaml (défaut : rôle utility_judge).",
-    )
-    judge_p.add_argument("--workers", type=int, default=None, help="Appels LLM parallèles.")
 
     compare_p = sub.add_parser(
         "compare",
@@ -763,22 +755,27 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_systems_list()
         print(f"Sous-commande inconnue : {args.systems_command}", file=sys.stderr)
         return 2
+    if args.command == "evaluate":
+        from anonymisation.cli.evaluate import cmd_evaluate
+
+        try:
+            return cmd_evaluate(args.run, task=args.task, train_split=args.train_split,
+                                population=args.population, k_threshold=args.k_threshold)
+        except (OSError, ValueError, KeyError, ImportError) as exc:
+            print(f"Évaluation impossible : {exc}", file=sys.stderr)
+            return 2
     if args.command == "score":
         from anonymisation.cli.score import ScoreError, cmd_score
 
         try:
-            return cmd_score(args.run, args.protocol, train_run=args.train_run)
-        except ScoreError as exc:
+            return cmd_score(args.run, args.protocol)
+        except (ScoreError, OSError, ImportError, KeyError) as exc:
             print(f"Erreur d'usage : {exc}", file=sys.stderr)
             return 2
     if args.command == "attack":
         from anonymisation.cli.attack import cmd_attack
 
         return cmd_attack(args.run, args.attacker, args.backend, args.workers)
-    if args.command == "judge":
-        from anonymisation.cli.attack import cmd_judge
-
-        return cmd_judge(args.run, args.backend, args.workers)
     if args.command == "compare":
         from anonymisation.cli.compare import CompareError, cmd_compare
 

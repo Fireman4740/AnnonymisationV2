@@ -14,9 +14,8 @@ travers d'un adaptateur explicite :
 * **annotations sans offsets** (attribut inféré au niveau document) — elles ne
   sont pas des spans : exclues et comptées (``unanchored_gold``).
 
-Les quatre schémas sont publiés séparément : ``exact`` et ``partial`` mesurent la
-**localisation** (type ignoré), ``ent_type`` et ``strict`` la
-**classification**. Les comptes nervaluate sont additifs entre documents : la
+Les quatre schémas sont calculés par la référence ; le banc actif ne publie
+que P/R/F1 ``partial`` et F1 ``strict``. Les comptes sont additifs entre documents : la
 somme des comptes par document redonne exactement l'évaluation du corpus,
 ce qui permet le bootstrap par document.
 """
@@ -83,10 +82,8 @@ class SchemaCounts:
         credit = self.credit(schema)
         precision = credit / self.actual if self.actual else None
         recall = credit / self.possible if self.possible else None
-        if precision is None or recall is None:
-            f1 = None
-        else:
-            f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
+        denominator = self.actual + self.possible
+        f1 = 2 * credit / denominator if denominator else None
         return {"precision": precision, "recall": recall, "f1": f1}
 
     def to_dict(self, schema: str) -> dict[str, Any]:

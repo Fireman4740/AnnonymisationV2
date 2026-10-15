@@ -127,12 +127,11 @@ def test_quasi_only_leakage_uses_all_surfaces_and_explains_absent_directs(text, 
     row["anonymized_text"] = text
     card = _build({"d": doc}, {"d": (gold,)}, [row])
     full = card["diagnostic"]["gold_leak_rate"]
-    direct = card["diagnostic"]["direct_leak_rate"]
     assert full["value"] == rate == full["details"]["rate"]
     assert full["status"] == "diagnostic"
     assert full["details"]["definition_id"] == "gold-surface-leak-v2"
-    assert direct["value"] is None and direct["status"] == "unavailable"
-    assert "DIRECT" in direct["details"]["reason"]
+    assert "direct_leak_rate" not in card["diagnostic"]
+    assert "DIRECT" in card["not_applicable"]["direct_leak_rate"]
 
 
 def test_empty_gold_leakage_is_unavailable_with_reason():
@@ -141,9 +140,8 @@ def test_empty_gold_leakage_is_unavailable_with_reason():
     row["anonymized_text"] = doc.text
     card = _build({"d": doc}, {"d": ()}, [row])
     for name in ("gold_leak_rate", "direct_leak_rate"):
-        block = card["diagnostic"][name]
-        assert block["value"] is None and block["status"] == "unavailable"
-        assert block["details"]["reason"]
+        assert name not in card["diagnostic"]
+        assert card["not_applicable"][name]
 
 
 def test_gold_and_direct_leakage_have_distinct_pooled_rates_and_intervals():
@@ -193,8 +191,8 @@ def test_entity_recall_never_matches_across_documents() -> None:
         _prediction("d2", [_annotation("d2", 0, 5, span_text="Alice")]),
     ]
     card = _build(documents, gold, predictions)
-    recall = card["diagnostic"]["entity_recall_direct"]
-    assert recall["details"]["entities"] == 2
+    recall = card["diagnostic"]["span_recall"]
+    assert card["diagnostic"]["counts"]["gold"] == 2
     assert recall["value"] == pytest.approx(0.5)
 
 
@@ -222,7 +220,7 @@ def test_by_expression_splits_gold_and_predictions_per_mode() -> None:
     assert sum(values["gold"] for values in by_expression.values()) == 2
 
 
-def test_document_without_prediction_does_not_zero_token_precision() -> None:
+def test_document_without_gold_or_prediction_does_not_zero_micro_precision() -> None:
     """Un document sans identifiant ni prédiction sort de la moyenne token.
 
     Compter sa précision comme ``0.0`` ferait chuter de moitié le score d'un
@@ -236,18 +234,18 @@ def test_document_without_prediction_does_not_zero_token_precision() -> None:
     gold = {"d1": (annotation,)}
     predictions = [_prediction("d1", [annotation]), _prediction("d2", [])]
     card = _build(documents, gold, predictions)
-    assert card["diagnostic"]["weighted_token_precision"]["value"] == pytest.approx(1.0)
+    assert card["diagnostic"]["span_precision"]["value"] == pytest.approx(1.0)
+    assert "weighted_token_precision" not in card["diagnostic"]
 
 
-def test_macro_f1_ignores_categories_without_gold() -> None:
-    """Le macro-F1 des catégories est publié et n'intègre pas les ``None``."""
+def test_category_counts_are_kept_without_a_redundant_macro_f1() -> None:
     documents = {"d1": _document("d1", "Alice travaille a Lyon.")}
     annotation = _annotation("d1", 0, 5, span_text="Alice")
     gold = {"d1": (annotation,)}
     predictions = [_prediction("d1", [annotation])]
     card = _build(documents, gold, predictions)
-    assert card["macro_f1"]["value"] == pytest.approx(1.0)
-    assert card["macro_f1"]["details"]["categories"] == 1
+    assert card["by_qi_category"]["DIR_NAME"]["f1"] == pytest.approx(1.0)
+    assert "macro_f1" not in card
 
 
 def test_scorecard_survives_a_json_round_trip() -> None:
@@ -276,12 +274,13 @@ def test_primary_proxy_is_rejected_only_on_an_official_scorecard() -> None:
     card = _build(documents, {"d1": (annotation,)}, [_prediction("d1", [annotation])])
     card["primary"]["naive_risk"] = {"status": MetricStatus.PROXY}
 
-    # Carte DIAGNOSTIC : le proxy est admis, correctement étiqueté.
-    validate_scorecard(card)
+    # Catalogue fermé : même étiqueté, un nouveau proxy n'est plus publiable.
+    with pytest.raises(ScorecardError, match="catalogue actif"):
+        validate_scorecard(card)
 
     # Carte OFFICIAL : refusé.
     card["status"] = MetricStatus.OFFICIAL.value
-    with pytest.raises(ScorecardError, match="PROXY"):
+    with pytest.raises(ScorecardError, match="catalogue actif"):
         validate_scorecard(card)
 
 
@@ -321,10 +320,8 @@ def test_trir_is_unavailable_without_cross_document_identity() -> None:
     predictions = [{**_prediction(doc_id, []), "anonymized_text": doc.text}
                    for doc_id, doc in documents.items()]
     card = _build(documents, {}, predictions)
-    trir = card["primary"]["trir"]
-    assert trir["value"] is None
-    assert trir["status"] == "unavailable"
-    assert "identité inter-documents" in trir["details"]["reason"]
+    assert "trir" not in card["primary"]
+    assert "trir" not in card["not_applicable"]
 
 
 def test_scored_prediction_without_anonymized_text_is_rejected() -> None:
@@ -349,13 +346,13 @@ def test_point_estimates_fall_inside_their_intervals() -> None:
         for i in range(4)
     ]
     card = _build(documents, gold, predictions)
-    for block, name in (("diagnostic", "span_recall"), ("diagnostic", "ER_di"),
-                        ("diagnostic", "literal_cpr"), ("diagnostic", "literal_ipr")):
+    for block, name in (("diagnostic", "span_recall"), ("diagnostic", "span_f1"),
+                        ("diagnostic", "gold_leak_rate"), ("diagnostic", "mask_coverage")):
         metric = card[block][name]
         ci = metric["details"]["ci95"]
         assert ci["low"] <= metric["value"] <= ci["high"], name
         assert ci["seed"] and ci["replicates"] == 1000
-    assert card["diagnostic"]["literal_cpr"]["details"]["ci95"]["unit"] == "subject"
+        assert ci["unit"] == "document"
 
 
 def test_official_run_without_spia_attack_is_scorable_and_never_substitutes_literal_cpr():
@@ -376,7 +373,76 @@ def test_official_run_without_spia_attack_is_scorable_and_never_substitutes_lite
     )
     assert card["status"] == "official"
     for name in ("cpr", "ipr"):
-        assert card["primary"][name]["value"] is None
-        assert f"literal_{name}" in card["primary"][name]["details"]["reason"]
-    assert card["diagnostic"]["literal_cpr"]["value"] == 1.0
+        assert name not in card["primary"]
+        assert "SPIA" in card["not_applicable"][name]
+    assert card["diagnostic"]["gold_leak_rate"]["value"] == 0.0
+    assert "literal_cpr" not in card["diagnostic"]
     validate_scorecard(card)
+
+
+def test_f1_is_zero_when_gold_is_present_but_detector_finds_nothing():
+    doc = _document("d", "Alice")
+    annotation = _annotation("d", 0, 5, span_text="Alice")
+    card = _build({"d": doc}, {"d": (annotation,)}, [_prediction("d", [])])
+    assert card["diagnostic"]["span_recall"]["value"] == 0.0
+    for name in ("span_f1", "span_strict_f1"):
+        assert card["diagnostic"][name]["value"] == 0.0
+    assert "span_precision" in card["not_applicable"]
+
+
+def test_false_positives_without_gold_are_not_hidden_as_undefined_f1():
+    doc = _document("d", "Alice")
+    annotation = _annotation("d", 0, 5, span_text="Alice")
+    card = _build({"d": doc}, {"d": ()}, [_prediction("d", [annotation])], span_gold_available=True)
+    assert card["diagnostic"]["span_f1"]["value"] == 0.0
+    assert card["diagnostic"]["span_precision"]["value"] == 0.0
+    assert "span_recall" in card["not_applicable"]
+
+
+def test_corpus_without_span_gold_is_not_treated_as_negative_annotations():
+    doc = _document("d", "Alice")
+    annotation = _annotation("d", 0, 5, span_text="Alice")
+    card = _build({"d": doc}, {}, [_prediction("d", [annotation])])
+    for name in ("span_precision", "span_recall", "span_f1", "span_strict_f1"):
+        assert name not in card["diagnostic"]
+        assert "absence d'annotations" in card["not_applicable"][name]
+    assert card["by_qi_category"] == {} and card["by_language"] == {}
+    assert "fp" not in card["diagnostic"]["counts"]
+    assert not card["publishable"]
+    assert any("aucune métrique de qualité" in reason for reason in card["publication_blockers"])
+
+
+def test_catalog_is_closed_and_retired_metrics_cannot_be_reintroduced():
+    from anonymisation.metrics.catalog import RETIRED_METRICS
+
+    doc = _document("d", "Alice")
+    annotation = _annotation("d", 0, 5, span_text="Alice")
+    card = _build({"d": doc}, {"d": (annotation,)}, [_prediction("d", [annotation])])
+    assert not (set(card["primary"]) | set(card["diagnostic"])) & RETIRED_METRICS
+    for name in RETIRED_METRICS:
+        altered = {**card, "diagnostic": {**card["diagnostic"], name: {
+            **card["diagnostic"]["span_f1"], "name": name}}}
+        with pytest.raises(ScorecardError, match="catalogue actif"):
+            validate_scorecard(altered)
+    with pytest.raises(ScorecardError, match="catalogue actif"):
+        _build({"d": doc}, {}, [_prediction("d", [])], external_diagnostics={"rouge_l": {}})
+
+
+def test_core_scoring_never_calls_retired_computations_or_any_model(monkeypatch):
+    from anonymisation.llm.client import LlmClient
+    from anonymisation.metrics import combinations, downstream, tria, utility
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("calcul retiré ou modèle appelé par score")
+
+    for module, name in ((combinations, "combination_metrics"), (downstream, "evaluate_downstream_task"),
+                         (tria, "evaluate_trir"), (utility, "mean_utility_from_judgments"),
+                         (utility, "mean_utility_over_documents"), (utility, "rouge_l")):
+        monkeypatch.setattr(module, name, forbidden)
+    monkeypatch.setattr(LlmClient, "complete", forbidden)
+    doc = _document("d", "Alice")
+    annotation = _annotation("d", 0, 5, span_text="Alice")
+    card = _build({"d": doc}, {"d": (annotation,)}, [_prediction("d", [annotation])])
+    assert card["schema_version"] == "3.1"
+    assert card["diagnostic"]["span_f1"]["value"] == 1.0
+    assert card["scoring"]["modules_sha256"]["scorecard.py"]

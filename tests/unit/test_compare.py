@@ -83,7 +83,7 @@ def test_unavailable_first_card_does_not_hide_incompatible_later_definitions():
 
 def test_same_leak_definition_allows_different_values():
     cards = [_dummy_scorecard(s) for s in ("one", "two")]
-    for card, value in zip(cards, (0.0, 1.0)):
+    for card, value in zip(cards, (0.0, 1.0), strict=True):
         block = card["diagnostic"]["gold_leak_rate"]
         block["value"] = value
         block["details"] = {
@@ -113,7 +113,8 @@ def test_render_comparison_markdown():
     assert idx_a < idx_b
     assert "0.9000" in md
     assert "0.8000" in md
-    assert "Provenance et statut" in md
+    assert "Mean Utility" not in md
+    assert "ROUGE-L" not in md
 
 
 def test_cmd_compare_and_index(tmp_path: Path):
@@ -173,15 +174,15 @@ def test_reidentification_rates_require_the_same_attacker():
         assert_comparable_across_systems(mixed)
 
 
-def test_utility_judgments_require_the_same_judge():
+def test_retired_utility_judgments_are_not_compared_or_displayed():
     cards = [_dummy_scorecard(s) for s in ("a", "b")]
     for card, model in zip(cards, ("judge-a", "judge-b"), strict=True):
         card["diagnostic"]["mean_utility"] = {
             "name": "mean_utility", "value": 0.7, "status": "diagnostic",
             "details": {"judge": {"backend": "or", "model": model, "temperature": 0.0}},
         }
-    with pytest.raises(MetricComparisonError, match="mean_utility"):
-        assert_comparable_across_systems(cards)
+    assert_comparable_across_systems(cards)
+    assert "Mean Utility" not in render_comparison_markdown(cards)
 
 
 def test_runs_scored_on_different_documents_are_not_comparable():
@@ -196,3 +197,22 @@ def test_comparison_table_shows_reidentification_rate():
     cards = [_with_reid(_dummy_scorecard(s), "attacker-a") for s in ("a", "b")]
     report = render_comparison_markdown(cards)
     assert "R_succ" in report and "0.4000" in report
+
+
+def test_different_reasoning_settings_are_not_comparable():
+    cards = [_dummy_scorecard(s) for s in ("one", "two")]
+    for card, enabled in zip(cards, (False, True), strict=True):
+        card["primary"]["cpr"]["details"] = {"attacker": {
+            "backend": "or", "model": "ling", "temperature": 0.1,
+            "extra_body": {"reasoning": {"enabled": enabled}}}}
+    with pytest.raises(MetricComparisonError, match="définition incompatible"):
+        assert_comparable_across_systems(cards)
+
+
+def test_blocked_run_has_error_rate_and_reason_but_no_comparison_scores():
+    good, bad = _dummy_scorecard("good"), _dummy_scorecard("bad", cpr_val=0.123456)
+    bad.update(publishable=False, error_rate=0.2, publication_blockers=["2 prédictions en erreur"])
+    md = render_comparison_markdown([good, bad])
+    assert "0.1235" not in md
+    assert "20.0%" in md
+    assert "2 prédictions en erreur" in md

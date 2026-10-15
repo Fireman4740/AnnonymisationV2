@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import Final
 
 #: Le système produit des annotations localisées (offsets sur le texte
-#: original). Condition de l'axe A : F1 de spans, macro-F1, ER_di / ER_qi.
+#: original). Condition des mesures de spans P/R/F1 et F1 strict.
 CAP_SPANS: Final[str] = "spans"
 
 #: Le système produit des décisions d'anonymisation explicables.

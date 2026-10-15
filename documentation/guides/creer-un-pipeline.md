@@ -1,5 +1,9 @@
 # Guide agent — créer un nouveau pipeline d'anonymisation évaluable
 
+> Pour les métriques, le [catalogue actif réduit](../metrics-core.md), révisé
+> le 15 octobre 2026, prévaut sur les références historiques à SPEC-07 dans ce
+> guide. Ne pas réintroduire les métriques retirées ni le juge d'utilité.
+
 | | |
 |---|---|
 | **Public** | Agent (ou humain) qui ajoute une architecture d'anonymisation au dépôt |

@@ -10,6 +10,10 @@ Date de référence de l'état de l'art : **30 août 2026**.
 
 ## 0. Guides pratiques (point d'entrée pour contribuer)
 
+**Banc d'évaluation actif :** [métriques conservées, retraits et limites](metrics-core.md)
+(scorecards 3.0, 15 octobre 2026). Ce catalogue réduit prévaut sur l'ancien
+catalogue de SPEC-07 et sur les anciens rapports de campagne.
+
 | Guide | Quand le lire |
 |-------|---------------|
 | [`guides/creer-un-pipeline.md`](guides/creer-un-pipeline.md) | **Avant d'ajouter tout système d'anonymisation** : où créer les fichiers, le contrat `SystemBase`, les capacités et ce qu'elles débloquent à l'évaluation, les invariants, le branchement obligatoire, la checklist de revue |

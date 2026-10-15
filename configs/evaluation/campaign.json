@@ -1,17 +1,19 @@
 {
-  "purpose": "full_bench_10_documents_ling_3_0_flash_routing_preflight",
+  "purpose": "bench_reliable_conditional_metrics_v3_1_7_corpora_10_documents",
+  "conditional_evaluations": {},
   "remote_real_corpora_authorized": false,
-  "provider_max_price": {"prompt": 0.021, "completion": 0.063},
+  "provider_max_price": {
+    "prompt": 0.021,
+    "completion": 0.063
+  },
   "anonymizer_backend": "openrouter_ling_3_0_flash",
   "attacker_backend": "openrouter_ling_3_0_flash",
-  "judge_backend": "openrouter_ling_3_0_flash",
   "legacy_root": "/mnt/f/IA/Anonymisation/eval/datasets",
   "documents_per_dataset": 10,
   "llm_full_max_output_tokens": 8192,
   "llm_full_max_entities": 256,
   "sampling_seed": 20261008,
   "max_document_chars": 16000,
-  "train_documents": 10,
   "datasets": {
     "ratbench": [
       "eval"
@@ -21,9 +23,6 @@
       "hard_quasi_id",
       "max_anonymization"
     ],
-    "personalreddit": [
-      "test"
-    ],
     "tab": [
       "test"
     ],
@@ -31,12 +30,6 @@
       "test"
     ],
     "dbbio": [
-      "test"
-    ],
-    "supporttickets": [
-      "test"
-    ],
-    "bitextsupport": [
       "test"
     ],
     "spia": [
@@ -49,22 +42,22 @@
   "systems": [
     {
       "system": "passthrough",
-      "llm_stages": true
+      "spia_attack": true
     },
     {
       "system": "redact-all",
       "params": {
         "replacement": ""
       },
-      "llm_stages": true
+      "spia_attack": true
     },
     {
       "system": "oracle-mask",
-      "llm_stages": true
+      "spia_attack": true
     },
     {
       "system": "regex-only",
-      "llm_stages": true
+      "spia_attack": true
     },
     {
       "system": "deterministic",
@@ -75,7 +68,7 @@
         "P3",
         "P4"
       ],
-      "llm_stage_policies": [
+      "spia_attack_policies": [
         "P2"
       ]
     },
@@ -88,26 +81,43 @@
         "P3",
         "P4"
       ],
-      "llm_stage_policies": [
+      "spia_attack_policies": [
         "P2"
       ]
     },
     {
       "system": "llm-full",
       "remote_only": true,
-      "llm_stages": true
+      "spia_attack": true
     }
   ],
   "documents_per_split": 10,
   "not_executable_here": [
-    "configuration d'attaque/juge locale <30B (qwen_local) : serveur sur le poste Windows de l'utilisateur, injoignable depuis openresearch-box",
-    "QICR/RCR@k et calibration hors ajustement : aucun corpus disponible avec combinaisons gold liées et k_true indépendant (hr_qi sans adaptateur)",
     "portée auteur des politiques P3/P4 (S5) : non implémentée par les moteurs, écart déclaré dans chaque lock",
-    "validation du juge local contre annotations humaines : aucune annotation humaine disponible",
     "PANORAMA : dataset Hugging Face « gated » (srirxml/PANORAMA) — HTTP 403 tant que les conditions ne sont pas acceptées sur huggingface.co avec le compte du token ; aucun contournement"
   ],
   "remote_authorized_datasets": [
     "spia"
   ],
-  "remote_authorization_note": "Autorisation utilisateur du 2026-10-12 : textes SPIA seulement (OpenRouter). Autres corpus réels non autorisés."
+  "remote_authorization_note": "Autorisation utilisateur du 2026-10-12 : textes SPIA seulement (OpenRouter). Autres corpus réels non autorisés.",
+  "excluded_datasets": {
+    "personalreddit": {
+      "splits": [
+        "test"
+      ],
+      "reason": "labels de tâche aval seuls, sans gold de spans ni attaque applicable au noyau réduit"
+    },
+    "supporttickets": {
+      "splits": [
+        "test"
+      ],
+      "reason": "labels de tâche aval seuls, sans gold de spans ni attaque applicable au noyau réduit"
+    },
+    "bitextsupport": {
+      "splits": [
+        "test"
+      ],
+      "reason": "labels de tâche aval seuls, sans gold de spans ni attaque applicable au noyau réduit"
+    }
+  }
 }

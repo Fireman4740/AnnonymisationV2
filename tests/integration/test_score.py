@@ -202,8 +202,9 @@ def test_official_protocol_on_sampled_inputs_stays_sampled(score_fixture: Path, 
     assert card["status"] == "sampled"
     # Sans attaque SPIA figée, CPR/IPR principaux sont indisponibles ; la
     # présence littérale reste un diagnostic distinct.
-    assert card["primary"]["cpr"]["status"] == "unavailable"
-    assert card["diagnostic"]["literal_cpr"]["status"] == "diagnostic"
+    assert "cpr" not in card["primary"]
+    assert "SPIA" in card["not_applicable"]["cpr"]
+    assert "literal_cpr" not in card["diagnostic"]
 
 
 def test_score_is_offline_and_never_imports_detector() -> None:
@@ -278,7 +279,7 @@ def test_invalid_scorecard_missing_reproducibility_is_rejected() -> None:
         validate_scorecard(
             {
                 "run_id": "r",
-                "schema_version": "2.0",
+                "schema_version": "3.1",
                 "system": {},
                 "dataset": "mini",
                 "split": "train",
@@ -318,8 +319,8 @@ def test_all_error_run_produces_unavailable_metrics(
     assert score.cmd_score(score_fixture, "mini-v1") == 1
     card = json.loads((score_fixture / "scorecard.json").read_text(encoding="utf-8"))
     assert card["accounting"]["documents_scored"] == 0
-    assert card["diagnostic"]["span_f1"]["value"] is None
-    assert card["diagnostic"]["span_f1"]["status"] == "unavailable"
+    assert "span_f1" not in card["diagnostic"]
+    assert card["not_applicable"]["span_f1"]
 
 
 # --------------------------------------------------------------------------- #
@@ -390,3 +391,37 @@ def test_failed_rescore_never_leaves_a_previous_scorecard(score_fixture: Path) -
     with pytest.raises(score.ScoreError, match="modifié après"):
         score.cmd_score(score_fixture, "mini-v1")
     assert not (score_fixture / "scorecard.json").exists()
+
+
+def test_retired_judge_and_tasks_are_not_read_or_used_as_publication_blockers(score_fixture, monkeypatch):
+    from anonymisation.llm.client import LlmClient
+
+    rows = [json.loads(line) for line in (score_fixture / "predictions.jsonl").read_text().splitlines()]
+    for row in rows:
+        row.update(status="ok", error=[])
+    _write_jsonl(score_fixture / "predictions.jsonl", rows)
+    _relock_outputs(score_fixture)
+    # Ces fichiers n'alimentent plus aucune mesure active, même s'ils existent.
+    (score_fixture / "judge.lock.json").write_text("not JSON")
+    (score_fixture / "judgments.jsonl").write_text("not JSON")
+    (score.PROCESSED_ROOT / "mini" / "train" / "tasks.jsonl").write_text("not JSON")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("appel modèle pendant score")
+
+    monkeypatch.setattr(LlmClient, "complete", forbidden)
+    assert score.cmd_score(score_fixture, "mini-v1") == 0
+    card = json.loads((score_fixture / "scorecard.json").read_text())
+    assert card["publishable"]
+    assert "mean_utility" not in card["diagnostic"]
+    assert "utility_retention" not in card["primary"]
+    assert "train/tasks.jsonl" not in card["inputs"]["pivot"]
+
+
+def test_retired_judge_command_is_not_exposed(capsys):
+    from anonymisation.cli.main import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["judge", "--run", "unused"])
+    assert exc.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err

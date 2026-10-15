@@ -140,9 +140,13 @@ class RiskAssessment:
     worst_category: str | None
     worst_risk: float | None
     status: str = "PROXY"
+    # Contrats optionnels de l'évaluation 3.1. Aucun appariement implicite ni
+    # conversion automatique de 1/k en probabilité de succès après anonymisation.
+    combination_id: str | None = None
+    event_forecast: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "assessment_id": self.assessment_id,
             "population_id": self.population_id,
             "population_size": self.population_size,
@@ -152,6 +156,11 @@ class RiskAssessment:
             "worst_risk": self.worst_risk,
             "status": self.status,
         }
+        if self.combination_id is not None:
+            payload["combination_id"] = self.combination_id
+        if self.event_forecast is not None:
+            payload["event_forecast"] = self.event_forecast
+        return payload
 
 
 @dataclass(frozen=True)
