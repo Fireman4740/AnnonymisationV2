@@ -386,6 +386,9 @@ def cmd_score(run: str | Path, protocol: str) -> int:
     expected_doc_ids = {str(p["doc_id"]) for p in predictions if p.get("status") in ("ok", "partial")}
     documents, gold = _load_gold(dataset, split)
     try:
+        from anonymisation.cli.evaluate import load_evaluation
+
+        evaluation = load_evaluation(run_dir, lock, inputs, expected_doc_ids)
         # L'identité du système commande quelles métriques sont applicables.
         # On refuse plutôt que de supposer : supposer la détection produirait
         # des zéros sur les boîtes noires, supposer l'inverse ferait
@@ -409,6 +412,7 @@ def cmd_score(run: str | Path, protocol: str) -> int:
             documents_by_doc=documents,
             reproducibility=lock,
             system=system_block,
+            evaluation=evaluation,
             requested_status=default_status,
             attack=_load_frozen(run_dir, inputs["run"]["predictions.jsonl"],
                                 ATTACK_LOCK_NAME, ATTACKS_NAME,

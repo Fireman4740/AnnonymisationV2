@@ -67,19 +67,23 @@ correspondante dans la population de référence est petite.
 
 ## 3. Métriques actives
 
-Le banc utilise un noyau réduit et vérifiable (scorecards **3.0**) :
+Le banc utilise un noyau vérifiable et des évaluations conditionnelles (scorecards **3.1**) :
 
 - Attaques figées : **R_succ RAT-Bench** et **CPR/IPR SPIA**, uniquement avec les sorties et contrôles correspondants.
 - Détection : précision, rappel et F1 micro de spans, F1 strict ; rappel TAB officiel sur TAB.
 - Transformation : fuite littérale du gold et des identifiants directs, couverture des masques réellement appliqués.
 - Audit : comptes, intervalles bootstrap, taux d'erreur et latences.
+- Sur références vérifiées : rétention et delta F1 d'une tâche, QICR, MALE-k, Brier et ECE d'événements d'attaque observés.
 
-Le juge d'utilité, ROUGE comme utilité, TRIR lexical, rétention TF-IDF,
-QICR/RCR et métriques de calibration non validées sont retirés du parcours
-actif. Une métrique non applicable n'est jamais remplacée par un zéro.
+Le juge d'utilité, ROUGE comme utilité, TRIR lexical et RCR restent retirés.
+Les nouveaux protocoles n'utilisent pas les anciens scores approchés.
+Une métrique non applicable n'est jamais remplacée par un zéro.
 
 Voir [le catalogue actif et ses limites](documentation/metrics-core.md), qui
 prévaut sur l'ancien catalogue de SPEC-07.
+Les [protocoles conditionnels et leur provenance](documentation/metrics-research.md)
+décrivent la commande `evaluate`, les appels directs à scikit-learn 1.8.0 et
+les prérequis indépendants de population et d'événement.
 
 ## 4. Documentation
 

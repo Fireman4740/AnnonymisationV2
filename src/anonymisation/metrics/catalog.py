@@ -1,4 +1,4 @@
-"""Catalogue fermé des métriques du banc actif (scorecards 3.0).
+"""Catalogue fermé des métriques du banc actif (scorecards 3.1).
 
 Les utilitaires historiques restent lisibles pour les anciens runs et pour
 les statistiques internes des pipelines ; ils ne sont plus publiés par score.
@@ -17,19 +17,20 @@ DIAGNOSTIC_METRICS: Final = frozenset(
         "direct_leak_rate",
         "mask_coverage",
         "tab_official",
+        "utility_retention",
+        "task_f1_delta",
+        "qicr",
+        "male_k",
+        "brier",
+        "ece",
     }
 )
 RETIRED_METRICS: Final = frozenset(
     {
         "mean_utility",
         "rouge_l",
-        "utility_retention",
         "trir",
-        "qicr",
         "rcr_at_k",
-        "male_k",
-        "ece",
-        "brier",
         "literal_cpr",
         "literal_ipr",
         "weighted_token_precision",

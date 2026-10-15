@@ -634,6 +634,13 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
     score_p.add_argument("--protocol", required=True, help="Protocole d'évaluation.")
 
+    evaluate_p = sub.add_parser("evaluate", help="Fige un évaluateur aval local et/ou une référence populationnelle indépendante.")
+    evaluate_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
+    evaluate_p.add_argument("--task", help="Tâche single-label déclarée dans tasks.jsonl.")
+    evaluate_p.add_argument("--train-split", default="train", help="Split d'entraînement original verrouillé.")
+    evaluate_p.add_argument("--population", help="Population complète JSON pour un comptage exact des combinaisons.")
+    evaluate_p.add_argument("--k-threshold", type=int, default=10)
+
 
     attack_p = sub.add_parser(
         "attack",
@@ -748,12 +755,21 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_systems_list()
         print(f"Sous-commande inconnue : {args.systems_command}", file=sys.stderr)
         return 2
+    if args.command == "evaluate":
+        from anonymisation.cli.evaluate import cmd_evaluate
+
+        try:
+            return cmd_evaluate(args.run, task=args.task, train_split=args.train_split,
+                                population=args.population, k_threshold=args.k_threshold)
+        except (OSError, ValueError, KeyError, ImportError) as exc:
+            print(f"Évaluation impossible : {exc}", file=sys.stderr)
+            return 2
     if args.command == "score":
         from anonymisation.cli.score import ScoreError, cmd_score
 
         try:
             return cmd_score(args.run, args.protocol)
-        except ScoreError as exc:
+        except (ScoreError, OSError, ImportError, KeyError) as exc:
             print(f"Erreur d'usage : {exc}", file=sys.stderr)
             return 2
     if args.command == "attack":

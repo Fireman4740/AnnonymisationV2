@@ -167,6 +167,13 @@ class CompleteSample(DatasetAdapter):
             if row.doc_id in self.ids[split]:
                 yield row
 
+    def iter_combinations(self, split: str) -> Iterator[Any]:
+        # Une combinaison trans-document n'est conservée que si tous ses
+        # documents et donc leurs annotations font partie du pivot échantillonné.
+        for row in self.source.iter_combinations(split):
+            if row.doc_ids and set(row.doc_ids) <= self.ids[split]:
+                yield row
+
 
 def split_budget(available: dict[str, int], count: int) -> dict[str, int]:
     """Répartit exactement le budget dataset en conservant les splits source.
@@ -241,6 +248,14 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
             available = {split: sum(0 < len(doc.text) <= cfg["max_document_chars"]
                                     for doc in adapter.iter_documents(split)) for split in splits}
             budget = split_budget(available, cfg["documents_per_dataset"])
+    conditional = cfg.get("conditional_evaluations", {}).get(key, {})
+    auxiliary_train = None
+    if conditional.get("task"):
+        auxiliary_train = conditional.get("train_split", "train")
+        if auxiliary_train in splits or any(part not in {"test", "eval"} for part in splits):
+            raise ValueError("évaluation conditionnelle : splits évalués test/eval et train auxiliaire distinct requis")
+        target_splits.append(auxiliary_train)
+        budget[auxiliary_train] = conditional.get("training_documents", 2000)
     for split in target_splits:
         count = budget[split]
         if count == 0:
@@ -254,7 +269,7 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
     info = {"dataset": key, "status": result.status, "counts": result.counts,
             "synthetic": loaded.manifest.structure.synthetic,
             "evaluation_splits": [split for split in splits if budget[split] > 0],
-            "evaluation_documents": sum(budget.values()),
+            "evaluation_documents": sum(budget[part] for part in splits),
             "split_budget": budget,
             "sampling": sampling,
             "selection": {split: [{"doc_id": doc.doc_id, "chars": len(doc.text),
@@ -265,6 +280,21 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
     print("INGEST_RESULT", json.dumps({k: v for k, v in info.items() if k != "selection"},
                                       ensure_ascii=False, sort_keys=True), flush=True)
     return info
+
+
+def conditional_evaluation_args(cfg: dict[str, Any], key: str, directory: Path) -> list[str] | None:
+    """Étape explicite optionnelle, avant score ; aucun appel LLM nécessaire."""
+    spec = cfg.get("conditional_evaluations", {}).get(key)
+    if not spec:
+        return None
+    args = ["evaluate", "--run", str(directory)]
+    if spec.get("task"):
+        args += ["--task", spec["task"], "--train-split", spec.get("train_split", "train")]
+    if spec.get("population"):
+        args += ["--population", spec["population"], "--k-threshold", str(spec.get("k_threshold", 10))]
+    if not spec.get("task") and not spec.get("population"):
+        raise ValueError("évaluation conditionnelle : task ou population requis")
+    return args
 
 
 def remote_authorized(cfg: dict[str, Any], key: str, synthetic: bool) -> bool:
@@ -456,6 +486,11 @@ def run_campaign() -> int:
                     if key == "spia" and remote_allowed and variant["spia_attack"]:
                         stages["attack_spia"] = call(["attack", "--run", str(directory), "--attacker",
                             "spia", "--backend", cfg["attacker_backend"], "--workers", "1"])
+                    evaluate_args = conditional_evaluation_args(cfg, key, directory)
+                    if evaluate_args is not None:
+                        stages["evaluate"] = command(evaluate_args)
+                        if stages["evaluate"]:
+                            raise ValueError("évaluation conditionnelle échouée : aucune valeur de substitution")
                     with patch("anonymisation.llm.client.LlmClient.complete",
                                side_effect=RuntimeError("Scoring hors ligne : LLM interdit")):
                         stages["score"] = command(score_args)

@@ -443,6 +443,6 @@ def test_core_scoring_never_calls_retired_computations_or_any_model(monkeypatch)
     doc = _document("d", "Alice")
     annotation = _annotation("d", 0, 5, span_text="Alice")
     card = _build({"d": doc}, {"d": (annotation,)}, [_prediction("d", [annotation])])
-    assert card["schema_version"] == "3.0"
+    assert card["schema_version"] == "3.1"
     assert card["diagnostic"]["span_f1"]["value"] == 1.0
     assert card["scoring"]["modules_sha256"]["scorecard.py"]

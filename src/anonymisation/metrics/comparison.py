@@ -45,6 +45,12 @@ _CHECKED_METRICS: tuple[tuple[str, str], ...] = (
     ("diagnostic", "direct_leak_rate"),
     ("diagnostic", "mask_coverage"),
     ("diagnostic", "tab_official"),
+    ("diagnostic", "utility_retention"),
+    ("diagnostic", "task_f1_delta"),
+    ("diagnostic", "qicr"),
+    ("diagnostic", "male_k"),
+    ("diagnostic", "brier"),
+    ("diagnostic", "ece"),
 )
 
 #: Configuration d'un modèle évaluateur (attaquant, juge) qui conditionne la
@@ -190,6 +196,13 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                 details.get("definition_id"),
                 details.get("denominator"),
                 _evaluator_signature(details),
+                details.get("evaluation_context"),
+                details.get("event_contract"),
+                details.get("evaluator"),
+                details.get("model_sha256"),
+                details.get("task"),
+                details.get("labels"),
+                details.get("k_threshold"),
             )
             if reference is None:
                 reference = status, signature
@@ -261,6 +274,12 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         "direct_leak_rate": "Fuite directe",
         "mask_coverage": "Couverture gold",
         "tab_official": "Rappel TAB officiel",
+        "utility_retention": "Rétention tâche",
+        "task_f1_delta": "Δ F1 tâche",
+        "qicr": "QICR (détection)",
+        "male_k": "MALE-k",
+        "brier": "Brier (événement)",
+        "ece": "ECE (événement)",
     }
     columns = [
         (section, name)

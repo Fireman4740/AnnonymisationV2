@@ -3,7 +3,9 @@
 Révision du 15 octobre 2026, à la demande de l'utilisateur : conserver moins
 de mesures, avec des définitions vérifiables et des contrôles explicites.
 Cette révision remplace le catalogue exécutable de SPEC-07. Les scorecards
-ont le schéma **3.0** et la politique **reliable-core-v1**.
+ont désormais le schéma **3.1** et la politique **reliable-conditional-v2**.
+Le noyau décrit ici est complété par les [évaluations conditionnelles](metrics-research.md) :
+utilité sur une tâche, QICR, MALE-k et Brier/ECE sur événements observés.
 
 ## Mesures conservées
 
@@ -17,7 +19,7 @@ ont le schéma **3.0** et la politique **reliable-core-v1**.
 | R_succ RAT-Bench | Attaques figées et vérifiées ; scorer comparé au code officiel ; erreurs et paramètres d'attaquant conservés | Résultat face à l'attaquant choisi, avec estimation CorrectMatch stochastique et limite d'échantillon |
 | CPR/IPR SPIA | Attaques d'inférence figées, gold et paramètres vérifiés ; formules originales et bootstrap par document | Attaquant choisi et arbitrage `rule_model` ; aucune garantie générale de confidentialité |
 
-Ces familles représentent **11 clés métriques au maximum**, selon le corpus,
+Ces familles représentent **11 clés métriques de base au maximum**, selon le corpus,
 les annotations disponibles et les capacités déclarées du système. Les mesures
 d'attaque restent diagnostiques dans la campagne échantillonnée ; les conserver
 ne les transforme pas en certification de confidentialité.
@@ -27,6 +29,11 @@ les latences et les taux d'erreur restent des informations d'audit. Ils ne
 forment pas un score synthétique supplémentaire.
 
 ## Mesures retirées du parcours actif
+
+Le tableau retrace le retrait initial. Six nouvelles clés conditionnelles
+peuvent désormais compléter le noyau (rétention, delta F1, QICR, MALE-k, Brier,
+ECE), avec des définitions et prérequis révisés. Elles ne réactivent pas les
+anciens protocoles ci-dessous et restent absentes si les références manquent.
 
 | Retrait | Motif dans ce projet |
 |---|---|
@@ -63,9 +70,11 @@ corrige pas rétroactivement la réponse du juge ; l'ancien résultat reste cons
 
 ## Conséquences pratiques
 
-La CLI expose `predict`, `attack`, `score` et `compare` ; `judge` et
+La CLI expose `predict`, `attack`, `evaluate`, `score` et `compare` ; `judge` et
 `score --train-run` sont retirés. Les futures campagnes ne prédisent plus de
 split train auxiliaire et ne facturent plus de juge d'utilité.
+Une campagne qui configure explicitement `conditional_evaluations` peut ingérer
+un train auxiliaire pour entraîner l'évaluateur de tâche local ; il n'est pas anonymisé.
 
 Les corpus ne disposant que de labels de tâche aval, sans annotations de spans
 ni attaque applicable, n'ont plus de score de qualité dans ce noyau. Le banc
@@ -78,6 +87,9 @@ SupportTickets et BitextSupport sont déclarés dans `excluded_datasets` avec
 leur motif ; leurs adaptateurs, sources et résultats historiques sont conservés.
 Une scorecard sans aucune mesure de qualité applicable est bloquée, même si
 son exécution est techniquement sans erreur.
+Les corpus de tâche peuvent revenir dans une campagne configurée explicitement,
+à condition de fournir train/test et un évaluateur informatif ; leur exclusion
+dans la configuration courante ne constitue pas une incompatibilité du scorer.
 
 Les anciennes campagnes et leurs scorecards 2.0 restent immuables. Une nouvelle
 version peut être recalculée hors ligne à partir des sorties figées, avec sa

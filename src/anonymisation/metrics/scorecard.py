@@ -1,7 +1,7 @@
 """Scorecards réduites : mesures vérifiables, attaques figées et contrôles d'erreur.
 
-Aucun juge d'utilité, classifieur auxiliaire, calibration ni proxy lexical
-n'est exécuté. Les résultats de modèles ne sont jamais réparés par le scorer.
+Aucun modèle ni entraînement n'est exécuté. Les évaluations conditionnelles
+utilisent des références indépendantes et des prédictions de tâche figées.
 """
 
 from __future__ import annotations
@@ -23,10 +23,16 @@ from anonymisation.metrics.leakage import aggregate_leak_counts, gold_leak_count
 from anonymisation.metrics.masking import MaskCoverage, decisions_of, document_coverage
 from anonymisation.metrics.ner_schemas import SchemaCounts, corpus_counts
 from anonymisation.metrics.reidentification import reid_success_metric
+from anonymisation.metrics.research import (
+    RESEARCH_METRICS,
+    event_calibration,
+    population_metrics,
+    task_utility,
+)
 from anonymisation.metrics.spia_protection import spia_protection
 from anonymisation.schema.io import sha256_file
 
-SCORECARD_SCHEMA_VERSION = "3.0"
+SCORECARD_SCHEMA_VERSION = "3.1"
 _REQUIRED_REPRODUCIBILITY = (
     "data_version",
     "taxonomy_version",
@@ -186,8 +192,9 @@ def build_scorecard(
     spia_attack: tuple[Sequence[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     external_diagnostics: Mapping[str, Mapping[str, Any]] | None = None,
     span_gold_available: bool | None = None,
+    evaluation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Agrège uniquement le noyau retenu, sans modèle ni métrique retirée."""
+    """Agrège le noyau et les évaluations vérifiées, sans appel de modèle."""
     validate_reproducibility(reproducibility)
     rows, scored, runtimes = [], [], []
     for record in predictions:
@@ -327,9 +334,35 @@ def build_scorecard(
             raise ScorecardError(f"diagnostic externe {name!r} retiré ou absent du catalogue actif")
         diagnostic[name] = dict(value)
     diagnostic = apply_intervals(diagnostic, intervals)
+    research = {}
+    scored_by_doc = {str(r["doc_id"]): r for r in scored}
+    if evaluation and "utility" in evaluation:
+        if split not in {"test", "eval"}:
+            raise ScorecardError("utilité : split de test indépendant requis")
+        frozen_task = evaluation["utility"]
+        research.update(task_utility(frozen_task["rows"], frozen_task["metadata"]))
+    if evaluation and "population" in evaluation:
+        reference = evaluation["population"]
+        research.update(population_metrics(reference["combinations"], gold_by_doc,
+                                           scored_by_doc, reference["metadata"], split=split))
+    if attack and any((r.get("risk") or {}).get("event_forecast") for r in scored):
+        research.update(event_calibration(scored_by_doc, attack, split=split))
+    for name, block in research.items():
+        # Le protocole de la mesure n'est pas celui du corpus : on le conserve.
+        gated = gate(name, block["value"], capabilities=capabilities,
+                     protocol=block["protocol"], protocol_version=block["protocol_version"],
+                     status=block["status"], direction=block["direction"],
+                     unit=block["unit"], details=block["details"])
+        diagnostic[name] = gated
     # Une métrique retenue mais inapplicable n'est pas une valeur nulle : sa
     # raison est conservée séparément, sans remplir la scorecard de faux scores.
     not_applicable: dict[str, str] = {}
+    for name in sorted(RESEARCH_METRICS - research.keys()):
+        not_applicable[name] = (
+            "probabilités d'événement explicites et attaque RAT-Bench figée requises"
+            if name in {"brier", "ece"} else
+            "référence indépendante absente : exécuter l'étape evaluate"
+        )
     for name in list(diagnostic):
         value = diagnostic[name]
         if name != "counts" and value["value"] is None and value["status"] == "unavailable":
@@ -411,7 +444,7 @@ def build_scorecard(
     card = {
         "run_id": run_id,
         "schema_version": SCORECARD_SCHEMA_VERSION,
-        "metrics_policy": "reliable-core-v1",
+        "metrics_policy": "reliable-conditional-v2",
         "scoring": {
             "schema_version": SCORECARD_SCHEMA_VERSION,
             "modules_sha256": {
@@ -491,7 +524,7 @@ def validate_scorecard(scorecard: Mapping[str, Any]) -> None:
     if missing:
         raise ScorecardError("Scorecard incomplète : champs manquants : " + ", ".join(missing))
     if scorecard["schema_version"] != SCORECARD_SCHEMA_VERSION:
-        raise ScorecardError("Ancien schéma de scorecard : rescorer avec le noyau 3.0")
+        raise ScorecardError("Ancien schéma de scorecard : rescorer avec le noyau 3.1")
     if "error_rate" not in scorecard or "error_rate" not in scorecard["accounting"]:
         raise ScorecardError("Scorecard sans error_rate au premier niveau")
     for section, allowed in (("primary", PRIMARY_METRICS), ("diagnostic", DIAGNOSTIC_METRICS)):

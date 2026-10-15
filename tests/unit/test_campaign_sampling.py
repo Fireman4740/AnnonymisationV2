@@ -16,6 +16,17 @@ campaign = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(campaign)
 
 
+def test_population_evaluation_sample_keeps_only_complete_combinations():
+    source = SimpleNamespace(key="mini", manifest=None, raw_dir=Path("."),
+        iter_combinations=lambda split: iter([
+            SimpleNamespace(combination_id="complete", doc_ids=("a", "b")),
+            SimpleNamespace(combination_id="partial", doc_ids=("a", "outside")),
+        ]))
+    selected = [SimpleNamespace(doc_id=key, subject_ids=(), author_id=None) for key in ("a", "b")]
+    sample = campaign.CompleteSample(source, {"test": selected})
+    assert [c.combination_id for c in sample.iter_combinations("test")] == ["complete"]
+
+
 def test_sample_keeps_all_annotations_tasks_and_late_linked_profiles():
     selected = SimpleNamespace(doc_id="chosen", subject_ids=("subject",), author_id=None)
     source = SimpleNamespace(

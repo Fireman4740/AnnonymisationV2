@@ -2,7 +2,7 @@
 
 > **Révision active du 15 octobre 2026 :** le [noyau réduit des métriques](../metrics-core.md)
 > remplace le catalogue et la hiérarchie ci-dessous pour le banc exécutable
-> (scorecards 3.0), à la demande de l'utilisateur. Le reste de cette spécification
+> (scorecards 3.1, avec [protocoles conditionnels](../metrics-research.md)), à la demande de l'utilisateur. Le reste de cette spécification
 > conserve la conception historique ; ses métriques retirées ne sont plus
 > calculées ni affichées par `score` et `compare`.
 

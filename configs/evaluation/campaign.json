@@ -1,5 +1,6 @@
 {
-  "purpose": "bench_reliable_metrics_v3_7_corpora_10_documents",
+  "purpose": "bench_reliable_conditional_metrics_v3_1_7_corpora_10_documents",
+  "conditional_evaluations": {},
   "remote_real_corpora_authorized": false,
   "provider_max_price": {
     "prompt": 0.021,

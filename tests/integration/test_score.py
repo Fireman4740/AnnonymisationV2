@@ -279,7 +279,7 @@ def test_invalid_scorecard_missing_reproducibility_is_rejected() -> None:
         validate_scorecard(
             {
                 "run_id": "r",
-                "schema_version": "3.0",
+                "schema_version": "3.1",
                 "system": {},
                 "dataset": "mini",
                 "split": "train",
