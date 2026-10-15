@@ -197,7 +197,7 @@ def stage_failures(stages: dict[str, int], replay_identical: bool) -> list[str]:
     ``score`` n'échoue qu'avec un code hors de :data:`SCORE_RESULT_CODES` ;
     le replay doit rendre le même code et la même scorecard au bit près.
     """
-    failed = [name for name in ("predict", "attack", "judge") if stages.get(name, 0)]
+    failed = [name for name in ("predict", "attack") if stages.get(name, 0)]
     if stages.get("score") not in SCORE_RESULT_CODES:
         failed.append("score")
     replay = stages.get("replay")
@@ -232,8 +232,7 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
         adapter.download()  # vérifie le SHA-256 agrégé de la release figée
     selected = {}
     sampling = {}
-    with_train = loaded.manifest.structure.has_tasks and "train" in loaded.manifest.structure.splits
-    target_splits = list(dict.fromkeys((["train"] if with_train else []) + splits))
+    target_splits = list(dict.fromkeys(splits))
     budget = {split: cfg["documents_per_split"] for split in splits}
     if "documents_per_dataset" in cfg:
         if len(splits) == 1:
@@ -243,7 +242,7 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
                                     for doc in adapter.iter_documents(split)) for split in splits}
             budget = split_budget(available, cfg["documents_per_dataset"])
     for split in target_splits:
-        count = budget.get(split, cfg["train_documents"])
+        count = budget[split]
         if count == 0:
             continue
         selected[split], sampling[split] = choose(
@@ -283,13 +282,7 @@ def remote_authorized(cfg: dict[str, Any], key: str, synthetic: bool) -> bool:
 
 
 def system_variants(cfg: dict[str, Any], remote_allowed: bool) -> list[dict[str, Any]]:
-    """Runs à produire : un par (système, politique), étages LLM explicités.
-
-    ``llm_stages`` désigne les runs jugés (utilité) : le palier gratuit ne
-    permet pas de juger chaque politique ; l'attaque RAT-Bench, elle, porte
-    sur tous les runs. ``llm-full`` n'est lancé que si l'envoi externe est
-    autorisé pour ce corpus.
-    """
+    """Toutes les politiques ; attaque SPIA sur les variantes de référence."""
     variants = []
     for spec in cfg["systems"]:
         if spec.get("remote_only") and not remote_allowed:
@@ -297,9 +290,9 @@ def system_variants(cfg: dict[str, Any], remote_allowed: bool) -> list[dict[str,
         policies = spec.get("policies") or [None]
         for policy in policies:
             name = spec["system"] + (f"-{policy}" if policy else "")
-            llm_stages = spec.get("llm_stages", False) or policy in spec.get("llm_stage_policies", ())
+            spia_attack = spec.get("spia_attack", False) or policy in spec.get("spia_attack_policies", ())
             variants.append({"name": name, "system": spec["system"], "policy": policy,
-                             "params": dict(spec.get("params") or {}), "llm_stages": llm_stages})
+                             "params": dict(spec.get("params") or {}), "spia_attack": spia_attack})
     return variants
 
 
@@ -349,7 +342,7 @@ def campaign_models(cfg: dict[str, Any], llm_cfg: LlmBackendsConfig) -> dict[str
     """Verrouille le routage OpenRouter aux plafonds déclarés par la campagne."""
     caps = provider_price_caps(cfg)
     models = {}
-    for role in ("anonymizer_backend", "attacker_backend", "judge_backend"):
+    for role in ("anonymizer_backend", "attacker_backend"):
         backend = llm_cfg.resolve(name=cfg[role])
         if (backend.kind != "openai_compatible"
                 or backend.base_url != "https://openrouter.ai/api/v1"
@@ -419,6 +412,7 @@ def run_campaign() -> int:
                               "documents_per_dataset": cfg.get("documents_per_dataset"),
                               "datasets": [], "results": [], "failures": [],
                               "remote_skipped": [], "parity": {}, "audit": [],
+                              "excluded_datasets": cfg.get("excluded_datasets", {}),
                               "not_executable_here": cfg["not_executable_here"]}
     ratbench_runs: list[Path] = []
     for key, splits in cfg["datasets"].items():
@@ -433,9 +427,8 @@ def run_campaign() -> int:
         remote_allowed = remote_authorized(cfg, key, info["synthetic"])
         if not remote_allowed:
             summary["remote_skipped"].append({"dataset": key,
-                "stages": ["llm-full", "judge", "attaque SPIA"],
+                "stages": ["llm-full", "attaque SPIA"],
                 "reason": "autorisation explicite d'envoi externe des textes réels en attente"})
-        with_train = "train" in info["sampling"] and "train" not in info["evaluation_splits"]
 
         def call(args: list[str], *, allow_api: bool = remote_allowed) -> int:
             guard = nullcontext() if allow_api else patch(
@@ -449,28 +442,20 @@ def run_campaign() -> int:
                 name = variant["name"]
                 directory = Path("runs/campaign") / key / split / name
                 entry: dict[str, Any] = {"dataset": key, "split": split, "system": name,
-                                         "stages": {}, "llm_stages": variant["llm_stages"]}
+                                         "stages": {}, "spia_attack": variant["spia_attack"]}
                 stages = entry["stages"]
                 try:
                     stages["predict"] = call(predict_args(cfg, key, split, variant, directory))
                     if not (directory / "manifest.lock.json").is_file():
                         raise ValueError("prédiction sans lock")
                     score_args = ["score", "--run", str(directory), "--protocol", info["protocol"]]
-                    if with_train:
-                        train_dir = directory.with_name(f"{name}--train")
-                        stages["predict_train"] = call(
-                            predict_args(cfg, key, "train", variant, train_dir))
-                        score_args += ["--train-run", str(train_dir)]
                     if key == "ratbench":
                         ratbench_runs.append(directory)
                         stages["attack"] = call(["attack", "--run", str(directory), "--attacker",
                             "ratbench", "--backend", cfg["attacker_backend"], "--workers", "1"])
-                    if key == "spia" and remote_allowed and variant["llm_stages"]:
+                    if key == "spia" and remote_allowed and variant["spia_attack"]:
                         stages["attack_spia"] = call(["attack", "--run", str(directory), "--attacker",
                             "spia", "--backend", cfg["attacker_backend"], "--workers", "1"])
-                    if remote_allowed and variant["llm_stages"]:
-                        stages["judge"] = call(["judge", "--run", str(directory), "--backend",
-                                                cfg["judge_backend"], "--workers", "1"])
                     with patch("anonymisation.llm.client.LlmClient.complete",
                                side_effect=RuntimeError("Scoring hors ligne : LLM interdit")):
                         stages["score"] = command(score_args)
@@ -483,8 +468,6 @@ def run_campaign() -> int:
                     entry["scorecard_sha256"] = before
                     entry["prediction_counts"] = card["accounting"]
                     failed = stage_failures(stages, entry["replay_identical"])
-                    if stages.get("predict_train"):
-                        failed.append("predict_train")
                     if stages.get("attack_spia"):
                         failed.append("attack_spia")
                     if failed:
@@ -529,6 +512,7 @@ def run_campaign() -> int:
             summary["failures"].append({"stage": "audit", "run": str(directory), "exit_code": code})
     write_json(Path("runs/campaign/summary.json"), summary)
     compact = {"purpose": summary["purpose"], "models": models, "failures": summary["failures"],
+               "excluded_datasets": summary["excluded_datasets"],
                "not_executable_here": summary["not_executable_here"],
                "remote_skipped": summary["remote_skipped"], "parity": summary["parity"],
                "results": [{k: r.get(k) for k in ("dataset", "split", "system", "stages",

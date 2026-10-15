@@ -1,144 +1,65 @@
-"""Intervalles de confiance des métriques de la scorecard (EPIC-H H-7).
-
-Séparé de ``scorecard.py`` pour garder ce dernier centré sur l'agrégation :
-ce module transforme les mêmes entrées (lignes gold/prédiction par document,
-résultats par sujet, cibles TRIR) en unités indépendantes, puis délègue le
-rééchantillonnage à :mod:`anonymisation.metrics.uncertainty`.
-
-Chaque intervalle est calculé sur **la même unité** que la valeur ponctuelle
-qu'il accompagne ; un écart entre les deux serait un bug, et les tests le
-vérifient (la valeur ponctuelle doit tomber dans son intervalle).
-"""
+"""Intervalles par document du noyau actif : spans, masques et fuite littérale."""
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from anonymisation.metrics.entities import entity_protection_counts, same_identifier_type
 from anonymisation.metrics.leakage import LeakCounts
 from anonymisation.metrics.masking import MaskCoverage
 from anonymisation.metrics.ner_schemas import SchemaCounts
-from anonymisation.metrics.protection import SubjectOutcome
-from anonymisation.metrics.tria import TRIRResult
 from anonymisation.metrics.uncertainty import (
     BOOTSTRAP_REPLICATES,
     BOOTSTRAP_SEED,
     bootstrap_interval,
-    complement_ratio_of_sums,
     f1_of_counts,
-    mean,
     ratio_of_sums,
     with_interval,
 )
-from anonymisation.schema.taxonomy import IdentifierType
-
-Rows = Sequence[tuple[Sequence[Any], Sequence[Any], Any]]
-
-
-def _entity_counts_per_document(
-    rows: Rows, identifier_type: IdentifierType
-) -> list[tuple[int, int]]:
-    """``(entités protégées, entités gold)`` par document ayant du gold de ce type."""
-    output: list[tuple[int, int]] = []
-    for gold, pred, _ in rows:
-        gold_spans = [span for span in gold if same_identifier_type(span, identifier_type)]
-        if not gold_spans:
-            continue
-        pred_spans = [span for span in pred if same_identifier_type(span, identifier_type)]
-        output.append(
-            entity_protection_counts(gold_spans, pred_spans, identifier_type=identifier_type)
-        )
-    return output
 
 
 def scorecard_intervals(
     *,
     schema_per_document: Sequence[Mapping[str, SchemaCounts]],
     mask_coverage: Sequence[MaskCoverage],
-    rows: Rows,
-    token_scores: Sequence[float],
-    rouge_scores: Sequence[float],
     leak_counts: Sequence[LeakCounts],
-    outcomes: Sequence[SubjectOutcome],
-    trir_result: TRIRResult | None,
     replicates: int = BOOTSTRAP_REPLICATES,
     seed: int = BOOTSTRAP_SEED,
 ) -> dict[str, dict[str, Any] | None]:
-    """Intervalle à 95 % de chaque métrique, indexé par son nom de scorecard."""
-
-    def interval(units: Sequence[Any], statistic: Any, unit: str) -> dict[str, Any] | None:
+    def interval(units: Sequence[Any], statistic: Any) -> dict[str, Any] | None:
         return bootstrap_interval(
-            units, statistic, unit=unit, replicates=replicates, seed=seed
+            units, statistic, unit="document", replicates=replicates, seed=seed
         )
 
-    # Unités = documents, mêmes comptes nervaluate que la valeur ponctuelle :
-    # (crédit, prédits, gold) pour `partial`, (correct, prédits, gold) sinon.
-    def schema_units(schema: str) -> list[tuple[float, float, float]]:
+    def counts(schema: str) -> list[tuple[float, float, float]]:
         return [
-            (counts[schema].credit(schema), float(counts[schema].actual),
-             float(counts[schema].possible))
-            for counts in schema_per_document
+            (row[schema].credit(schema), float(row[schema].actual), float(row[schema].possible))
+            for row in schema_per_document
         ]
 
-    def f1_units(schema: str) -> list[tuple[float, float, float]]:
-        return [(c, a - c, p - c) for c, a, p in schema_units(schema)]
-
-    spans = schema_units("partial")
-    masks = [(float(m.covered_chars), float(m.gold_chars)) for m in mask_coverage if m.gold_chars]
-    direct = _entity_counts_per_document(rows, IdentifierType.DIRECT)
-    quasi = _entity_counts_per_document(rows, IdentifierType.QUASI)
-    gold_leaks = [
-        (float(c.leaked), float(c.testable))
-        for c in leak_counts
-        if c.testable
-    ]
-    direct_leaks = [
-        (float(c.leaked_direct), float(c.testable_direct))
-        for c in leak_counts
-        if c.testable_direct
-    ]
-    subjects = [(float(o.pii_still_inferable), float(o.pii_total)) for o in outcomes]
-    ipr_units = [
-        1.0 - o.pii_still_inferable / o.pii_total for o in outcomes if o.pii_total
-    ]
-
-    result: dict[str, dict[str, Any] | None] = {
-        # Précision = tp / (tp + fp) : tuple (tp, tp + fp).
-        "span_precision": interval(
-            [(c, a) for c, a, _ in spans], ratio_of_sums(0, 1), "document"
+    partial, strict = counts("partial"), counts("strict")
+    return {
+        "span_precision": interval([(c, a) for c, a, _ in partial], ratio_of_sums(0, 1)),
+        "span_recall": interval([(c, p) for c, _, p in partial], ratio_of_sums(0, 1)),
+        "span_f1": interval([(c, a - c, p - c) for c, a, p in partial], f1_of_counts),
+        "span_strict_f1": interval([(c, a - c, p - c) for c, a, p in strict], f1_of_counts),
+        "mask_coverage": interval(
+            [(float(m.covered_chars), float(m.gold_chars)) for m in mask_coverage if m.gold_chars],
+            ratio_of_sums(0, 1),
         ),
-        "span_recall": interval(
-            [(c, p) for c, _, p in spans], ratio_of_sums(0, 1), "document"
+        "gold_leak_rate": interval(
+            [(float(c.leaked), float(c.testable)) for c in leak_counts if c.testable],
+            ratio_of_sums(0, 1),
         ),
-        "span_f1": interval(f1_units("partial"), f1_of_counts, "document"),
-        "span_classification_f1": interval(f1_units("ent_type"), f1_of_counts, "document"),
-        "span_strict_f1": interval(f1_units("strict"), f1_of_counts, "document"),
-        "mask_coverage": interval(masks, ratio_of_sums(0, 1), "document"),
-        "weighted_token_precision": interval(list(token_scores), mean, "document"),
-        "ER_di": interval(direct, ratio_of_sums(0, 1), "document"),
-        "ER_qi": interval(quasi, ratio_of_sums(0, 1), "document"),
-        "rouge_l": interval(list(rouge_scores), mean, "document"),
-        "gold_leak_rate": interval(gold_leaks, ratio_of_sums(0, 1), "document"),
-        "direct_leak_rate": interval(direct_leaks, ratio_of_sums(0, 1), "document"),
-        "literal_cpr": interval(subjects, complement_ratio_of_sums(0, 1), "subject"),
-        "literal_ipr": interval(ipr_units, mean, "subject"),
+        "direct_leak_rate": interval(
+            [
+                (float(c.leaked_direct), float(c.testable_direct))
+                for c in leak_counts
+                if c.testable_direct
+            ],
+            ratio_of_sums(0, 1),
+        ),
     }
-    result["entity_recall_direct"] = result["ER_di"]
-    result["entity_recall_quasi"] = result["ER_qi"]
-
-    if trir_result is not None and trir_result.outcomes:
-        # Grappe = sujet : les cibles d'un même sujet partagent sa connaissance
-        # auxiliaire et ne sont pas indépendantes.
-        per_subject: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
-        for outcome in trir_result.outcomes:
-            per_subject[outcome.subject_id][0] += outcome.top1
-            per_subject[outcome.subject_id][1] += 1.0
-        result["trir"] = interval(
-            [tuple(per_subject[s]) for s in sorted(per_subject)], ratio_of_sums(0, 1), "subject"
-        )
-    return result
 
 
 def apply_intervals(

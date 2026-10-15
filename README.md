@@ -61,23 +61,25 @@ correspondante dans la population de référence est petite.
                   TEXTE ANONYMISÉ
               ┌────────┴─────────┐
               ▼                  ▼
-       Privacy attack         Utility
-       R_succ, leak rate      Task F1, retention
+       Privacy attack         Audit du texte
+       R_succ, leak rate      Masques, erreurs
 ```
 
-## 3. Métriques principales
+## 3. Métriques actives
 
-Le F1 de détection **n'est pas** la métrique principale du projet.
+Le banc utilise un noyau réduit et vérifiable (scorecards **3.0**) :
 
-| Rang | Métrique                                    | Sens |
-|-----:|---------------------------------------------|------|
-| 1    | **Residual Re-Identification Risk** (`R_succ`) | ↓ mieux |
-| 2    | **Utility Retention**                       | ↑ mieux |
-| 3    | **QI Combination Recall (QICR)**            | ↑ mieux, métrique de diagnostic |
-| 4    | Calibration du risque (ECE, Brier, MAE-k)   | ↓ mieux |
-| 5    | Span P/R/F1 par catégorie, langue, domaine  | diagnostic |
+- Attaques figées : **R_succ RAT-Bench** et **CPR/IPR SPIA**, uniquement avec les sorties et contrôles correspondants.
+- Détection : précision, rappel et F1 micro de spans, F1 strict ; rappel TAB officiel sur TAB.
+- Transformation : fuite littérale du gold et des identifiants directs, couverture des masques réellement appliqués.
+- Audit : comptes, intervalles bootstrap, taux d'erreur et latences.
 
-Détail complet : [`documentation/specifications/SPEC-07-metriques.md`](documentation/specifications/SPEC-07-metriques.md).
+Le juge d'utilité, ROUGE comme utilité, TRIR lexical, rétention TF-IDF,
+QICR/RCR et métriques de calibration non validées sont retirés du parcours
+actif. Une métrique non applicable n'est jamais remplacée par un zéro.
+
+Voir [le catalogue actif et ses limites](documentation/metrics-core.md), qui
+prévaut sur l'ancien catalogue de SPEC-07.
 
 ## 4. Documentation
 
@@ -156,7 +158,7 @@ anonv2 compare --runs runs/run_passthrough runs/run_redact runs/run_regex runs/r
 | L1  | Schéma de données + taxonomie QI (code) | ✅ fait |
 | L2  | Registre + adaptateurs locaux (TAB, SupportTickets, Bitext, RAT-Bench, DB-bio, CoNLL) | ✅ fait |
 | L3  | Contrat système, baselines (passthrough, redact-all, regex-only, deterministic), PUMS k_true | ✅ fait |
-| L4  | Évaluation utilité aval, scorecards, comparaison inter-systèmes | ✅ fait |
+| L4  | Scorecards réduites et comparaison inter-systèmes | ✅ fait |
 
 Voir [`documentation/roadmap.md`](documentation/roadmap.md).
 ## 7. Rapport à la V1

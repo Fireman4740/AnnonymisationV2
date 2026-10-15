@@ -137,9 +137,8 @@ def f1_of_counts(sample: Sequence[Sequence[float]]) -> float | None:
     tp = sum(row[0] for row in sample)
     fp = sum(row[1] for row in sample)
     fn = sum(row[2] for row in sample)
-    if tp + fp == 0 or tp + fn == 0:
-        return None
-    return 2.0 * tp / (2.0 * tp + fp + fn)
+    denominator = 2.0 * tp + fp + fn
+    return 2.0 * tp / denominator if denominator else None
 
 
 def with_interval(metric: dict[str, Any], interval: dict[str, Any] | None) -> dict[str, Any]:

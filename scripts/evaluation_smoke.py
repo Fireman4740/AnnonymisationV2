@@ -1,7 +1,6 @@
 """Sanité fonctionnelle sur deux documents, pas une estimation de performance.
 
-Ce contrat lance les deux ancres passthrough/redact-all, un attaquant et un
-juge gratuits configurés, puis prouve la relecture bit-à-bit hors ligne du score.
+Ce contrat lance les deux ancres passthrough/redact-all, un attaquant configuré, puis prouve la relecture bit-à-bit hors ligne du score.
 Les échecs de quota sont rapportés explicitement, jamais interprétés comme
 de la protection. Les résultats sont imprimés dans le journal supervisé.
 """
@@ -45,11 +44,10 @@ def run() -> int:
     load_key()
     cfg = load_backends_config()
     attacker = cfg.resolve(role="attacker_ratbench")
-    judge = cfg.resolve(role="utility_judge")
     if command(["datasets", "ingest", "ratbench", "--split", "eval"]):
         return 2
     summary = {"purpose": "functional_sanity_only", "documents_per_system": 2,
-               "attacker": attacker.name, "judge": judge.name, "results": [], "failures": []}
+               "attacker": attacker.name, "results": [], "failures": []}
     for system in ("passthrough", "redact-all"):
         directory = Path("runs") / f"sanity-{system}"
         stages = {}
@@ -64,10 +62,8 @@ def run() -> int:
             continue
         stages["attack"] = command(["attack", "--run", str(directory), "--attacker", "ratbench",
                                     "--backend", attacker.name, "--workers", "1"])
-        stages["judge"] = command(["judge", "--run", str(directory),
-                                   "--backend", judge.name, "--workers", "1"])
-        if stages["attack"] or stages["judge"]:
-            summary["failures"].append(f"{system}:attack/judge")
+        if stages["attack"]:
+            summary["failures"].append(f"{system}:attack")
         args = ["score", "--run", str(directory), "--protocol", "ratbench-v1"]
         stages["score"] = command(args)
         if not (directory / "scorecard.json").is_file():
@@ -82,9 +78,8 @@ def run() -> int:
             summary["failures"].append(f"{system}:offline_replay")
         entry = {"system": system, "stages": stages, "replay_identical": replay,
                  "publishable": card["publishable"], "blockers": card["publication_blockers"],
-                 "reid": card["primary"]["reid_success_rate"],
-                 "utility": card["diagnostic"]["mean_utility"]}
-        for name in ("attacks.jsonl", "judgments.jsonl"):
+                 "reid": card["primary"]["reid_success_rate"]}
+        for name in ("attacks.jsonl",):
             failed = [json.loads(line) for line in (directory / name).read_text().splitlines()
                       if line.strip() and json.loads(line).get("status") == "error"]
             entry[name + "_errors"] = [{"doc_id": r["doc_id"], "error": r.get("error")} for r in failed]

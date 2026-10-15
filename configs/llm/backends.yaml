@@ -158,7 +158,6 @@ roles:
   # Ce choix explicite ne change pas la contrainte des modèles LOCAUX évalués.
   attacker_ratbench: openrouter_ling_3_0_flash
   attacker_spia: openrouter_ling_3_0_flash
-  utility_judge: openrouter_ling_3_0_flash
   paraphrase: qwen_local
 
 cache:

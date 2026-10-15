@@ -52,7 +52,7 @@ class TestDegradation:
         assert metric["value"] == pytest.approx(0.87)
         assert metric["status"] == MetricStatus.DIAGNOSTIC.value
 
-    @pytest.mark.parametrize("name", ["cpr", "ipr", "trir", "rouge_l", "gold_leak_rate"])
+    @pytest.mark.parametrize("name", ["cpr", "ipr", "reid_success_rate", "direct_leak_rate", "gold_leak_rate"])
     def test_text_level_metrics_need_no_capability(self, name: str) -> None:
         """Axes B/C/D : mesurés sur le texte, donc applicables à tout système.
 
@@ -76,7 +76,7 @@ class TestGateTable:
             missing_capabilities("metrique_inventee", _RICH)
 
     def test_axis_a_metrics_all_require_spans(self) -> None:
-        for name in ("span_f1", "macro_f1", "ER_di", "ER_qi", "weighted_token_precision"):
+        for name in ("span_precision", "span_recall", "span_f1", "span_strict_f1"):
             assert METRIC_CAPABILITY_GATE[name] == frozenset({CAP_SPANS}), name
 
 
