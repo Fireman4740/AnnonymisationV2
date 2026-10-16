@@ -55,7 +55,7 @@ def fetch(url: str, path: Path, expected: str | None = None) -> None:
 
 
 def choose(candidates: Iterable[Any], key: str, split: str, count: int,
-           max_chars: int, seed: int) -> tuple[list[Any], dict[str, Any]]:
+           max_chars: int, seed: int, *, capped: bool = False) -> tuple[list[Any], dict[str, Any]]:
     """Échantillonne exactement ``count`` lignes, de façon stable et stratifiée.
 
     Le parcours complet évite le biais de préfixe des anciens ``islice``.
@@ -76,30 +76,38 @@ def choose(candidates: Iterable[Any], key: str, split: str, count: int,
     heaps: dict[Any, list[tuple[int, str, Any]]] = {group: [] for group in groups}
     available = {group: 0 for group in groups}
     unexpected: dict[str, int] = {}
+    seen: set[str] = set()
 
     for doc in candidates:
         if not 0 < len(doc.text) <= max_chars:
             continue
+        if capped:
+            if doc.doc_id in seen:
+                raise ValueError(f"{key}/{split} : doc_id dupliqué : {doc.doc_id}")
+            seen.add(doc.doc_id)
         group = doc.meta.get(field) if field else "all"
         if group not in quotas:
             label = repr(group)
             unexpected[label] = unexpected.get(label, 0) + 1
             continue
         available[group] += 1
-        if quotas[group] == 0:
+        capacity = count if capped else quotas[group]
+        if capacity == 0:
             continue
         rank = int.from_bytes(hashlib.sha256(
             f"{seed}\0{key}\0{split}\0{doc.doc_id}".encode()
         ).digest(), "big")
         heap = heaps[group]
         item = (-rank, doc.doc_id, doc)
-        if len(heap) < quotas[group]:
+        if len(heap) < capacity:
             heapq.heappush(heap, item)
         elif rank < -heap[0][0]:
             heapq.heapreplace(heap, item)
 
     if unexpected:
         raise ValueError(f"{key}/{split} : strates inconnues pour {field}: {unexpected}")
+    if capped:
+        quotas = split_budget(available, min(count, sum(available.values())))
     shortages = {str(group): {"requested": quotas[group], "available": available[group]}
                  for group in groups if available[group] < quotas[group]}
     if shortages:
@@ -111,15 +119,15 @@ def choose(candidates: Iterable[Any], key: str, split: str, count: int,
     strata: dict[str, dict[str, int]] = {}
     for group in groups:
         heap = heaps[group]
-        ordered = sorted(heap, key=lambda item: (-item[0], item[1]))
+        ordered = sorted(heap, key=lambda item: (-item[0], item[1]))[:quotas[group]]
         selected.extend(item[2] for item in ordered)
         strata[str(group)] = {
             "requested": quotas[group],
             "available": available[group],
-            "selected": len(heap),
+            "selected": len(ordered),
         }
     return selected, {
-        "method": "sha256-bottom-k-v1",
+        "method": "sha256-bottom-k-capped-balanced-v2" if capped else "sha256-bottom-k-v1",
         "seed": seed,
         "requested": count,
         "selected": len(selected),
@@ -262,7 +270,12 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
     sampling = {}
     target_splits = list(dict.fromkeys(splits))
     budget = {split: cfg["documents_per_split"] for split in splits}
-    if "documents_per_dataset" in cfg:
+    capped = cfg.get("cap_documents", False)
+    if capped:
+        available = {part: sum(0 < len(doc.text) <= cfg["max_document_chars"]
+                              for doc in adapter.iter_documents(part)) for part in splits}
+        budget = split_budget(available, min(cfg["documents_per_dataset"], sum(available.values())))
+    elif "documents_per_dataset" in cfg:
         if len(splits) == 1:
             budget = {splits[0]: cfg["documents_per_dataset"]}
         else:
@@ -288,7 +301,7 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
                 candidates, (d for part in splits for d in selected[part]), excluded_overlap)
         selected[split], sampling[split] = choose(
             candidates, key, split, count,
-            cfg["max_document_chars"], cfg["sampling_seed"])
+            cfg["max_document_chars"], cfg["sampling_seed"], capped=capped and split != auxiliary_train)
         if split == auxiliary_train:
             sampling[split]["train_test_disjointness"] = {
                 "excluded_overlap": excluded_overlap.get("overlap", 0),
@@ -457,8 +470,20 @@ def run_campaign() -> int:
 
     from evaluation_smoke import command, load_key
 
-    load_key()
     cfg = json.loads(CONFIG.read_text())
+    baseline = cfg.get("baseline")
+    frozen = None
+    if baseline:
+        from baseline_cohort import freeze_cohort, restore_cohort
+
+        if baseline["phase"] == "freeze":
+            freeze_cohort(cfg, prepare, Path.home() / ".cache/anonymisation-v2/datasets",
+                          Path(os.environ["ANONV2_V1_DATASETS"]))
+            return 0
+        if baseline["phase"] != "evaluate":
+            raise ValueError("baseline.phase : freeze ou evaluate requis")
+        frozen = restore_cohort(cfg)
+    load_key()
     llm_cfg = load_backends_config()
     models = campaign_models(cfg, llm_cfg)
     routes = validate_provider_routes(cfg, models)
@@ -475,10 +500,13 @@ def run_campaign() -> int:
                               "remote_skipped": [], "parity": {}, "audit": [],
                               "excluded_datasets": cfg.get("excluded_datasets", {}),
                               "not_executable_here": cfg["not_executable_here"]}
+    if baseline:
+        summary["cohort"] = {"id": baseline["id"], "manifest_sha256": sha256_file(Path(baseline["manifest"]))}
     ratbench_runs: list[Path] = []
     for key, splits in cfg["datasets"].items():
         try:
-            info = prepare(key, splits, cfg, cache, official_rat_root)
+            info = (frozen[key] if frozen is not None
+                    else prepare(key, splits, cfg, cache, official_rat_root))
         except (OSError, ValueError, KeyError) as exc:
             failure = {"dataset": key, "stage": "ingest", "error": f"{type(exc).__name__}: {exc}"}
             summary["failures"].append(failure)

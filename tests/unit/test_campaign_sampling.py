@@ -117,6 +117,32 @@ def test_dataset_budget_can_leave_a_split_empty_explicitly():
     assert campaign.split_budget({"empty": 0, "full": 20}, 20) == {"empty": 0, "full": 20}
 
 
+def test_capped_sample_uses_all_small_corpora_without_duplication():
+    docs = _docs("difficulty", (1, 2, 3))
+    selected, report = campaign.choose(docs, "ratbench", "eval", 500, 8000, 42, capped=True)
+    assert len(selected) == len({d.doc_id for d in selected}) == 300
+    assert report["requested"] == 500
+    assert all(s["selected"] == 100 for s in report["strata"].values())
+
+
+def test_capped_spia_redistributes_short_stratum_stably():
+    docs = [SimpleNamespace(doc_id=f"{g}-{i}", text="text", meta={"source_corpus": g})
+            for g, n in (("tab", 142), ("panorama", 531)) for i in range(n)]
+    selected, report = campaign.choose(docs, "spia", "test", 500, 8000, 42, capped=True)
+    other, other_report = campaign.choose(reversed(docs), "spia", "test", 500, 8000, 42, capped=True)
+    assert len(selected) == 500
+    assert report["strata"]["tab"]["selected"] == 142
+    assert report["strata"]["panorama"]["selected"] == 358
+    assert [d.doc_id for d in selected] == [d.doc_id for d in other]
+    assert report == other_report
+
+
+def test_capped_sample_rejects_duplicate_identifiers():
+    docs = [SimpleNamespace(doc_id="same", text="text", meta={})] * 2
+    with pytest.raises(ValueError, match="dupliqué"):
+        campaign.choose(docs, "mini", "test", 500, 8000, 42, capped=True)
+
+
 @pytest.mark.parametrize(("stages", "replay_identical", "expected"), [
     # Score 1 = publication bloquée (C4, arbre modifié) : un résultat, pas une panne.
     ({"predict": 0, "score": 1, "replay": 1}, True, []),
@@ -136,6 +162,27 @@ def _campaign_cfg():
     import json
 
     return json.loads((Path(__file__).resolve().parents[2] / "configs/evaluation/campaign.json").read_text())
+
+
+def _full_policy_cfg():
+    cfg = _campaign_cfg()
+    cfg["systems"] = [
+        {"system": "passthrough", "spia_attack": True},
+        {"system": "redact-all", "params": {"replacement": ""}, "spia_attack": True},
+        {"system": "oracle-mask", "spia_attack": True},
+        {"system": "regex-only", "spia_attack": True},
+        *[{"system": name, "policies": [f"P{i}" for i in range(5)], "spia_attack_policies": ["P2"]}
+          for name in ("deterministic", "hybrid-qi")],
+        {"system": "llm-full", "remote_only": True, "spia_attack": True},
+    ]
+    return cfg
+
+
+def test_baseline_uses_only_requested_systems_and_caps_evaluation_at_500():
+    cfg = _campaign_cfg()
+    assert cfg["documents_per_dataset"] == 500 and cfg["cap_documents"] is True
+    assert {v["name"] for v in campaign.system_variants(cfg, remote_allowed=True)} == {
+        "oracle-mask", "regex-only", "llm-full"}
 
 
 def test_ling_3_0_accepts_only_declared_price_openrouter_routes():
@@ -211,7 +258,7 @@ def test_nonzero_price_cap_must_be_explicit_and_identical_in_every_backend():
 
 
 def test_variants_run_every_policy_but_spia_attacks_only_reference_runs():
-    variants = {v["name"]: v for v in campaign.system_variants(_campaign_cfg(), remote_allowed=True)}
+    variants = {v["name"]: v for v in campaign.system_variants(_full_policy_cfg(), remote_allowed=True)}
     assert {f"deterministic-P{i}" for i in range(5)} <= set(variants)
     assert {f"hybrid-qi-P{i}" for i in range(5)} <= set(variants)
     assert {"passthrough", "redact-all", "oracle-mask", "regex-only", "llm-full"} <= set(variants)
@@ -221,12 +268,12 @@ def test_variants_run_every_policy_but_spia_attacks_only_reference_runs():
 
 
 def test_real_corpus_without_authorization_never_runs_llm_full():
-    names = {v["name"] for v in campaign.system_variants(_campaign_cfg(), remote_allowed=False)}
+    names = {v["name"] for v in campaign.system_variants(_full_policy_cfg(), remote_allowed=False)}
     assert "llm-full" not in names and "deterministic-P0" in names
 
 
 def test_predict_args_carry_policy_and_explicit_parameters(tmp_path):
-    cfg = _campaign_cfg()
+    cfg = _full_policy_cfg()
     variants = {v["name"]: v for v in campaign.system_variants(cfg, remote_allowed=True)}
     args = campaign.predict_args(cfg, "ratbench", "eval", variants["hybrid-qi-P3"], tmp_path)
     assert args[args.index("--policy") + 1] == "P3"

@@ -1,5 +1,5 @@
 {
-  "purpose": "bench_reliable_conditional_metrics_v3_1_9_corpora_10_documents",
+  "purpose": "baseline_ling_3_0_flash_gold_regex_fixed_max_500_v1",
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",
@@ -20,10 +20,10 @@
   "anonymizer_backend": "openrouter_ling_3_0_flash",
   "attacker_backend": "openrouter_ling_3_0_flash",
   "legacy_root": "/mnt/f/IA/Anonymisation/eval/datasets",
-  "documents_per_dataset": 10,
+  "documents_per_dataset": 500,
   "llm_full_max_output_tokens": 8192,
   "llm_full_max_entities": 256,
-  "sampling_seed": 20261008,
+  "sampling_seed": 20261016,
   "max_document_chars": 16000,
   "datasets": {
     "supporttickets": [
@@ -58,17 +58,6 @@
   },
   "systems": [
     {
-      "system": "passthrough",
-      "spia_attack": true
-    },
-    {
-      "system": "redact-all",
-      "params": {
-        "replacement": ""
-      },
-      "spia_attack": true
-    },
-    {
       "system": "oracle-mask",
       "spia_attack": true
     },
@@ -77,40 +66,13 @@
       "spia_attack": true
     },
     {
-      "system": "deterministic",
-      "policies": [
-        "P0",
-        "P1",
-        "P2",
-        "P3",
-        "P4"
-      ],
-      "spia_attack_policies": [
-        "P2"
-      ]
-    },
-    {
-      "system": "hybrid-qi",
-      "policies": [
-        "P0",
-        "P1",
-        "P2",
-        "P3",
-        "P4"
-      ],
-      "spia_attack_policies": [
-        "P2"
-      ]
-    },
-    {
       "system": "llm-full",
       "remote_only": true,
       "spia_attack": true
     }
   ],
-  "documents_per_split": 10,
+  "documents_per_split": 500,
   "not_executable_here": [
-    "portée auteur des politiques P3/P4 (S5) : non implémentée par les moteurs, écart déclaré dans chaque lock",
     "PANORAMA : dataset Hugging Face « gated » (srirxml/PANORAMA) — HTTP 403 tant que les conditions ne sont pas acceptées sur huggingface.co avec le compte du token ; aucun contournement",
     "QICR/MALE-k : aucune population indépendante complète fournie pour les corpus réels ; aucune vérité k fabriquée",
     "Brier/ECE : les systèmes courants n'émettent pas de prévision validée du succès de l'attaque après anonymisation ; aucune conversion de 1/k"
@@ -126,5 +88,18 @@
       ],
       "reason": "attributs personnels inférés sans spans ancrés ni attaque adaptée ; personality_prediction n'est pas une tâche d'utilité validée"
     }
-  }
+  },
+  "cap_documents": true,
+  "baseline": {
+    "id": "baseline-ling-gold-regex-max500-v1",
+    "phase": "freeze",
+    "manifest": "configs/evaluation/frozen/baseline-max500-v1.lock.json"
+  },
+  "baseline_notes": [
+    "Maximum 500 documents évalues par corpus/dataset ; corpus plus petits pris integralement sans duplication.",
+    "Gold = oracle-mask utilisant les annotations disponibles ; sur les corpus de tâche sans spans gold, il constitue uniquement un contrôle texte intact.",
+    "Les trains auxiliaires de 2000 documents des tâches utilité sont séparés des items évalués et figés avec eux.",
+    "L anonymisation distante reste limitée aux synthétiques et à SPIA ; aucun appel externe pour les autres corpus réels.",
+    "Le manifeste sera commité avant la mesure et toute relance exigera le même snapshot vérifié, sans nouveau tirage."
+  ]
 }

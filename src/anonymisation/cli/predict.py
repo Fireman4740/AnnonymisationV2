@@ -455,7 +455,7 @@ def cmd_predict(
     with atomic_write(out_dir / "predictions.jsonl") as predictions, atomic_write(
         out_dir / "traces.jsonl"
     ) as traces:
-        for doc in docs:
+        for completed, doc in enumerate(docs, start=1):
             result = pipe.run(doc, gold.get(doc.doc_id))
             counts[result.status] = counts.get(result.status, 0) + 1
             predictions.write(
@@ -475,6 +475,10 @@ def cmd_predict(
                     )
                     + "\n"
                 )
+            if completed == 1 or completed % 25 == 0 or completed == len(docs):
+                print("PREDICT_PROGRESS", json.dumps({"dataset": key, "split": split,
+                    "system": identity.system_id, "completed": completed, "total": len(docs),
+                    "counts": counts}, sort_keys=True), flush=True)
 
     lock = _build_lock(
         key=key,
