@@ -92,7 +92,7 @@
   "cap_documents": true,
   "baseline": {
     "id": "baseline-ling-gold-regex-max500-v1",
-    "phase": "freeze",
+    "phase": "evaluate",
     "manifest": "configs/evaluation/frozen/baseline-max500-v1.lock.json"
   },
   "baseline_notes": [
