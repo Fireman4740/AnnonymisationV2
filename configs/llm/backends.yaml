@@ -33,6 +33,30 @@ backends:
       # timeout opaque (SPEC-10 §6.4).
       hint: "Serveur local éteint. Démarrer : powershell -File F:\\IA\\Qwen3.8\\qwen.ps1 start (2-3 min au premier boot)"
 
+  # --- Même serveur vLLM, exécuté depuis la box d'évaluation -------------- #
+  # `qwen_local` ci-dessus est piloté depuis Windows (clé lue via wsl.exe).
+  # Sur la box Linux, la clé est dans ~/qwen38-27b-rtx3090/.env : cette
+  # variante la lit sans dépendre de WSL, et reste utilisable sur un poste où
+  # VLLM_API_KEY est déjà exportée.
+  qwen_local_box:
+    kind: openai_compatible
+    base_url: "http://127.0.0.1:18020/v1"
+    model: "qwen3.8-27b"
+    api_key_cmd: >-
+      bash -lc 'if [ -n "$VLLM_API_KEY" ]; then printf %s "$VLLM_API_KEY";
+      else sed -n "s/^VLLM_API_KEY=//p" "$HOME/qwen38-27b-rtx3090/.env" | head -n1; fi'
+    timeout_s: 300
+    max_retries: 2
+    max_output_tokens: 8192     # par fenêtre ; bien au-dessus du besoin observé
+    max_concurrency: 4
+    temperature: 0.1            # détection : on cherche la précision
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+    health:
+      url: "http://127.0.0.1:18020/health"
+      hint: "Serveur vLLM local éteint. Sur la box : cd ~/qwen38-27b-rtx3090 && docker compose up -d."
+
   # --- Borne supérieure de qualité / attaquant B -------------------------- #
   sonnet:
     kind: anthropic

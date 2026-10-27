@@ -178,11 +178,27 @@ def _full_policy_cfg():
     return cfg
 
 
-def test_baseline_uses_only_requested_systems_and_caps_evaluation_at_500():
+def _openrouter_cfg():
+    cfg = _campaign_cfg()
+    cfg["anonymizer_backend"] = "openrouter_ling_3_0_flash"
+    cfg["attacker_backend"] = "openrouter_ling_3_0_flash"
+    return cfg
+
+
+def test_campaign_uses_only_requested_systems_and_caps_evaluation_at_500():
     cfg = _campaign_cfg()
     assert cfg["documents_per_dataset"] == 500 and cfg["cap_documents"] is True
     assert {v["name"] for v in campaign.system_variants(cfg, remote_allowed=True)} == {
-        "oracle-mask", "regex-only", "llm-full"}
+        "oracle-mask", "regex-only", "llm-windowed"}
+
+
+def test_local_backend_requires_no_openrouter_price_cap():
+    from anonymisation.llm.config import load_backends_config
+
+    models = campaign.campaign_models(_campaign_cfg(), load_backends_config())
+    assert all(m["model"] == "qwen3.8-27b" and m["remote"] is False
+               for m in models.values())
+    assert campaign.validate_provider_routes(_campaign_cfg(), models) == []
 
 
 def test_ling_3_0_accepts_only_declared_price_openrouter_routes():
@@ -190,15 +206,16 @@ def test_ling_3_0_accepts_only_declared_price_openrouter_routes():
 
     from anonymisation.llm.config import load_backends_config
 
-    cfg = _campaign_cfg()
+    cfg = _openrouter_cfg()
     llm_cfg = load_backends_config()
     models = campaign.campaign_models(cfg, llm_cfg)
     assert all(m["model"] == "inclusionai/ling-3.0-flash" for m in models.values())
+    assert all(m["remote"] is True for m in models.values())
     backend = llm_cfg.resolve(name=cfg["anonymizer_backend"])
     for changes in (
         {"extra_body": {}},
         {"extra_body": {"provider": {"max_price": {"prompt": 0, "completion": 0.1}}}},
-        {"base_url": "https://another-provider.example/v1"},
+        {"base_url": "https://another-provider.example/v1", "extra_body": {}},
     ):
         invalid = replace(llm_cfg, backends={**llm_cfg.backends, backend.name: replace(backend, **changes)})
         with pytest.raises(ValueError, match="plafond tarifaire"):
@@ -209,7 +226,7 @@ def test_route_preflight_respects_price_units_and_current_cap(monkeypatch):
     import io
     import json
 
-    models = {"anonymizer_backend": {"model": "inclusionai/ling-3.1-flash"}}
+    models = {"anonymizer_backend": {"model": "inclusionai/ling-3.1-flash", "remote": True}}
     requests = []
 
     def urlopen(url, **kwargs):
@@ -245,7 +262,7 @@ def test_nonzero_price_cap_must_be_explicit_and_identical_in_every_backend():
 
     from anonymisation.llm.config import load_backends_config
 
-    cfg = _campaign_cfg()
+    cfg = _openrouter_cfg()
     llm_cfg = load_backends_config()
     backend = llm_cfg.resolve(name=cfg["anonymizer_backend"])
     caps = {"prompt": 0.075, "completion": 0.225}

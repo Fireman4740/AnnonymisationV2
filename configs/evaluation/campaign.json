@@ -1,5 +1,5 @@
 {
-  "purpose": "baseline_ling_3_0_flash_gold_regex_fixed_max_500_v1",
+  "purpose": "llm_windowed_local_qwen_max500_v1",
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",
@@ -17,8 +17,9 @@
     "prompt": 0.021,
     "completion": 0.063
   },
-  "anonymizer_backend": "openrouter_ling_3_0_flash",
-  "attacker_backend": "openrouter_ling_3_0_flash",
+  "anonymizer_backend": "qwen_local_box",
+  "attacker_backend": "qwen_local_box",
+  "run_attacks": false,
   "legacy_root": "/mnt/f/IA/Anonymisation/eval/datasets",
   "documents_per_dataset": 500,
   "llm_full_max_output_tokens": 8192,
@@ -59,16 +60,22 @@
   "systems": [
     {
       "system": "oracle-mask",
-      "spia_attack": true
+      "spia_attack": false
     },
     {
       "system": "regex-only",
-      "spia_attack": true
+      "spia_attack": false
     },
     {
-      "system": "llm-full",
-      "remote_only": true,
-      "spia_attack": true
+      "system": "llm-windowed",
+      "spia_attack": false,
+      "params": {
+        "backend": "qwen_local_box",
+        "window_chars": 6000,
+        "overlap_chars": 240,
+        "max_output_tokens": 8192,
+        "max_entities": 256
+      }
     }
   ],
   "documents_per_split": 500,

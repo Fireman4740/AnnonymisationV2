@@ -19,7 +19,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from anonymisation.datasets import REGISTRY
 from anonymisation.datasets.base import DatasetAdapter
@@ -29,6 +29,7 @@ from anonymisation.llm.config import LlmBackendsConfig, load_backends_config
 from anonymisation.schema.io import sha256_file, write_json
 
 CONFIG = Path("configs/evaluation/campaign.json")
+OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 SPIA_REVISION = "3fa78a1b3c75788c6294f40024fc79e1ef42923f"
 SPIA_FILES = {
     "spia_tab_144.jsonl": "6b76fe4c26ea619a12913aa3601b31c61acef29b99a7293098876f6ec56b03ac",
@@ -372,7 +373,8 @@ def system_variants(cfg: dict[str, Any], remote_allowed: bool) -> list[dict[str,
 
 def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, Any],
                  directory: Path) -> list[str]:
-    profile = {"llm-full": "llm_full", "hybrid-qi": "hybrid_qi"}.get(variant["system"], "deterministic")
+    profile = {"llm-full": "llm_full", "llm-windowed": "llm_windowed",
+               "hybrid-qi": "hybrid_qi"}.get(variant["system"], "deterministic")
     args = ["predict", "--dataset", key, "--split", split, "--system", variant["system"],
             "--profile", profile, "--out", str(directory)]
     if variant["policy"]:
@@ -382,6 +384,8 @@ def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, A
         params.update(backend=cfg["anonymizer_backend"],
                       max_output_tokens=cfg["llm_full_max_output_tokens"],
                       max_entities=cfg["llm_full_max_entities"])
+    elif variant["system"] == "llm-windowed":
+        params.setdefault("backend", cfg["anonymizer_backend"])
     for name, value in sorted(params.items()):
         args += ["--param", f"{name}={value}"]
     return args
@@ -412,20 +416,33 @@ def provider_price_caps(cfg: dict[str, Any]) -> dict[str, Any]:
     return caps
 
 
+def _is_local_base_url(base_url: str | None) -> bool:
+    """Vrai seulement pour une boucle locale : aucun envoi hors de la machine."""
+    host = urlparse(base_url).hostname if base_url else None
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
 def campaign_models(cfg: dict[str, Any], llm_cfg: LlmBackendsConfig) -> dict[str, Any]:
-    """Verrouille le routage OpenRouter aux plafonds déclarés par la campagne."""
+    """Décrit le routage des deux rôles et verrouille les seuls appels distants.
+
+    Un backend local (serveur vLLM de la box) n'a ni tarif OpenRouter ni
+    autorisation d'envoi externe à vérifier : le plafond de prix ne s'applique
+    qu'aux backends dont l'URL n'est pas une boucle locale. Une URL distante
+    inattendue reste traitée comme distante et doit donc respecter le plafond.
+    """
     caps = provider_price_caps(cfg)
     models = {}
     for role in ("anonymizer_backend", "attacker_backend"):
         backend = llm_cfg.resolve(name=cfg[role])
-        if (backend.kind != "openai_compatible"
-                or backend.base_url != "https://openrouter.ai/api/v1"
-                or not backend.model
-                or backend.extra_body.get("provider", {}).get("max_price")
-                != caps):
+        if not backend.model:
+            raise ValueError(f"Backend sans modèle déclaré : {role}")
+        remote = backend.kind in {"openai_compatible", "anthropic"} and not _is_local_base_url(
+            backend.base_url
+        )
+        if remote and backend.extra_body.get("provider", {}).get("max_price") != caps:
             raise ValueError(f"Backend incompatible avec le plafond tarifaire : {role}")
         models[role] = {"backend": backend.name, "model": backend.model,
-                        "extra_body": backend.extra_body,
+                        "extra_body": backend.extra_body, "remote": remote,
                         "default_max_output_tokens": backend.max_output_tokens}
     return models
 
@@ -440,8 +457,8 @@ def validate_provider_routes(cfg: dict[str, Any], models: dict[str, Any]) -> lis
     """
     caps = provider_price_caps(cfg)
     reports = []
-    for model in sorted({spec["model"] for spec in models.values()}):
-        url = f"https://openrouter.ai/api/v1/models/{quote(model, safe='/')}/endpoints"
+    for model in sorted({spec["model"] for spec in models.values() if spec.get("remote")}):
+        url = f"{OPENROUTER_BASE}/models/{quote(model, safe='/')}/endpoints"
         with urllib.request.urlopen(url, timeout=30) as response:
             endpoints = json.load(response)["data"]["endpoints"]
         allowed = []
@@ -483,9 +500,11 @@ def run_campaign() -> int:
         if baseline["phase"] != "evaluate":
             raise ValueError("baseline.phase : freeze ou evaluate requis")
         frozen = restore_cohort(cfg)
-    load_key()
     llm_cfg = load_backends_config()
     models = campaign_models(cfg, llm_cfg)
+    uses_remote = any(spec.get("remote") for spec in models.values())
+    if uses_remote:
+        load_key()
     routes = validate_provider_routes(cfg, models)
     print("PROVIDER_PREFLIGHT", json.dumps(routes, sort_keys=True), flush=True)
     print("CAMPAIGN_CONFIG", json.dumps({**cfg, "models": models}, sort_keys=True), flush=True)
@@ -495,6 +514,7 @@ def run_campaign() -> int:
     os.environ["ANONV2_PSEUDO_SECRET"] = "functional-evaluation-public-not-for-production"
     summary: dict[str, Any] = {"purpose": cfg["purpose"], "models": models,
                               "systems": cfg["systems"], "provider_preflight": routes,
+                              "run_attacks": cfg.get("run_attacks", True),
                               "documents_per_dataset": cfg.get("documents_per_dataset"),
                               "datasets": [], "results": [], "failures": [],
                               "remote_skipped": [], "parity": {}, "audit": [],
@@ -513,8 +533,8 @@ def run_campaign() -> int:
             print("CAMPAIGN_ERROR", json.dumps(failure, ensure_ascii=False), flush=True)
             continue
         summary["datasets"].append(info)
-        remote_allowed = remote_authorized(cfg, key, info["synthetic"])
-        if not remote_allowed:
+        remote_allowed = remote_authorized(cfg, key, info["synthetic"]) if uses_remote else True
+        if uses_remote and not remote_allowed:
             summary["remote_skipped"].append({"dataset": key,
                 "stages": ["llm-full", "attaque SPIA"],
                 "reason": "autorisation explicite d'envoi externe des textes réels en attente"})
@@ -538,11 +558,12 @@ def run_campaign() -> int:
                     if not (directory / "manifest.lock.json").is_file():
                         raise ValueError("prédiction sans lock")
                     score_args = ["score", "--run", str(directory), "--protocol", info["protocol"]]
-                    if key == "ratbench":
+                    run_attacks = cfg.get("run_attacks", True)
+                    if key == "ratbench" and run_attacks:
                         ratbench_runs.append(directory)
                         stages["attack"] = call(["attack", "--run", str(directory), "--attacker",
                             "ratbench", "--backend", cfg["attacker_backend"], "--workers", "1"])
-                    if key == "spia" and remote_allowed and variant["spia_attack"]:
+                    if key == "spia" and run_attacks and remote_allowed and variant["spia_attack"]:
                         stages["attack_spia"] = call(["attack", "--run", str(directory), "--attacker",
                             "spia", "--backend", cfg["attacker_backend"], "--workers", "1"])
                     evaluate_args = conditional_evaluation_args(cfg, key, directory)
