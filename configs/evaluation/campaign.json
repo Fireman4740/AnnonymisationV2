@@ -1,5 +1,12 @@
 {
-  "purpose": "llm_windowed_local_qwen_max500_v1",
+  "purpose": "llm_windowed_local_qwen_max500_repair_tab_ratbench_v1",
+  "run_only": [
+    "ratbench",
+    "tab"
+  ],
+  "run_systems": [
+    "llm-windowed"
+  ],
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",

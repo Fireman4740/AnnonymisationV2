@@ -488,6 +488,32 @@ def run_campaign() -> int:
     from evaluation_smoke import command, load_key
 
     cfg = json.loads(CONFIG.read_text())
+    run_only = cfg.get("run_only")
+    if run_only is not None:
+        if (not isinstance(run_only, list) or not run_only
+                or not all(isinstance(key, str) for key in run_only)):
+            raise ValueError(
+                "campaign.json : `run_only` doit être une liste non vide de clés de datasets"
+            )
+        unknown = sorted(set(run_only) - set(cfg["datasets"]))
+        if unknown:
+            raise ValueError(
+                f"campaign.json : `run_only` contient des datasets absents de `datasets` : {unknown}"
+            )
+        # Le manifeste de cohorte reste celui de la sélection complète : on ne
+        # restreint que l'exécution, jamais l'identité des données figées.
+    run_systems = cfg.get("run_systems")
+    if run_systems is not None:
+        if (not isinstance(run_systems, list) or not run_systems
+                or not all(isinstance(name, str) for name in run_systems)):
+            raise ValueError(
+                "campaign.json : `run_systems` doit être une liste non vide de systèmes"
+            )
+        unknown = sorted(set(run_systems) - {spec["system"] for spec in cfg["systems"]})
+        if unknown:
+            raise ValueError(
+                f"campaign.json : `run_systems` contient des systèmes absents de `systems` : {unknown}"
+            )
     baseline = cfg.get("baseline")
     frozen = None
     if baseline:
@@ -515,6 +541,7 @@ def run_campaign() -> int:
     summary: dict[str, Any] = {"purpose": cfg["purpose"], "models": models,
                               "systems": cfg["systems"], "provider_preflight": routes,
                               "run_attacks": cfg.get("run_attacks", True),
+                              "run_only": run_only, "run_systems": run_systems,
                               "documents_per_dataset": cfg.get("documents_per_dataset"),
                               "datasets": [], "results": [], "failures": [],
                               "remote_skipped": [], "parity": {}, "audit": [],
@@ -524,6 +551,8 @@ def run_campaign() -> int:
         summary["cohort"] = {"id": baseline["id"], "manifest_sha256": sha256_file(Path(baseline["manifest"]))}
     ratbench_runs: list[Path] = []
     for key, splits in cfg["datasets"].items():
+        if run_only is not None and key not in run_only:
+            continue
         try:
             info = (frozen[key] if frozen is not None
                     else prepare(key, splits, cfg, cache, official_rat_root))
@@ -548,6 +577,8 @@ def run_campaign() -> int:
 
         for split in info["evaluation_splits"]:
             for variant in system_variants(cfg, remote_allowed):
+                if run_systems is not None and variant["system"] not in run_systems:
+                    continue
                 name = variant["name"]
                 directory = Path("runs/campaign") / key / split / name
                 entry: dict[str, Any] = {"dataset": key, "split": split, "system": name,
@@ -627,6 +658,7 @@ def run_campaign() -> int:
             summary["failures"].append({"stage": "audit", "run": str(directory), "exit_code": code})
     write_json(Path("runs/campaign/summary.json"), summary)
     compact = {"purpose": summary["purpose"], "models": models, "failures": summary["failures"],
+               "run_only": summary["run_only"], "run_systems": summary["run_systems"],
                "excluded_datasets": summary["excluded_datasets"],
                "not_executable_here": summary["not_executable_here"],
                "remote_skipped": summary["remote_skipped"], "parity": summary["parity"],
