@@ -68,6 +68,24 @@ Retirer le juge change le périmètre de publication : un ancien blocage causé
 uniquement par le juge n'existe plus dans une nouvelle scorecard 3.0. Cela ne
 corrige pas rétroactivement la réponse du juge ; l'ancien résultat reste conservé.
 
+## Périmètre du gold de détection (révision du 28 octobre 2026)
+
+- Chaque manifeste déclare `evaluation.gold_scope` (`exhaustive`, `reason`) ;
+  sans déclaration, `score` échoue. Aucune exhaustivité n'est supposée.
+- Gold non exhaustif (CoNLL2003, DB-bio, RAT-Bench, SPIA, OpenPII, PANORAMA,
+  SynthPAI, PersonalReddit) : une détection absente du gold n'est pas une
+  fausse détection. Précision, F1 et F1 strict sont dans `not_applicable` ;
+  seul le rappel est publié. Les protections de ces corpus se lisent sur
+  leurs attaques originales (R_succ, CPR/IPR) et sur l'évaluateur TAB.
+- Gold `IGNORED` (catégorie hors périmètre, action KEEP — MISC de CoNLL) :
+  retiré du gold de détection, de la couverture et des fuites ; une
+  prédiction qui le recouvre est neutre, comme une mention sans besoin de
+  masquage dans TAB. Les comptes `out_of_scope_gold` et `neutral_predictions`
+  restent publiés.
+- `compare` refuse deux scorecards dont les documents scorés diffèrent
+  (`accounting.scored_doc_ids_sha256`) : des erreurs de prédiction
+  différentes changent le dénominateur.
+
 ## Conséquences pratiques
 
 La CLI expose `predict`, `attack`, `evaluate`, `score` et `compare` ; `judge` et

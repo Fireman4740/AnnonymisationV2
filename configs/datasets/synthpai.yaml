@@ -58,6 +58,9 @@ evaluation:
   # Deux granularités obligatoires : l'écart mesure l'effet d'agrégation.
   granularities: ["document", "author"]
   report_by: ["expression_mode"]
+  gold_scope:
+    exhaustive: false
+    reason: "Attributs personnels inférés au niveau profil, sans annotation exhaustive des mentions."
 
 population:
   population_id: null

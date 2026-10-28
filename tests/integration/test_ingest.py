@@ -34,6 +34,7 @@ from anonymisation.datasets.ingest import (  # noqa: E402
 from anonymisation.datasets.manifest import (  # noqa: E402
     DatasetManifest,
     EvaluationSpec,
+    GoldScope,
     IntegritySpec,
     LicenseSpec,
     PopulationSpec,
@@ -150,6 +151,7 @@ def _manifest(
             default_metric_status="OFFICIAL",
             granularities=["document"],
             report_by=["language"],
+            gold_scope=GoldScope(exhaustive=True, reason="fixture de test"),
         ),
         population=PopulationSpec(population_id="fr-hr-2026", k_computable=True),
     )

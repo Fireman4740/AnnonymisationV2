@@ -110,6 +110,27 @@ def _assert_same_ground_truth(scorecards: Sequence[dict[str, Any]]) -> None:
             )
 
 
+def _assert_same_scored_documents(scorecards: Sequence[dict[str, Any]]) -> None:
+    """Refuse des runs dont les documents effectivement scorés diffèrent.
+
+    Un document en erreur est exclu du scoring ; deux systèmes aux erreurs
+    différentes seraient sinon classés sur des sous-ensembles différents du
+    même pivot. Rescorer sur l'intersection ou corriger les erreurs.
+    """
+    digests = [
+        (idx, (sc.get("accounting") or {}).get("scored_doc_ids_sha256"))
+        for idx, sc in enumerate(scorecards, start=1)
+    ]
+    known = [(idx, digest) for idx, digest in digests if digest is not None]
+    for idx, digest in known[1:]:
+        if digest != known[0][1]:
+            raise MetricComparisonError(
+                f"Scorecard #{idx} : documents scorés différents de la #{known[0][0]} "
+                "(erreurs de prédiction différentes) — classement refusé ; corriger les "
+                "erreurs ou rescorer sur l'intersection des documents."
+            )
+
+
 #: Statuts non publiables : la valeur existe, mais ne porte aucune garantie de
 #: comparabilité externe (cf. ``assert_comparable``).
 _NON_PUBLISHABLE = (MetricStatus.DIAGNOSTIC.value, MetricStatus.PROXY.value)
@@ -175,6 +196,7 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
     if any(s is not None for s in scoring) and any(s != scoring[0] for s in scoring[1:]):
         raise MetricComparisonError("Code de scoring différent : rescorer avec le même noyau")
     _assert_same_ground_truth(scorecards)
+    _assert_same_scored_documents(scorecards)
 
     # Chaque métrique prend pour référence sa première valeur disponible,
     # même si la première scorecard ne peut pas la produire.

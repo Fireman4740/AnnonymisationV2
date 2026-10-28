@@ -71,6 +71,7 @@ def _manifest() -> DatasetManifest:
                 "default_metric_status": "DIAGNOSTIC",
                 "granularities": ["subject"],
                 "report_by": ["source_corpus"],
+                "gold_scope": {"exhaustive": True, "reason": "fixture de test"},
             },
             "population": {"population_id": None, "k_computable": False},
         }

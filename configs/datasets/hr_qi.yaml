@@ -76,6 +76,9 @@ evaluation:
   default_metric_status: "OFFICIAL"
   granularities: ["document", "author"]
   report_by: ["language", "expression_mode", "k_stratum"]
+  gold_scope:
+    exhaustive: false
+    reason: "Exhaustivité des mentions non documentée par la fiche du corpus : aucune précision publiée tant qu'elle n'est pas vérifiée."
   # Les résultats DOIVENT être publiés bruts ET repondérés par les poids
   # d'échantillonnage : un R_succ mesuré sur un corpus sur-représentant les k
   # faibles n'est pas le risque en production (SPEC-05 §4).

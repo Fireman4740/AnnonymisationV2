@@ -58,6 +58,9 @@ evaluation:
   default_metric_status: "DIAGNOSTIC"
   granularities: ["document", "entity"]
   report_by: ["split"]
+  gold_scope:
+    exhaustive: false
+    reason: "Annotation NER PER/LOC/ORG/MISC : dates, âges, fonctions et autres QI du texte ne sont pas annotés."
 
 population:
   population_id: null

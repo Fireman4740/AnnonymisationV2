@@ -22,7 +22,7 @@ def reference_run(tmp_path, monkeypatch):
     monkeypatch.setattr(score, "PROCESSED_ROOT", root)
     config = tmp_path / "configs"
     config.mkdir()
-    (config / "mini.yaml").write_text("evaluation:\n  protocol: mini-v1\n  protocol_version: '1'\n  default_metric_status: DIAGNOSTIC\n")
+    (config / "mini.yaml").write_text("evaluation:\n  protocol: mini-v1\n  protocol_version: '1'\n  default_metric_status: DIAGNOSTIC\n  gold_scope:\n    exhaustive: true\n    reason: fixture de test\n")
     monkeypatch.setattr(score, "DATASETS_CONFIG", config)
     texts = {"train": ["paiement facture carte", "facture montant paiement", "connexion compte motdepasse", "compte connexion accès"],
              "test": ["20 ans carte facture paiement", "30 ans accès compte connexion"]}

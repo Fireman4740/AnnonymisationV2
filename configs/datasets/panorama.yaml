@@ -49,6 +49,9 @@ evaluation:
   default_metric_status: "OFFICIAL"
   granularities: ["document"]
   report_by: ["content_type"]
+  gold_scope:
+    exhaustive: false
+    reason: "Attributs de profil injectés dans des textes générés ; les autres mentions ne sont pas annotées."
 
 population:
   population_id: null

@@ -114,7 +114,7 @@ def _build(documents, gold_by_doc, predictions, **kwargs) -> dict:
         documents_by_doc=documents,
         reproducibility=LOCK,
         requested_status=MetricStatus.DIAGNOSTIC,
-        **kwargs,
+        **{"span_gold_exhaustive": True, **kwargs},
     )
 
 
@@ -304,6 +304,7 @@ def test_naive_risk_cannot_produce_official_scorecard() -> None:
         reproducibility=LOCK,
         system=_SYSTEM,
         requested_status=MetricStatus.OFFICIAL,
+        span_gold_exhaustive=True,
     )
     assert card["status"] == MetricStatus.PROXY.value
     assert "risque PROXY" in card["status_reason"]
@@ -370,6 +371,7 @@ def test_official_run_without_spia_attack_is_scorable_and_never_substitutes_lite
         protocol_version="1", predictions=[row], gold_by_doc={"d": (gold,)},
         documents_by_doc={"d": doc}, reproducibility=LOCK, system=_SYSTEM,
         requested_status=MetricStatus.OFFICIAL,
+        span_gold_exhaustive=True,
     )
     assert card["status"] == "official"
     for name in ("cpr", "ipr"):
@@ -446,3 +448,70 @@ def test_core_scoring_never_calls_retired_computations_or_any_model(monkeypatch)
     assert card["schema_version"] == "3.1"
     assert card["diagnostic"]["span_f1"]["value"] == 1.0
     assert card["scoring"]["modules_sha256"]["scorecard.py"]
+
+
+def test_ignored_gold_is_out_of_scope_and_overlapping_prediction_is_neutral():
+    """MISC → IGNORED (action KEEP) : ni à détecter, ni une fausse détection."""
+    doc = _document("d", "Alice parle allemand")
+    name = _annotation("d", 0, 5, span_text="Alice")
+    misc = _annotation("d", 12, 20, span_text="allemand",
+                       identifier_type=IdentifierType.QUASI, category="IGNORED")
+    predicted_misc = _annotation("d", 12, 20, span_text="allemand",
+                                 identifier_type=IdentifierType.QUASI,
+                                 category="GEN_ORIGIN_BELIEF")
+    row = _prediction("d", [name, predicted_misc])
+    row["anonymized_text"] = "[NOM] parle allemand"
+    card = _build({"d": doc}, {"d": (name, misc)}, [row])
+    counts = card["diagnostic"]["counts"]
+    assert counts["gold"] == 1
+    assert counts["pred"] == 1
+    assert counts["out_of_scope_gold"] == 1
+    assert counts["neutral_predictions"] == 1
+    assert card["diagnostic"]["span_precision"]["value"] == 1.0
+    assert card["diagnostic"]["span_recall"]["value"] == 1.0
+    assert card["diagnostic"]["gold_leak_rate"]["value"] == 0.0
+
+
+def test_non_exhaustive_gold_publishes_recall_only():
+    """Gold partiel par construction : une détection non annotée n'est pas fausse."""
+    doc = _document("d", "Alice est née en 1990")
+    name = _annotation("d", 0, 5, span_text="Alice")
+    year = _annotation("d", 17, 21, span_text="1990",
+                       identifier_type=IdentifierType.QUASI, category="GEN_DATE_EVENT")
+    row = _prediction("d", [name, year])
+    row["anonymized_text"] = "[NOM] est née en [DATE]"
+    card = _build({"d": doc}, {"d": (name,)}, [row], span_gold_exhaustive=False)
+    assert card["diagnostic"]["span_recall"]["value"] == 1.0
+    for metric in ("span_precision", "span_f1", "span_strict_f1"):
+        assert metric not in card["diagnostic"]
+        assert "non exhaustif" in card["not_applicable"][metric]
+    counts = card["diagnostic"]["counts"]
+    assert counts["gold_exhaustive"] is False
+    assert "precision" not in counts and "f1" not in counts
+    for breakdown in ("by_qi_category", "by_language", "by_domain", "by_expression"):
+        for group in card[breakdown].values():
+            assert "precision" not in group and "f1" not in group
+            assert "recall" in group
+
+
+def test_exhaustiveness_must_be_declared():
+    doc = _document("d", "Alice")
+    with pytest.raises(TypeError):
+        build_scorecard(
+            run_id="r", dataset="mini", split="train", protocol="p", protocol_version="1",
+            predictions=[_prediction("d", [])], gold_by_doc={"d": ()},
+            documents_by_doc={"d": doc}, reproducibility=LOCK, system=_SYSTEM,
+        )
+
+
+def test_scored_document_set_is_fingerprinted():
+    docs = {i: _document(i, "Alice") for i in ("a", "b")}
+    gold = {i: (_annotation(i, 0, 5, span_text="Alice"),) for i in docs}
+    rows = [_prediction("a", []), {**_prediction("b", []), "status": "error",
+                                   "error": ["LLM: boom"]}]
+    for row in rows:
+        row["anonymized_text"] = "x"
+    card = _build(docs, gold, rows)
+    other = _build(docs, gold, [_prediction("a", []) | {"anonymized_text": "x"},
+                                _prediction("b", []) | {"anonymized_text": "x"}])
+    assert card["accounting"]["scored_doc_ids_sha256"] != other["accounting"]["scored_doc_ids_sha256"]

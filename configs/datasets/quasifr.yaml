@@ -101,6 +101,9 @@ evaluation:
   default_metric_status: "DIAGNOSTIC"
   granularities: ["document", "entity"]
   report_by: ["split", "expression_mode", "source_type"]
+  gold_scope:
+    exhaustive: true
+    reason: "Corpus gold annoté manuellement pour l'anonymisation : chaque QI à anonymiser porte offsets et remplacement attendu ; hors périmètre mappé IGNORED."
 
 population:
   population_id: null

@@ -1,12 +1,5 @@
 {
-  "purpose": "llm_windowed_local_qwen_max500_repair_tab_ratbench_v1",
-  "run_only": [
-    "ratbench",
-    "tab"
-  ],
-  "run_systems": [
-    "llm-windowed"
-  ],
+  "purpose": "banc_fiable_protocoles_originaux_max500_v2",
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",
@@ -17,6 +10,11 @@
       "task": "intent",
       "train_split": "train",
       "training_documents": 2000
+    },
+    "dbbio": {
+      "task": "occupation_l3",
+      "train_split": "train",
+      "training_documents": 1900
     }
   },
   "remote_real_corpora_authorized": false,
@@ -26,7 +24,7 @@
   },
   "anonymizer_backend": "qwen_local_box",
   "attacker_backend": "qwen_local_box",
-  "run_attacks": false,
+  "run_attacks": true,
   "legacy_root": "/mnt/f/IA/Anonymisation/eval/datasets",
   "documents_per_dataset": 500,
   "llm_full_max_output_tokens": 8192,
@@ -67,15 +65,15 @@
   "systems": [
     {
       "system": "oracle-mask",
-      "spia_attack": false
+      "spia_attack": true
     },
     {
       "system": "regex-only",
-      "spia_attack": false
+      "spia_attack": true
     },
     {
       "system": "llm-windowed",
-      "spia_attack": false,
+      "spia_attack": true,
       "params": {
         "backend": "qwen_local_box",
         "window_chars": 6000,
@@ -105,15 +103,18 @@
   },
   "cap_documents": true,
   "baseline": {
-    "id": "baseline-ling-gold-regex-max500-v1",
-    "phase": "evaluate",
-    "manifest": "configs/evaluation/frozen/baseline-max500-v1.lock.json"
+    "id": "banc-fiable-max500-v2",
+    "phase": "freeze",
+    "manifest": "configs/evaluation/frozen/banc-fiable-max500-v2.lock.json"
   },
   "baseline_notes": [
     "Maximum 500 documents évalues par corpus/dataset ; corpus plus petits pris integralement sans duplication.",
     "Gold = oracle-mask utilisant les annotations disponibles ; sur les corpus de tâche sans spans gold, il constitue uniquement un contrôle texte intact.",
     "Les trains auxiliaires de 2000 documents des tâches utilité sont séparés des items évalués et figés avec eux.",
     "L anonymisation distante reste limitée aux synthétiques et à SPIA ; aucun appel externe pour les autres corpus réels.",
-    "Le manifeste sera commité avant la mesure et toute relance exigera le même snapshot vérifié, sans nouveau tirage."
-  ]
+    "Le manifeste sera commité avant la mesure et toute relance exigera le même snapshot vérifié, sans nouveau tirage.",
+    "Cohorte v2 : mêmes paramètres de tirage que baseline-ling-gold-regex-max500-v1 ; seul ajout, le train auxiliaire DB-bio (1900 documents disjoints du test) pour la tâche occupation_l3 d'origine. L'identité des items évalués v1/v2 est vérifiée avant toute mesure.",
+    "Attaques originales actives sur tous les systèmes : RAT-Bench (R_succ, parité avec le code officiel) et SPIA (CPR/IPR, calculate_ipr_cpr original), attaquant Qwen3.8-27B local — différent des attaquants des articles, résultats non comparables aux chiffres publiés."
+  ],
+  "attack_workers": 16
 }

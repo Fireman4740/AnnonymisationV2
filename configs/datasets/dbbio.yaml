@@ -72,6 +72,9 @@ evaluation:
   default_metric_status: "DIAGNOSTIC"
   granularities: ["document"]
   report_by: ["split", "occupation_level"]
+  gold_scope:
+    exhaustive: false
+    reason: "Seul le nom du sujet (people/wiki_name) est localisé par recherche de chaîne ; les autres identifiants des biographies ne sont pas annotés."
 
 population:
   population_id: null

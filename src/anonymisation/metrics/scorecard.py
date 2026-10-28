@@ -6,6 +6,7 @@ utilisent des références indépendantes et des prédictions de tâche figées.
 
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from math import ceil
@@ -16,7 +17,7 @@ from typing import Any
 from anonymisation.metrics.accounting import RunAccounting, publication_blockers
 from anonymisation.metrics.catalog import DIAGNOSTIC_METRICS, PRIMARY_METRICS
 from anonymisation.metrics.contracts import MetricDirection, MetricStatus, MetricValue
-from anonymisation.metrics.entities import bounds, field_value
+from anonymisation.metrics.entities import bounds, categories, field_value
 from anonymisation.metrics.gating import gate
 from anonymisation.metrics.intervals import apply_intervals, scorecard_intervals
 from anonymisation.metrics.leakage import aggregate_leak_counts, gold_leak_counts
@@ -31,6 +32,51 @@ from anonymisation.metrics.research import (
 )
 from anonymisation.metrics.spia_protection import spia_protection
 from anonymisation.schema.io import sha256_file
+
+#: Catégorie hors périmètre, mappée explicitement par l'adaptateur (action
+#: KEEP, SPEC-01) : ni une mention à détecter, ni une fausse détection.
+OUT_OF_SCOPE_CATEGORY = "IGNORED"
+
+_NON_EXHAUSTIVE_REASON = (
+    "gold non exhaustif (déclaré par evaluation.gold_scope du manifeste) : une "
+    "détection absente du gold n'est pas une fausse détection ; seul le rappel est défini"
+)
+
+
+def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    return a[0] < b[1] and b[0] < a[1]
+
+
+def _detection_scope(
+    gold: Sequence[Any], pred: Sequence[Any]
+) -> tuple[tuple[Any, ...], tuple[Any, ...], int, int]:
+    """Retire le gold hors périmètre et neutralise les prédictions qui le recouvrent.
+
+    Même règle que les mentions « sans besoin de masquage » de TAB : masquer
+    une mention IGNORED n'est ni requis ni pénalisé.
+    """
+    kept_gold, ignored = [], []
+    for span in gold:
+        labels = categories(span)
+        if labels and labels <= {OUT_OF_SCOPE_CATEGORY}:
+            span_bounds = bounds(span)
+            if span_bounds is not None:
+                ignored.append(span_bounds)
+            continue
+        kept_gold.append(span)
+    kept_pred, neutral = [], 0
+    for span in pred:
+        span_bounds = bounds(span)
+        labels = categories(span)
+        only_ignored = bool(labels) and labels <= {OUT_OF_SCOPE_CATEGORY}
+        overlaps_ignored = span_bounds is not None and any(
+            _overlaps(span_bounds, b) for b in ignored
+        )
+        if only_ignored or overlaps_ignored:
+            neutral += 1
+            continue
+        kept_pred.append(span)
+    return tuple(kept_gold), tuple(kept_pred), len(gold) - len(kept_gold), neutral
 
 SCORECARD_SCHEMA_VERSION = "3.1"
 _REQUIRED_REPRODUCIBILITY = (
@@ -193,10 +239,18 @@ def build_scorecard(
     external_diagnostics: Mapping[str, Mapping[str, Any]] | None = None,
     span_gold_available: bool | None = None,
     evaluation: Mapping[str, Any] | None = None,
+    span_gold_exhaustive: bool,
 ) -> dict[str, Any]:
-    """Agrège le noyau et les évaluations vérifiées, sans appel de modèle."""
+    """Agrège le noyau et les évaluations vérifiées, sans appel de modèle.
+
+    ``span_gold_exhaustive`` est obligatoire : sur un gold partiel par
+    construction (attributs ciblés, noms seuls), compter les détections non
+    annotées comme fausses rendrait la précision artefactuelle.
+    """
     validate_reproducibility(reproducibility)
     rows, scored, runtimes = [], [], []
+    out_of_scope_gold = neutral_predictions = 0
+    scoped_gold: dict[str, tuple[Any, ...]] = {}
     for record in predictions:
         if str(record.get("status", "error")).lower() not in ("ok", "partial"):
             continue
@@ -206,9 +260,13 @@ def build_scorecard(
             raise ScorecardError(f"document absent du pivot gold : {doc_id!r}")
         if not isinstance(record.get("anonymized_text"), str):
             raise ScorecardError(f"Prédiction {doc_id!r} sans `anonymized_text` str : run corrompu")
-        rows.append(
-            (tuple(gold_by_doc.get(doc_id, ())), tuple(record.get("annotations") or ()), document)
+        gold, pred, dropped, neutral = _detection_scope(
+            tuple(gold_by_doc.get(doc_id, ())), tuple(record.get("annotations") or ())
         )
+        out_of_scope_gold += dropped
+        neutral_predictions += neutral
+        scoped_gold[doc_id] = gold
+        rows.append((gold, pred, document))
         scored.append(record)
         try:
             runtimes.append(float(record.get("runtime_ms", 0.0)))
@@ -233,7 +291,7 @@ def build_scorecard(
     overall = _summary(totals[SPAN_SCHEMA])
     masks = [
         document_coverage(
-            gold_by_doc.get(str(record["doc_id"]), ()),
+            scoped_gold[str(record["doc_id"])],
             decisions_of(record),
             str(field_value(documents_by_doc[str(record["doc_id"])], "text", "")),
         )
@@ -241,7 +299,7 @@ def build_scorecard(
     ]
     mask_total = sum(masks, MaskCoverage())
     leaks = [
-        gold_leak_counts(record["anonymized_text"], gold_by_doc.get(str(record["doc_id"]), ()))
+        gold_leak_counts(record["anonymized_text"], scoped_gold[str(record["doc_id"])])
         for record in scored
     ]
     leak_total = aggregate_leak_counts(leaks)
@@ -315,7 +373,16 @@ def build_scorecard(
             minimize=True,
         ),
         "counts": (
-            {**overall, "unanchored_gold": unanchored, "span_gold_available": True}
+            {
+                **(overall if span_gold_exhaustive else {
+                    k: v for k, v in overall.items() if k not in ("precision", "f1")
+                }),
+                "unanchored_gold": unanchored,
+                "span_gold_available": True,
+                "gold_exhaustive": span_gold_exhaustive,
+                "out_of_scope_gold": out_of_scope_gold,
+                "neutral_predictions": neutral_predictions,
+            }
             if span_gold_available
             else {
                 "span_gold_available": False,
@@ -324,6 +391,9 @@ def build_scorecard(
             }
         ),
     }
+    if span_gold_available and not span_gold_exhaustive:
+        for name in ("span_precision", "span_f1", "span_strict_f1"):
+            diagnostic[name] = metric(name, None, {"reason": _NON_EXHAUSTIVE_REASON})
     if not span_gold_available:
         for name in ("span_precision", "span_recall", "span_f1", "span_strict_f1"):
             diagnostic[name]["details"]["reason"] = (
@@ -441,6 +511,13 @@ def build_scorecard(
     if run_status == MetricStatus.OFFICIAL.value and any(_has_proxy_risk(r) for r in predictions):
         run_status = MetricStatus.PROXY.value
         status_reason = "statut OFFICIAL demandé, dégradé : risque PROXY dans les prédictions"
+    def recall_only(groups: dict[str, Any]) -> dict[str, Any]:
+        # Ventilations soumises à la même règle que le bloc diagnostique.
+        if span_gold_exhaustive:
+            return groups
+        return {name: {k: v for k, v in values.items() if k not in ("precision", "f1")}
+                for name, values in groups.items()}
+
     card = {
         "run_id": run_id,
         "schema_version": SCORECARD_SCHEMA_VERSION,
@@ -465,17 +542,26 @@ def build_scorecard(
         "publishable": not blockers,
         "publication_blockers": blockers,
         "error_rate": accounting.error_rate,
-        "accounting": accounting.to_dict(),
+        "accounting": {
+            **accounting.to_dict(),
+            # Deux systèmes ne se comparent que sur les mêmes documents scorés :
+            # des erreurs différentes changent silencieusement le dénominateur.
+            "scored_doc_ids_sha256": hashlib.sha256(
+                "\n".join(sorted(str(r["doc_id"]) for r in scored)).encode("utf-8")
+            ).hexdigest(),
+        },
         "primary": primary,
         "diagnostic": diagnostic,
         "not_applicable": not_applicable,
-        "by_qi_category": by_category,
-        "by_language": grouped(lambda d: field_value(d, "language", "unknown")),
-        "by_domain": grouped(lambda d: field_value(d, "domain", "unknown")),
-        "by_expression": _group_metric(_expression_rows(rows)) if span_gold_available else {},
-        "by_difficulty": grouped(
-            lambda d: (field_value(d, "meta", {}) or {}).get("difficulty", "unknown")
+        "by_qi_category": recall_only(by_category),
+        "by_language": recall_only(grouped(lambda d: field_value(d, "language", "unknown"))),
+        "by_domain": recall_only(grouped(lambda d: field_value(d, "domain", "unknown"))),
+        "by_expression": (
+            recall_only(_group_metric(_expression_rows(rows))) if span_gold_available else {}
         ),
+        "by_difficulty": recall_only(grouped(
+            lambda d: (field_value(d, "meta", {}) or {}).get("difficulty", "unknown")
+        )),
         "efficiency": {
             "documents_scored": len(scored),
             "latency_p50_ms": median(runtimes) if runtimes else None,

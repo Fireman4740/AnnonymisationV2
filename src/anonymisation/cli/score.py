@@ -75,6 +75,24 @@ def _read_predictions(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _gold_exhaustive(dataset: str) -> bool:
+    """Exhaustivité du gold de spans déclarée par le manifeste — jamais supposée."""
+    from anonymisation.datasets.manifest import GoldScope
+
+    config = DATASETS_CONFIG / f"{dataset}.yaml"
+    raw = yaml.safe_load(config.read_text(encoding="utf-8"))
+    scope = ((raw or {}).get("evaluation") or {}).get("gold_scope")
+    if scope is None:
+        raise ScoreError(
+            f"{config} : `evaluation.gold_scope` absent. Déclarer `exhaustive` "
+            "(le gold annote-t-il tous les identifiants du texte ?) et `reason`."
+        )
+    try:
+        return GoldScope.model_validate(scope).exhaustive
+    except ValueError as exc:
+        raise ScoreError(f"{config} : `evaluation.gold_scope` invalide : {exc}") from exc
+
+
 def _protocol_info(dataset: str, requested: str) -> tuple[str, str, MetricStatus]:
     """Résout version/statut depuis le manifeste, sans charger le pipeline.
 
@@ -414,6 +432,7 @@ def cmd_score(run: str | Path, protocol: str) -> int:
             system=system_block,
             evaluation=evaluation,
             requested_status=default_status,
+            span_gold_exhaustive=_gold_exhaustive(dataset),
             attack=_load_frozen(run_dir, inputs["run"]["predictions.jsonl"],
                                 ATTACK_LOCK_NAME, ATTACKS_NAME,
                                 expected_doc_ids=expected_doc_ids,

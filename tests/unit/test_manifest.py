@@ -65,6 +65,7 @@ def _manifest(**overrides: Any) -> dict[str, Any]:
             "default_metric_status": "OFFICIAL",
             "granularities": ["document"],
             "report_by": ["language"],
+                "gold_scope": {"exhaustive": True, "reason": "fixture de test"},
         },
         "population": {"population_id": None, "k_computable": False},
     }

@@ -205,6 +205,27 @@ class LabelMapEntry(BaseModel):
         return self
 
 
+class GoldScope(BaseModel):
+    """Exhaustivité du gold de spans, déclarée par corpus et justifiée.
+
+    ``exhaustive: false`` : le gold n'annote qu'une partie des identifiants du
+    texte (attributs ciblés d'un scénario, noms seuls…). La précision n'y est
+    pas définie ; le scoring ne publie que le rappel. Aucune valeur par défaut :
+    un manifeste sans déclaration échoue au chargement.
+    """
+
+    model_config = _BASE
+
+    exhaustive: bool
+    reason: str
+
+    @model_validator(mode="after")
+    def _reason_required(self) -> GoldScope:
+        if not self.reason.strip():
+            raise ValueError("evaluation.gold_scope.reason : justification obligatoire")
+        return self
+
+
 class EvaluationSpec(BaseModel):
     """Protocole d'évaluation du dataset.
 
@@ -224,6 +245,7 @@ class EvaluationSpec(BaseModel):
     default_metric_status: str
     granularities: list[str]
     report_by: list[str]
+    gold_scope: GoldScope
     sanity_checks: list[dict[str, str]] = []
     reweighting: str | None = None
 

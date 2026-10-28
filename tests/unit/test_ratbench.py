@@ -93,6 +93,9 @@ evaluation:
   default_metric_status: DIAGNOSTIC
   granularities: [document]
   report_by: []
+  gold_scope:
+    exhaustive: true
+    reason: "fixture de test"
 population:
   population_id: "ratbench-us"
   k_computable: true

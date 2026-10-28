@@ -198,6 +198,9 @@ evaluation:
   # Uniquement au niveau document : pas de niveaux plus fins dans cette release.
   granularities: ["document"]
   report_by: ["language"]
+  gold_scope:
+    exhaustive: false
+    reason: "20 classes PII annotées (ai4privacy) ; organisations, fonctions et autres QI du texte ne sont pas annotés."
   default_metric_status: DIAGNOSTIC
 
 population:

@@ -72,6 +72,7 @@ def _write_manifest(repo: Path, key: str = "tst", spdx: str = "MIT") -> None:
         '  default_metric_status: "OFFICIAL"\n'
         '  granularities: ["document"]\n'
         '  report_by: ["language"]\n'
+        '  gold_scope: {exhaustive: true, reason: \"fixture de test\"}\n'
         "population:\n"
         f'  population_id: "{key}"\n'
         "  k_computable: false\n"

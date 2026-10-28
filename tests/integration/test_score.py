@@ -75,7 +75,10 @@ def _write_manifest(config_dir: Path) -> None:
         "evaluation:\n"
         "  protocol: mini-v1\n"
         "  protocol_version: '1'\n"
-        "  default_metric_status: DIAGNOSTIC\n",
+        "  default_metric_status: DIAGNOSTIC\n"
+        "  gold_scope:\n"
+        "    exhaustive: true\n"
+        "    reason: fixture de test\n",
         encoding="utf-8",
     )
 

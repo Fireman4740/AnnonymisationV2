@@ -75,7 +75,10 @@ def write_micro_manifest(config_dir: Path) -> Path:
         "evaluation:\n"
         "  protocol: micro-v1\n"
         "  protocol_version: '1'\n"
-        "  default_metric_status: DIAGNOSTIC\n",
+        "  default_metric_status: DIAGNOSTIC\n"
+        "  gold_scope:\n"
+        "    exhaustive: true\n"
+        "    reason: fixture de test\n",
         encoding="utf-8",
     )
     return config_dir

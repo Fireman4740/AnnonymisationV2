@@ -91,6 +91,9 @@ evaluation:
   default_metric_status: "DIAGNOSTIC"
   granularities: ["document"]
   report_by: ["difficulty", "scenario"]
+  gold_scope:
+    exhaustive: false
+    reason: "RAT-Bench n'annote que les attributs ciblés du scénario ; plus de la moitié sont inférés sans offsets et les autres mentions ne sont pas annotées."
 
 population:
   population_id: "ratbench-us-pums2010"

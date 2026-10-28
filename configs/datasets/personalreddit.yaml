@@ -73,6 +73,9 @@ evaluation:
   default_metric_status: "DIAGNOSTIC"
   granularities: ["document", "author"]
   report_by: ["feature", "hardness", "source_split"]
+  gold_scope:
+    exhaustive: false
+    reason: "Attributs personnels inférés au niveau auteur, sans spans exhaustifs."
   sanity_checks:
     - id: "G6-S1"
       description: "la source locale est synthétique et ne déclenche pas la garde E2"

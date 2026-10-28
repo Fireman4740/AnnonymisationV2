@@ -67,6 +67,9 @@ evaluation:
   default_metric_status: DIAGNOSTIC
   granularities: [document]
   report_by: []
+  gold_scope:
+    exhaustive: true
+    reason: "fixture de test"
 population:
   population_id: null
   k_computable: false
@@ -155,6 +158,9 @@ evaluation:
   default_metric_status: DIAGNOSTIC
   granularities: [document]
   report_by: []
+  gold_scope:
+    exhaustive: true
+    reason: "fixture de test"
 population:
   population_id: null
   k_computable: false

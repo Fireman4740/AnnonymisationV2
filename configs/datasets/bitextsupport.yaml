@@ -57,6 +57,9 @@ evaluation:
   default_metric_status: "DIAGNOSTIC"
   granularities: ["document"]
   report_by: ["category"]
+  gold_scope:
+    exhaustive: false
+    reason: "Labels de tâche aval seulement : aucun gold de spans."
 
 population:
   population_id: null

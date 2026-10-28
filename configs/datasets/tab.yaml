@@ -71,6 +71,9 @@ evaluation:
   default_metric_status: "PROXY"   # OFFICIAL quand les métriques du papier sont portées
   granularities: ["document", "entity"]
   report_by: ["expression_mode"]
+  gold_scope:
+    exhaustive: true
+    reason: "TAB (Pilán et al., 2022) annote toutes les mentions à masquer ; mentions sans besoin de masquage portées par l'évaluateur officiel."
 
 population:
   population_id: null

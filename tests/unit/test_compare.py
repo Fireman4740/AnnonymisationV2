@@ -193,6 +193,15 @@ def test_runs_scored_on_different_documents_are_not_comparable():
         assert_comparable_across_systems([first, second])
 
 
+def test_runs_with_different_scored_documents_are_not_comparable():
+    """Même pivot, erreurs différentes : le dénominateur diffère, classement refusé."""
+    first, second = _dummy_scorecard("a"), _dummy_scorecard("b")
+    first.setdefault("accounting", {})["scored_doc_ids_sha256"] = "1" * 64
+    second.setdefault("accounting", {})["scored_doc_ids_sha256"] = "2" * 64
+    with pytest.raises(MetricComparisonError, match="documents scorés"):
+        assert_comparable_across_systems([first, second])
+
+
 def test_comparison_table_shows_reidentification_rate():
     cards = [_with_reid(_dummy_scorecard(s), "attacker-a") for s in ("a", "b")]
     report = render_comparison_markdown(cards)

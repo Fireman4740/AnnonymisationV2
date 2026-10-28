@@ -63,6 +63,9 @@ evaluation:
   default_metric_status: "OFFICIAL"
   granularities: ["document", "subject"]
   report_by: ["source_corpus", "subject"]
+  gold_scope:
+    exhaustive: false
+    reason: "SPIA annote des attributs inférables par sujet ; 69 % sans offsets et sans annotation des autres mentions (dates notamment)."
 
 population:
   population_id: null
