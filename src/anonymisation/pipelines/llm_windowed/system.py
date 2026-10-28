@@ -370,20 +370,27 @@ class LlmWindowedSystem(SystemBase):
         toutes les tentatives nomme la fenêtre fautive.
         """
         runtime_ms = 0.0
-        for attempt in range(MALFORMED_RESPONSE_ATTEMPTS):
-            completion = self._complete_with_retries(
-                prompt, validate=parse_llm_entities,
-            )
+        last_error: LlmMalformedResponseError | None = None
+        for _ in range(MALFORMED_RESPONSE_ATTEMPTS):
+            try:
+                completion = self._complete_with_retries(
+                    prompt, validate=parse_llm_entities,
+                )
+            except LlmMalformedResponseError as exc:
+                # `validate` lève avant que le client ne rende la main : sans ce
+                # catch, le retry ne verrait jamais les JSON invalides réels.
+                last_error = exc
+                continue
             runtime_ms += completion.latency_ms
             try:
                 return parse_llm_entities(completion.content), runtime_ms
             except LlmMalformedResponseError as exc:
-                if attempt + 1 == MALFORMED_RESPONSE_ATTEMPTS:
-                    raise LlmMalformedResponseError(
-                        f"fenêtre {index}/{total} : réponse JSON malformée après "
-                        f"{MALFORMED_RESPONSE_ATTEMPTS} tentatives : {exc}"
-                    ) from exc
-        raise AssertionError("inatteignable")
+                last_error = exc
+        assert last_error is not None
+        raise LlmMalformedResponseError(
+            f"fenêtre {index}/{total} : réponse JSON malformée après "
+            f"{MALFORMED_RESPONSE_ATTEMPTS} tentatives : {last_error}"
+        ) from last_error
 
     def _build_candidate(
         self, doc: Document, window: Window, entity: ParsedEntity, occurrence_index: int

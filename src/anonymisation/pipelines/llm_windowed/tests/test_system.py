@@ -14,6 +14,7 @@ import pytest
 
 from anonymisation.capabilities import CAP_DECISIONS, CAP_SPANS
 from anonymisation.llm.client import LlmCompletion, LlmEmptyResponseError
+from anonymisation.pipelines.llm_windowed.prompts import LlmMalformedResponseError
 from anonymisation.pipelines.llm_windowed.system import (
     MALFORMED_RESPONSE_ATTEMPTS,
     LlmWindowedSystem,
@@ -255,6 +256,60 @@ def test_malformed_response_is_retried_then_succeeds(monkeypatch: pytest.MonkeyP
     assert len(calls) == 2
     assert all(call["validate"] is not None for call in calls)
     assert "Jean Dupont" not in result.anonymized_text
+
+
+def test_malformed_response_raised_by_validation_is_retried(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Le vrai client lève depuis `validate`, avant de rendre la main.
+
+    Ce chemin diffère du test précédent, où la réponse malformée était rendue
+    puis parsée par le système : sans catch autour de `_complete_with_retries`,
+    le retry ne s'appliquait jamais aux réponses réelles.
+    """
+    system = _system()
+    calls: list[dict[str, object]] = []
+
+    def complete(prompt: str, **kwargs: object) -> LlmCompletion:
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise LlmMalformedResponseError("JSON invalide : Unterminated string")
+        return _stub_completion(
+            [{"span": "Jean Dupont", "category": "DIR_NAME", "action": "SUPPRESS", "replacement": ""}]
+        )
+
+    monkeypatch.setattr(system._client, "complete", complete)
+    doc = _doc("Jean Dupont est ici.")
+    result = system.run(doc)
+
+    assert result.status == "ok", result.errors
+    assert len(calls) == 2
+    assert all(call["validate"] is not None for call in calls)
+    assert "Jean Dupont" not in result.anonymized_text
+
+
+def test_malformed_response_raised_by_validation_fails_after_retries(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    system = _system()
+    calls = 0
+
+    def complete(prompt: str, **kwargs: object) -> LlmCompletion:
+        nonlocal calls
+        calls += 1
+        raise LlmMalformedResponseError("JSON invalide : Unterminated string")
+
+    monkeypatch.setattr(system._client, "complete", complete)
+    doc = _doc("Jean Dupont est ici.")
+    result = system.run(doc)
+
+    assert calls == MALFORMED_RESPONSE_ATTEMPTS
+    assert result.status == "error"
+    assert result.anonymized_text == doc.text
+    assert any(
+        f"après {MALFORMED_RESPONSE_ATTEMPTS} tentatives" in error
+        for error in result.errors
+    )
 
 
 def test_malformed_response_is_an_error_not_an_empty_prediction(
