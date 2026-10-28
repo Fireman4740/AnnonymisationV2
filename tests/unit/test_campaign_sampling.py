@@ -185,9 +185,9 @@ def _openrouter_cfg():
     return cfg
 
 
-def test_campaign_uses_only_requested_systems_and_caps_evaluation_at_500():
+def test_campaign_uses_only_requested_systems_and_caps_evaluation_at_200():
     cfg = _campaign_cfg()
-    assert cfg["documents_per_dataset"] == 500 and cfg["cap_documents"] is True
+    assert cfg["documents_per_dataset"] == 200 and cfg["cap_documents"] is True
     assert {v["name"] for v in campaign.system_variants(cfg, remote_allowed=True)} == {
         "oracle-mask", "regex-only", "llm-windowed"}
 
