@@ -104,7 +104,7 @@
   "cap_documents": true,
   "baseline": {
     "id": "banc-fiable-200-v2",
-    "phase": "freeze",
+    "phase": "evaluate",
     "manifest": "configs/evaluation/frozen/banc-fiable-200-v2.lock.json"
   },
   "baseline_notes": [
