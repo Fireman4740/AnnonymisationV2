@@ -6,6 +6,7 @@ Aucun test ici n'ouvre de socket : l'appel réseau effectif
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -99,6 +100,41 @@ def test_complete_use_cache_false_bypasses_cache(
     client.complete("bonjour", use_cache=False)
     client.complete("bonjour", use_cache=False)
     assert calls["n"] == 2
+
+
+def test_validate_keeps_a_malformed_response_out_of_the_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    client = LlmClient(_backend(), cache_dir=tmp_path / "cache", cache_enabled=True)
+    responses = iter([("pas du json", "stop"), ('{"entities": []}', "stop")])
+    monkeypatch.setattr(
+        client, "_call_openai_compatible", lambda prompt, *, temperature: next(responses)
+    )
+
+    with pytest.raises(ValueError):
+        client.complete("bonjour", validate=json.loads)
+    assert not list((tmp_path / "cache").rglob("*.json"))
+
+    result = client.complete("bonjour", validate=json.loads)
+    assert result.content == '{"entities": []}'
+    assert result.cached is False
+
+
+def test_validate_replaces_an_invalid_cached_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    client = LlmClient(_backend(), cache_dir=tmp_path / "cache", cache_enabled=True)
+    responses = iter([("pas du json", "stop"), ('{"entities": []}', "stop")])
+    monkeypatch.setattr(
+        client, "_call_openai_compatible", lambda prompt, *, temperature: next(responses)
+    )
+
+    assert client.complete("bonjour").content == "pas du json"
+    assert client.complete("bonjour").cached is True
+
+    result = client.complete("bonjour", validate=json.loads)
+    assert result.content == '{"entities": []}'
+    assert result.cached is False
 
 
 def test_empty_response_raises_never_treated_as_no_entities(

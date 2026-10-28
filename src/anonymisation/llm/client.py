@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -305,12 +306,18 @@ class LlmClient:
         use_cache: bool = True,
         system: str | None = None,
         max_tokens: int | None = None,
+        validate: Callable[[str], object] | None = None,
     ) -> LlmCompletion:
         """Complète ``prompt``. Lève plutôt que de renvoyer un résultat ambigu.
 
         Une réponse vide ou tronquée (``finish_reason == 'length'``) lève
         :class:`LlmEmptyResponseError` — jamais interprétée comme « le
         document ne contient aucune entité » (contrainte C3).
+
+        ``validate`` (optionnel) contrôle le contenu avant lecture et écriture
+        du cache ; il doit lever ``ValueError`` pour un contenu invalide. Une
+        entrée de cache invalide est supprimée puis remplacée par un appel
+        réel : un JSON malformé ne devient jamais une réponse cachée permanente.
         """
         backend = self._backend
         if max_tokens is None:
@@ -338,14 +345,25 @@ class LlmClient:
         if use_cache and self._cache_enabled:
             cached = self._read_cache(key)
             if cached is not None:
-                return LlmCompletion(
-                    content=cached["content"],
-                    backend=backend.name,
-                    model=str(backend.model),
-                    cached=True,
-                    finish_reason=cached.get("finish_reason"),
-                    latency_ms=0.0,
-                )
+                valid_cached = True
+                if validate is not None:
+                    try:
+                        validate(cached["content"])
+                    except ValueError:
+                        # Entrée écrite avant l'ajout du validateur, ou
+                        # devenue invalide : on la retire et on rappelle le
+                        # backend au lieu de la resservir.
+                        valid_cached = False
+                        self._cache_path(key).unlink(missing_ok=True)
+                if valid_cached:
+                    return LlmCompletion(
+                        content=cached["content"],
+                        backend=backend.name,
+                        model=str(backend.model),
+                        cached=True,
+                        finish_reason=cached.get("finish_reason"),
+                        latency_ms=0.0,
+                    )
 
         started = time.perf_counter()
         if backend.kind == "openai_compatible":
@@ -374,6 +392,8 @@ class LlmClient:
                 "Augmenter max_tokens ou réduire le document plutôt que d'exploiter "
                 "une sortie incomplète."
             )
+        if validate is not None:
+            validate(content)
 
         if use_cache and self._cache_enabled:
             self._write_cache(

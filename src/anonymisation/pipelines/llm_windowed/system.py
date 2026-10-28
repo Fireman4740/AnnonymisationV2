@@ -23,7 +23,9 @@ Ce que le code garde pour lui, comme ``llm-full`` :
 - **l'application au texte** — ``apply_decisions``, offsets décroissants.
 
 Une réponse vide, tronquée ou non-JSON reste une **erreur nommée** (C3), jamais
-« aucune entité trouvée ». Une seule fenêtre en échec met le document entier en
+« aucune entité trouvée ». Un JSON malformé est retenté (aléa de génération
+observé sur le banc) ; après épuisement des tentatives, la fenêtre échoue et le
+document entier aussi. Une seule fenêtre en échec met le document entier en
 erreur : poursuivre laisserait une portion du texte non anonymisée.
 
 Limites connues de cette version, documentées plutôt que masquées :
@@ -55,6 +57,7 @@ from anonymisation.llm.config import load_backends_config
 from anonymisation.pipeline.orchestrator import _merge_overlapping
 from anonymisation.pipeline.traces import PipelineResult
 from anonymisation.pipelines.llm_windowed.prompts import (
+    LlmMalformedResponseError,
     ParsedEntity,
     build_window_prompt,
     parse_llm_entities,
@@ -83,6 +86,14 @@ from anonymisation.transform.decisions import (
 #: Attentes avant chaque nouvelle tentative d'un backend injoignable ; mêmes
 #: valeurs que ``llm-full``, l'attaquant et le juge.
 RETRY_DELAYS_S: tuple[int, ...] = (5, 15, 30, 60, 120)
+
+#: Tentatives totales (initiale incluse) pour une fenêtre dont le JSON est
+#: malformé. Observé sur le banc max-500 : ~3 % des fenêtres RAT-Bench et
+#: ~5,5 % des documents TAB, avec une génération qui réussit au retry. Ce n'est
+#: pas une troncature (``finish_reason='stop'``) : le budget de tokens n'est
+#: pas en cause. Trois tentatives laissent la probabilité d'échec résiduelle
+#: négligeable sans masquer un problème systématique de prompt.
+MALFORMED_RESPONSE_ATTEMPTS: int = 3
 
 #: Repli par type d'identifiant quand l'action proposée par le LLM est
 #: illégale (SPEC-01 §8) ou que son remplacement est vide.
@@ -321,9 +332,18 @@ class LlmWindowedSystem(SystemBase):
         )
 
     def _complete_with_retries(
-        self, prompt: str, sleep: Callable[[float], None] = time.sleep,
+        self,
+        prompt: str,
+        *,
+        validate: Callable[[str], object] | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> LlmCompletion:
-        """Ré-essaie un backend injoignable ; ne ré-essaie jamais un vide (C3)."""
+        """Ré-essaie un backend injoignable ; ne ré-essaie jamais un vide (C3).
+
+        ``validate`` est transmis au client : une réponse qui ne respecte pas
+        le contrat JSON n'entre jamais dans le cache, et une entrée de cache
+        devenue invalide est supprimée puis remplacée par un appel réel.
+        """
         for attempt, delay in enumerate((0, *RETRY_DELAYS_S)):
             if delay:
                 sleep(delay)
@@ -332,10 +352,37 @@ class LlmWindowedSystem(SystemBase):
                     prompt,
                     temperature=self._temperature,
                     max_tokens=self._max_output_tokens,
+                    validate=validate,
                 )
             except LlmBackendUnavailableError as exc:
                 if not exc.retryable or attempt == len(RETRY_DELAYS_S):
                     raise
+        raise AssertionError("inatteignable")
+
+    def _complete_and_parse(
+        self, prompt: str, *, index: int, total: int
+    ) -> tuple[tuple[ParsedEntity, ...], float]:
+        """Appelle le LLM et parse la fenêtre, avec retry sur JSON malformé.
+
+        Un JSON malformé est un aléa de génération, pas un budget de tokens
+        épuisé : le retry est immédiat et ne concerne que ce cas. Un vide ou
+        une troncature reste une erreur (C3), et un échec persistant après
+        toutes les tentatives nomme la fenêtre fautive.
+        """
+        runtime_ms = 0.0
+        for attempt in range(MALFORMED_RESPONSE_ATTEMPTS):
+            completion = self._complete_with_retries(
+                prompt, validate=parse_llm_entities,
+            )
+            runtime_ms += completion.latency_ms
+            try:
+                return parse_llm_entities(completion.content), runtime_ms
+            except LlmMalformedResponseError as exc:
+                if attempt + 1 == MALFORMED_RESPONSE_ATTEMPTS:
+                    raise LlmMalformedResponseError(
+                        f"fenêtre {index}/{total} : réponse JSON malformée après "
+                        f"{MALFORMED_RESPONSE_ATTEMPTS} tentatives : {exc}"
+                    ) from exc
         raise AssertionError("inatteignable")
 
     def _build_candidate(
@@ -404,9 +451,10 @@ class LlmWindowedSystem(SystemBase):
         for index, window in enumerate(windows, start=1):
             chunk = doc.text[window.prompt_start : window.prompt_end]
             prompt = build_window_prompt(chunk, index=index, total=len(windows))
-            completion = self._complete_with_retries(prompt)
-            runtime_ms += completion.latency_ms
-            parsed = parse_llm_entities(completion.content)
+            parsed, window_runtime_ms = self._complete_and_parse(
+                prompt, index=index, total=len(windows)
+            )
+            runtime_ms += window_runtime_ms
             if len(parsed) > self._max_entities:
                 warnings.append(
                     f"fenêtre {index}/{len(windows)} : limite max_entities="

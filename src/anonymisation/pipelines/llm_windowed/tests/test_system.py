@@ -15,6 +15,7 @@ import pytest
 from anonymisation.capabilities import CAP_DECISIONS, CAP_SPANS
 from anonymisation.llm.client import LlmCompletion, LlmEmptyResponseError
 from anonymisation.pipelines.llm_windowed.system import (
+    MALFORMED_RESPONSE_ATTEMPTS,
     LlmWindowedSystem,
     split_windows,
 )
@@ -227,12 +228,44 @@ def test_a_failing_window_puts_the_whole_document_in_error(monkeypatch: pytest.M
     assert any("réponse vide" in error for error in result.errors)
 
 
+def test_malformed_response_is_retried_then_succeeds(monkeypatch: pytest.MonkeyPatch):
+    system = _system()
+    calls: list[dict[str, object]] = []
+
+    def complete(prompt: str, **kwargs: object) -> LlmCompletion:
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return LlmCompletion(
+                content="pas du json",
+                backend="qwen_local",
+                model="stub",
+                cached=False,
+                finish_reason="stop",
+                latency_ms=1.0,
+            )
+        return _stub_completion(
+            [{"span": "Jean Dupont", "category": "DIR_NAME", "action": "SUPPRESS", "replacement": ""}]
+        )
+
+    monkeypatch.setattr(system._client, "complete", complete)
+    doc = _doc("Jean Dupont est ici.")
+    result = system.run(doc)
+
+    assert result.status == "ok", result.errors
+    assert len(calls) == 2
+    assert all(call["validate"] is not None for call in calls)
+    assert "Jean Dupont" not in result.anonymized_text
+
+
 def test_malformed_response_is_an_error_not_an_empty_prediction(
     monkeypatch: pytest.MonkeyPatch,
 ):
     system = _system()
+    calls = 0
 
     def complete(prompt: str, **kwargs: object) -> LlmCompletion:
+        nonlocal calls
+        calls += 1
         return LlmCompletion(
             content="pas du json",
             backend="qwen_local",
@@ -246,9 +279,14 @@ def test_malformed_response_is_an_error_not_an_empty_prediction(
     doc = _doc("Jean Dupont est ici.")
     result = system.run(doc)
 
+    assert calls == MALFORMED_RESPONSE_ATTEMPTS
     assert result.status == "error"
     assert result.anonymized_text == doc.text
     assert any("JSON invalide" in error for error in result.errors)
+    assert any(
+        f"après {MALFORMED_RESPONSE_ATTEMPTS} tentatives" in error
+        for error in result.errors
+    )
 
 
 def test_unknown_category_and_missing_span_are_warnings(monkeypatch: pytest.MonkeyPatch):
