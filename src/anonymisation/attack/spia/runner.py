@@ -67,8 +67,12 @@ class SpiaAttackError(ValueError):
 class _Transport:
     """``call_api_with_param`` du code original → client du projet, appels journalisés."""
 
-    def __init__(self, client: LlmClient, sleep: Callable[[float], None] = time.sleep) -> None:
+    def __init__(self, client: LlmClient, sleep: Callable[[float], None] = time.sleep,
+                 *, max_output_tokens: int | None = None) -> None:
         self._client = client
+        # Le code original n'envoie aucun max_tokens : sans plafond explicite,
+        # celui du backend s'applique et tronque les profils multi-sujets longs.
+        self._max_output_tokens = max_output_tokens
         self._sleep = sleep
         self._local = threading.local()
 
@@ -91,7 +95,8 @@ class _Transport:
                 self._sleep(delay)
             try:
                 completion = self._client.complete(
-                    prompt, temperature=temperature, max_tokens=max_tokens,
+                    prompt, temperature=temperature,
+                    max_tokens=max_tokens if max_tokens is not None else self._max_output_tokens,
                     use_cache=not getattr(self._local, "fresh", False),
                 )
                 record.update(ok=True, cached=completion.cached)
@@ -214,7 +219,10 @@ def attack_document(
 
 def run_spia_attack(
     run_dir: Path, *, backend: str, workers: int | None = None,
+    max_output_tokens: int | None = None,
 ) -> dict[str, Any]:
+    if max_output_tokens is not None and max_output_tokens < 1:
+        raise SpiaAttackError("max_output_tokens doit être un entier positif")
     run_dir = Path(run_dir)
     lock = json.loads((run_dir / "manifest.lock.json").read_text(encoding="utf-8"))
     run = lock.get("run") or {}
@@ -232,7 +240,7 @@ def run_spia_attack(
     if any(not isinstance(p.get("anonymized_text"), str) for p in targets):
         raise SpiaAttackError("texte anonymisé absent : relancer predict")
     client = LlmClient.for_backend(backend)
-    transport = _Transport(client)
+    transport = _Transport(client, max_output_tokens=max_output_tokens)
     with original_spia() as original:
         original.client.install_transport(transport)
         try:
@@ -257,10 +265,13 @@ def run_spia_attack(
         "protocol": PROTOCOL,
         "protocol_version": PROTOCOL_VERSION,
         "official": {"repo": OFFICIAL_REPO, "commit": OFFICIAL_COMMIT,
-                     "vendored_tree_sha256": tree_sha256()},
+                     "vendored_tree_sha256": tree_sha256(),
+                     "shims": {"parsing.py": sha256_file(Path(__file__).with_name("parsing.py")),
+                               "deviation": "JSON valide parsé avant clean_json_response"}},
         "attacker": {"backend": client.backend.name, "model": client.backend.model,
                      "extra_body": client.backend.extra_body,
                      "default_max_output_tokens": client.backend.max_output_tokens,
+                     "max_output_tokens": max_output_tokens,
                      "temperature": 0.1, "temperature_source": "défaut de call_api_with_param officiel"},
         "config": {**CHECK_CONFIG, "min_certainty": MIN_CERTAINTY, "allow_fallback": False,
                    "deviation": "decider rule_model (arbitrage humain officiel non automatisable)"},

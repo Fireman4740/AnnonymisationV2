@@ -656,6 +656,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Backend LLM de configs/llm/backends.yaml (défaut : rôle attacker_<attaquant>).",
     )
     attack_p.add_argument("--workers", type=int, default=None, help="Appels LLM parallèles.")
+    attack_p.add_argument(
+        "--max-output-tokens", type=int, default=None,
+        help="Plafond de sortie de l'attaquant SPIA (l'original n'en envoie aucun) ; "
+             "absent : plafond du backend.",
+    )
 
     compare_p = sub.add_parser(
         "compare",
@@ -775,7 +780,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "attack":
         from anonymisation.cli.attack import cmd_attack
 
-        return cmd_attack(args.run, args.attacker, args.backend, args.workers)
+        return cmd_attack(args.run, args.attacker, args.backend, args.workers,
+                          args.max_output_tokens)
     if args.command == "compare":
         from anonymisation.cli.compare import CompareError, cmd_compare
 

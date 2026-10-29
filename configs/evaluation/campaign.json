@@ -116,5 +116,6 @@
     "Attaques originales actives sur tous les systèmes : RAT-Bench (R_succ, parité avec le code officiel) et SPIA (CPR/IPR, calculate_ipr_cpr original), attaquant Qwen3.8-27B local — différent des attaquants des articles, résultats non comparables aux chiffres publiés.",
     "Cohorte banc-fiable-200-v2 (demande utilisateur du 2026-10-28) : 200 documents maximum par dataset, même graine et même méthode de tirage que la cohorte max-500 ; train auxiliaire DB-bio (1900 documents disjoints du test) pour occupation_l3."
   ],
-  "attack_workers": 16
+  "attack_workers": 16,
+  "spia_attack_max_output_tokens": 32768
 }

@@ -598,7 +598,8 @@ def run_campaign() -> int:
                     if key == "spia" and run_attacks and remote_allowed and variant["spia_attack"]:
                         stages["attack_spia"] = call(["attack", "--run", str(directory), "--attacker",
                             "spia", "--backend", cfg["attacker_backend"],
-                            "--workers", str(cfg["attack_workers"])])
+                            "--workers", str(cfg["attack_workers"]),
+                            "--max-output-tokens", str(cfg["spia_attack_max_output_tokens"])])
                     evaluate_args = conditional_evaluation_args(cfg, key, directory)
                     if evaluate_args is not None:
                         stages["evaluate"] = command(evaluate_args)

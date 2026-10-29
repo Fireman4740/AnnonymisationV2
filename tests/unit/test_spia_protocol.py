@@ -193,3 +193,58 @@ def test_utility_judge_prompt_is_the_original_spia_prompt():
 
     namespace["compute_llm_utility"](Evaluator(), "Original {x} text.", "Adapted text.")
     assert sent == [judge_prompt("Original {x} text.", "Adapted text.")]
+
+
+def test_valid_json_with_escaped_quotes_is_not_broken_by_original_cleaner():
+    """Cas réel du banc 200 (PANORAMA-113E1).
+
+    L'original retire l'échappement de `\\"I\\"`, juge le JSON invalide, demande
+    une réparation au LLM, puis échoue sur le JSON réindenté renvoyé.
+    """
+    spnc = json.dumps([{"id": 0, "description": 'The speaker, identified by "I" and "my"',
+                        "PIIs": [{"tag": "OCCUPATION", "keyword": "nurse", "certainty": 3,
+                                  "hardness": 2}]}])
+    fixed = "```json\n" + json.dumps(json.loads(spnc), indent=2) + "\n```"
+
+    class FixingClient(_Client):
+        def complete(self, prompt, **kwargs):
+            if prompt.startswith("The following response has a JSON formatting error"):
+                return LlmCompletion(fixed, "fake", "fake", False, "stop", 0.0)
+            return super().complete(prompt, **kwargs)
+
+    transport = _Transport(FixingClient(), sleep=lambda _: None)
+    with original_spia() as original:
+        from src.llm.parser.subject_profiling_parser import parse_subject_profiling as raw_parse
+
+        original.client.install_transport(transport)
+        try:
+            transport.begin()
+            assert raw_parse(spnc)[0] == "error"          # comportement original
+            status, subjects = original.infer.parse_subject_profiling(spnc)
+        finally:
+            original.client.install_transport(None)
+    assert status == "success"
+    assert subjects[0]["description"] == 'The speaker, identified by "I" and "my"'
+    assert subjects[0]["PIIs"][0]["keyword"] == "nurse"
+
+
+def test_invalid_json_still_goes_through_the_original_repairs():
+    with original_spia() as original:
+        status, subjects = original.infer.parse_subject_profiling(
+            "Here: [{'id': 0, 'description': 'x', 'PIIs': []}]", retry_with_llm=False)
+    assert status == "success" and subjects[0]["description"] == "x"
+
+
+def test_explicit_attacker_output_budget_reaches_the_client():
+    seen = []
+
+    class Recording(_Client):
+        def complete(self, prompt, **kwargs):
+            seen.append(kwargs.get("max_tokens"))
+            return super().complete(prompt, **kwargs)
+
+    transport = _Transport(Recording(), sleep=lambda _: None, max_output_tokens=32768)
+    transport.begin()
+    transport("Your task is to identify and count", 0.1, None)
+    transport("Your task is to identify and count", 0.1, 50)
+    assert seen == [32768, 50]

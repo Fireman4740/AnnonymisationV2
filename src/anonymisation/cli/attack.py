@@ -15,7 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PROCESSED_ROOT = REPO_ROOT / "data" / "processed"
 
 
-def cmd_attack(run: str, attacker: str, backend: str | None, workers: int | None) -> int:
+def cmd_attack(run: str, attacker: str, backend: str | None, workers: int | None,
+               max_output_tokens: int | None = None) -> int:
     from anonymisation.attack.ratbench.risk import CorrectMatchUnavailable
     from anonymisation.attack.ratbench.runner import AttackError, run_attack
     from anonymisation.attack.spia.runner import SpiaAttackError, run_spia_attack
@@ -31,9 +32,12 @@ def cmd_attack(run: str, attacker: str, backend: str | None, workers: int | None
         if not name:
             raise LlmConfigError(f"aucun backend : passer --backend ou définir le rôle {role}")
         if attacker == "ratbench":
+            if max_output_tokens is not None:
+                raise LlmConfigError("--max-output-tokens ne s'applique qu'à l'attaquant spia")
             lock = run_attack(Path(run), backend=name, processed_root=PROCESSED_ROOT, workers=workers)
         else:
-            lock = run_spia_attack(Path(run), backend=name, workers=workers)
+            lock = run_spia_attack(Path(run), backend=name, workers=workers,
+                                   max_output_tokens=max_output_tokens)
     except (AttackError, SpiaAttackError, VendoredSpiaError, DataIntegrityError,
             CorrectMatchUnavailable, LlmConfigError) as exc:
         print(f"Erreur d'usage : {exc}", file=sys.stderr)

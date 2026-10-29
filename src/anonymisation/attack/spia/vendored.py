@@ -77,6 +77,13 @@ def original_spia(modules: dict[str, str] | None = None) -> Iterator[SimpleNames
             alias: importlib.import_module(name)
             for alias, name in (modules or _ATTACK_MODULES).items()
         }
+        if "infer" in loaded:
+            from anonymisation.attack.spia.parsing import strict_first
+
+            # Liaison locale au module d'inférence : les modules originaux
+            # sortent de sys.modules à la fin du contexte, la cale avec eux.
+            infer = loaded["infer"]
+            infer.parse_subject_profiling = strict_first(infer.parse_subject_profiling)
         yield SimpleNamespace(**loaded)
     finally:
         sys.path.remove(str(ROOT))
