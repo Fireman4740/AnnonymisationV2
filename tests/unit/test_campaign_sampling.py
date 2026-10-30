@@ -182,6 +182,8 @@ def _openrouter_cfg():
     cfg = _campaign_cfg()
     cfg["anonymizer_backend"] = "openrouter_ling_3_0_flash"
     cfg["attacker_backend"] = "openrouter_ling_3_0_flash"
+    # Fixture distante autonome, même lorsque la campagne courante est locale.
+    cfg["provider_max_price"] = {"prompt": 0.021, "completion": 0.063}
     return cfg
 
 
@@ -189,7 +191,7 @@ def test_campaign_uses_only_requested_systems_and_caps_evaluation_at_200():
     cfg = _campaign_cfg()
     assert cfg["documents_per_dataset"] == 200 and cfg["cap_documents"] is True
     assert {v["name"] for v in campaign.system_variants(cfg, remote_allowed=True)} == {
-        "oracle-mask", "regex-only", "llm-windowed"}
+        "oracle-mask", "regex-only", "llm-contextual"}
 
 
 def test_local_backend_requires_no_openrouter_price_cap():

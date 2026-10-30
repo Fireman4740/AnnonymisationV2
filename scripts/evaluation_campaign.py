@@ -373,7 +373,7 @@ def system_variants(cfg: dict[str, Any], remote_allowed: bool) -> list[dict[str,
 
 def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, Any],
                  directory: Path) -> list[str]:
-    profile = {"llm-full": "llm_full", "llm-windowed": "llm_windowed",
+    profile = {"llm-full": "llm_full", "llm-windowed": "llm_windowed", "llm-contextual": "llm_contextual",
                "hybrid-qi": "hybrid_qi"}.get(variant["system"], "deterministic")
     args = ["predict", "--dataset", key, "--split", split, "--system", variant["system"],
             "--profile", profile, "--out", str(directory)]

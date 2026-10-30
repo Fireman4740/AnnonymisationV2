@@ -1,5 +1,5 @@
 {
-  "purpose": "banc_fiable_protocoles_originaux_200_v2",
+  "purpose": "qwen_contextual_local_200_v1",
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",
@@ -19,8 +19,8 @@
   },
   "remote_real_corpora_authorized": false,
   "provider_max_price": {
-    "prompt": 0.021,
-    "completion": 0.063
+    "prompt": 0,
+    "completion": 0
   },
   "anonymizer_backend": "qwen_local_box",
   "attacker_backend": "qwen_local_box",
@@ -72,14 +72,14 @@
       "spia_attack": true
     },
     {
-      "system": "llm-windowed",
+      "system": "llm-contextual",
       "spia_attack": true,
       "params": {
         "backend": "qwen_local_box",
-        "window_chars": 6000,
+        "window_chars": 3000,
         "overlap_chars": 240,
         "max_output_tokens": 8192,
-        "max_entities": 256
+        "critique_rounds": 1
       }
     }
   ],
@@ -114,7 +114,8 @@
     "L anonymisation distante reste limitée aux synthétiques et à SPIA ; aucun appel externe pour les autres corpus réels.",
     "Le manifeste sera commité avant la mesure et toute relance exigera le même snapshot vérifié, sans nouveau tirage.",
     "Attaques originales actives sur tous les systèmes : RAT-Bench (R_succ, parité avec le code officiel) et SPIA (CPR/IPR, calculate_ipr_cpr original), attaquant Qwen3.8-27B local — différent des attaquants des articles, résultats non comparables aux chiffres publiés.",
-    "Cohorte banc-fiable-200-v2 (demande utilisateur du 2026-10-28) : 200 documents maximum par dataset, même graine et même méthode de tirage que la cohorte max-500 ; train auxiliaire DB-bio (1900 documents disjoints du test) pour occupation_l3."
+    "Cohorte banc-fiable-200-v2 (demande utilisateur du 2026-10-28) : 200 documents maximum par dataset, même graine et même méthode de tirage que la cohorte max-500 ; train auxiliaire DB-bio (1900 documents disjoints du test) pour occupation_l3.",
+    "Variante contextuelle locale Qwen : même cohorte et attaquants que f525a1c ; plan global puis éditions minimales puis critique aveugle, sans gold ni label aval. Inspirations : IntentAnony, SEAL, AgentStealth ; aucun nouvel entraînement."
   ],
   "attack_workers": 16,
   "spia_attack_max_output_tokens": 32768
