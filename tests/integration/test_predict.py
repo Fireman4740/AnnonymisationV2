@@ -49,6 +49,29 @@ POLICY_FILE = REPO_ROOT / "configs" / "policy" / "policies.yaml"
 OPENPII_PIVOT = REPO_ROOT / "data" / "processed" / "openpii"
 
 
+def test_predict_selects_exact_manifest_items_without_changing_pivot(micro_pivot, tmp_path):
+    docs_path = micro_pivot / "micro" / "train" / "documents.jsonl"
+    original = docs_path.read_bytes()
+    documents = [json.loads(line) for line in original.decode().splitlines()]
+    chosen = documents[-1]
+    import hashlib
+
+    selection = tmp_path / "selected.json"
+    selection.write_text(json.dumps({"datasets": {"micro": {"train": [{
+        "doc_id": chosen["doc_id"],
+        "text_sha256": hashlib.sha256(chosen["text"].encode()).hexdigest(),
+    }]}}}))
+    out = tmp_path / "selected-run"
+    assert main(["predict", "--dataset", "micro", "--split", "train", "--system", "passthrough",
+                 "--selection-manifest", str(selection), "--limit", "1", "--out", str(out)]) == 0
+    predictions = [json.loads(line) for line in (out / "predictions.jsonl").read_text().splitlines()]
+    assert [p["doc_id"] for p in predictions] == [chosen["doc_id"]]
+    lock = json.loads((out / "manifest.lock.json").read_text())
+    assert lock["run"]["status"] == "sampled"
+    assert lock["run"]["selection_manifest_sha256"] == _sha(selection)
+    assert docs_path.read_bytes() == original
+
+
 # --------------------------------------------------------------------------- #
 # Pivot micro temporaire (source de vérité de la commande)
 # --------------------------------------------------------------------------- #

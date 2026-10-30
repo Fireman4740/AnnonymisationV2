@@ -377,6 +377,14 @@ def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, A
                "hybrid-qi": "hybrid_qi"}.get(variant["system"], "deterministic")
     args = ["predict", "--dataset", key, "--split", split, "--system", variant["system"],
             "--profile", profile, "--out", str(directory)]
+    limits = cfg.get("_evaluation_subset_limits")
+    if cfg.get("evaluation_subset") is not None:
+        # run_campaign valide l'appartenance et les empreintes avant les modèles.
+        # Le constructeur d'arguments reste utilisable isolément, sans import du runner.
+        count = (limits[key][split] if limits is not None else len(json.loads(
+            Path(cfg["evaluation_subset"]["manifest"]).read_text())["datasets"][key][split]))
+        args += ["--limit", str(count),
+                 "--selection-manifest", cfg["evaluation_subset"]["manifest"]]
     if variant["policy"]:
         args += ["--policy", variant["policy"]]
     params = dict(variant["params"])
@@ -526,6 +534,19 @@ def run_campaign() -> int:
         if baseline["phase"] != "evaluate":
             raise ValueError("baseline.phase : freeze ou evaluate requis")
         frozen = restore_cohort(cfg)
+    from baseline_cohort import evaluation_subset_limits
+
+    subset_limits = evaluation_subset_limits(cfg)
+    if subset_limits is not None:
+        cfg["_evaluation_subset_limits"] = subset_limits
+        print("EVALUATION_SUBSET", json.dumps({
+            "source_cohort": cfg["baseline"]["id"],
+            "manifest": cfg["evaluation_subset"]["manifest"],
+            "sha256": cfg["evaluation_subset"]["sha256"],
+            "documents_per_dataset": cfg["evaluation_subset"]["documents_per_dataset"],
+            "documents_evaluated": sum(sum(parts.values()) for parts in subset_limits.values()),
+            "limits": subset_limits,
+        }, sort_keys=True), flush=True)
     llm_cfg = load_backends_config()
     models = campaign_models(cfg, llm_cfg)
     uses_remote = any(spec.get("remote") for spec in models.values())
@@ -542,6 +563,7 @@ def run_campaign() -> int:
                               "systems": cfg["systems"], "provider_preflight": routes,
                               "run_attacks": cfg.get("run_attacks", True),
                               "run_only": run_only, "run_systems": run_systems,
+                              "evaluation_subset": cfg.get("evaluation_subset"),
                               "documents_per_dataset": cfg.get("documents_per_dataset"),
                               "datasets": [], "results": [], "failures": [],
                               "remote_skipped": [], "parity": {}, "audit": [],
@@ -576,6 +598,8 @@ def run_campaign() -> int:
                 return command(args)
 
         for split in info["evaluation_splits"]:
+            if subset_limits is not None and subset_limits[key][split] == 0:
+                continue
             for variant in system_variants(cfg, remote_allowed):
                 if run_systems is not None and variant["system"] not in run_systems:
                     continue

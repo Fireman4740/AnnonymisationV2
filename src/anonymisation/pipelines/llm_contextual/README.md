@@ -82,6 +82,11 @@ anonv2 score --run runs/contextual-quasifr --protocol quasifr-v1
 ```
 
 Les paramètres sont figés dans `Params` et enregistrés dans l'identité.
-La campagne conserve la cohorte `banc-fiable-200-v2`, les deux contrôles
-oracle-mask/regex-only, les tâches aval, les attaquants et les calculs originaux
-RAT-Bench/SPIA/TAB du parent. Seul le troisième système est remplacé.
+La campagne conserve la cohorte source `banc-fiable-200-v2`, les tâches aval,
+les attaquants et les calculs originaux RAT-Bench/SPIA/TAB du parent.
+Sur demande utilisateur, seuls 50 items par corpus en sont évalués, avec un
+manifeste d'identifiants et d'empreintes commité : RAT-Bench conserve 17/17/16
+items par difficulté et SPIA 25 TAB + 25 PANORAMA. QuasiFR utilise 25/24/1
+items sur ses trois splits. Le pivot source et les trains auxiliaires ne sont
+pas modifiés. Seul llm-contextual est exécuté : les sorties déjà disponibles
+des contrôles et de llm-windowed servent de référence sur ces mêmes items.

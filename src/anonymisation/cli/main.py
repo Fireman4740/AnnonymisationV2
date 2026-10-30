@@ -619,6 +619,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Nombre de documents (le lock passe au statut « sampled »).",
     )
+    predict_p.add_argument(
+        "--selection-manifest", default=None,
+        help="Manifeste JSON de doc_id et text_sha256 à sélectionner dans le pivot figé.",
+    )
 
     systems_p = sub.add_parser(
         "systems",
@@ -742,6 +746,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.limit,
                 system=args.system,
                 params=_parse_params(args.param),
+                selection_manifest=args.selection_manifest,
             )
         except (
             PredictError,

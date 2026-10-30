@@ -190,6 +190,8 @@ def _openrouter_cfg():
 def test_campaign_uses_only_requested_systems_and_caps_evaluation_at_200():
     cfg = _campaign_cfg()
     assert cfg["documents_per_dataset"] == 200 and cfg["cap_documents"] is True
+    assert cfg["evaluation_subset"]["documents_per_dataset"] == 50
+    assert cfg["run_systems"] == ["llm-contextual"]
     assert {v["name"] for v in campaign.system_variants(cfg, remote_allowed=True)} == {
         "oracle-mask", "regex-only", "llm-contextual"}
 
@@ -295,6 +297,8 @@ def test_predict_args_carry_policy_and_explicit_parameters(tmp_path):
     cfg = _full_policy_cfg()
     variants = {v["name"]: v for v in campaign.system_variants(cfg, remote_allowed=True)}
     args = campaign.predict_args(cfg, "ratbench", "eval", variants["hybrid-qi-P3"], tmp_path)
+    assert args[args.index("--limit") + 1] == "50"
+    assert args[args.index("--selection-manifest") + 1] == cfg["evaluation_subset"]["manifest"]
     assert args[args.index("--policy") + 1] == "P3"
     assert args[args.index("--profile") + 1] == "hybrid_qi"
     redact = campaign.predict_args(cfg, "ratbench", "eval", variants["redact-all"], tmp_path)

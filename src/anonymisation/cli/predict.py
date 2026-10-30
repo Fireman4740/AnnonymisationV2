@@ -373,6 +373,30 @@ def _build_lock(
 # --------------------------------------------------------------------------- #
 # Commande
 # --------------------------------------------------------------------------- #
+def select_documents(docs: list[Document], key: str, split: str, path: Path) -> list[Document]:
+    """Sélection exacte et vérifiée, sans modifier les octets du pivot source."""
+    import hashlib
+
+    try:
+        rows = json.loads(path.read_text())["datasets"][key][split]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise PredictError(f"manifeste de sélection invalide : {path}") from exc
+    if (not isinstance(rows, list) or not rows
+            or any(not isinstance(r, dict) or set(r) != {"doc_id", "text_sha256"}
+                   or not isinstance(r["doc_id"], str) for r in rows)):
+        raise PredictError("sélection non vide de doc_id/text_sha256 requise")
+    wanted = {r["doc_id"]: r["text_sha256"] for r in rows}
+    selected = [d for d in docs if d.doc_id in wanted]
+    if len(wanted) != len(rows) or len(selected) != len(rows):
+        raise PredictError("sélection dupliquée ou document absent du pivot")
+    if [d.doc_id for d in selected] != [r["doc_id"] for r in rows]:
+        raise PredictError("ordre de sélection différent du pivot figé")
+    for d in selected:
+        if hashlib.sha256(d.text.encode()).hexdigest() != wanted[d.doc_id]:
+            raise PredictError(f"texte de sélection divergent : {d.doc_id}")
+    return selected
+
+
 def cmd_predict(
     dataset: str,
     split: str,
@@ -382,6 +406,7 @@ def cmd_predict(
     limit: int | None,
     system: str = "deterministic",
     params: Mapping[str, Any] | None = None,
+    selection_manifest: str | None = None,
 ) -> int:
     """Exécute le pipeline sur le pivot du dataset et fige les artefacts.
 
@@ -403,6 +428,11 @@ def cmd_predict(
     _verify_pivot(key, split, data_version)
     has_annotations = f"{split}/annotations.jsonl" in (data_version.get("files") or {})
     docs, gold = _load_pivot(key, split, has_annotations=has_annotations)
+    selection_sha256 = None
+    if selection_manifest is not None:
+        selection_path = Path(selection_manifest)
+        docs = select_documents(docs, key, split, selection_path)
+        selection_sha256 = sha256_file(selection_path)
     if limit is not None:
         docs = docs[:limit]
 
@@ -491,6 +521,9 @@ def cmd_predict(
         data_version=data_version,
         system_block=_system_reproducibility(pipe),
     )
+    if selection_sha256 is not None:
+        lock["run"]["selection_manifest_sha256"] = selection_sha256
+        lock["run"]["status"] = "sampled"
     # Empreinte des sorties : `score` refuse un run édité après coup.
     lock["outputs"] = {
         name: sha256_file(out_dir / name) for name in ("predictions.jsonl", "traces.jsonl")

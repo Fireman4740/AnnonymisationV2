@@ -22,6 +22,49 @@ MANIFEST = "cohort.lock.json"
 EXPORT = Path("runs/campaign/cohort.lock.json")
 
 
+def evaluation_subset_limits(cfg: Mapping[str, Any]) -> dict[str, dict[str, int]] | None:
+    """Valide une sélection commise, sans modifier ni rééchantillonner le pivot.
+
+    Les documents sont lus dans l'ordre verrouillé par restore_cohort ; le
+    manifeste est passé à predict, qui restreint aussi le scoring.
+    Les trains auxiliaires restent strictement identiques à la baseline.
+    """
+    spec = cfg.get("evaluation_subset")
+    if spec is None:
+        return None
+    path = Path(spec["manifest"])
+    if not path.is_file() or sha256_file(path) != spec["sha256"]:
+        raise ValueError("manifeste du sous-ensemble absent ou modifié")
+    subset = json.loads(path.read_text())
+    source = Path(cfg["baseline"]["manifest"])
+    if not source.is_file() or sha256_file(source) != subset["source_manifest_sha256"]:
+        raise ValueError("source du sous-ensemble différente de la baseline figée")
+    baseline = json.loads(source.read_text())
+    cap = spec["documents_per_dataset"]
+    if (isinstance(cap, bool) or not isinstance(cap, int) or cap < 1
+            or subset.get("documents_per_dataset") != cap
+            or subset.get("source_cohort_id") != baseline["cohort_id"]
+            or set(subset.get("datasets", {})) != set(cfg["datasets"])):
+        raise ValueError("sous-ensemble incompatible avec la campagne")
+    limits = {}
+    for key, splits in cfg["datasets"].items():
+        chosen = subset["datasets"][key]
+        if set(chosen) != set(splits):
+            raise ValueError(f"splits du sous-ensemble invalides : {key}")
+        available = baseline["datasets"][key]["items"]
+        if sum(len(chosen[s]) for s in splits) != min(cap, sum(len(available[s]) for s in splits)):
+            raise ValueError(f"budget du sous-ensemble incorrect : {key}")
+        for split in splits:
+            ids = [r["doc_id"] for r in chosen[split]]
+            wanted = set(ids)
+            # Conserve l'ordre de la baseline et vérifie aussi les textes.
+            expected = [r for r in available[split] if r["doc_id"] in wanted]
+            if len(wanted) != len(ids) or chosen[split] != expected:
+                raise ValueError(f"documents hors baseline ou désordonnés : {key}/{split}")
+        limits[key] = {split: len(chosen[split]) for split in splits}
+    return limits
+
+
 def selection_contract(cfg: Mapping[str, Any]) -> dict[str, Any]:
     """Les paramètres des modèles ne changent pas l'identité des données."""
     return {key: cfg.get(key) for key in (
