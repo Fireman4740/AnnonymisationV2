@@ -111,12 +111,13 @@ def freeze_task(
 
 def cmd_evaluate(run: str | Path, *, task: str | None = None, train_split: str = "train",
                  population: str | Path | None = None, k_threshold: int = 10,
-                 quality_ratings: str | Path | None = None) -> int:
+                 quality_ratings: str | Path | None = None,
+                 local_quality_backend: str | None = None, local_quality_workers: int = 2) -> int:
     from anonymisation.cli import score
 
     run_dir = Path(run)
-    if task is None and population is None and quality_ratings is None:
-        raise ValueError("evaluate : --task, --population ou --quality-ratings requis")
+    if task is None and population is None and quality_ratings is None and local_quality_backend is None:
+        raise ValueError("evaluate : --task, --population, --quality-ratings ou --local-quality-backend requis")
     # Une tentative échouée ne doit pas laisser une ancienne évaluation utilisable.
     (run_dir / EVALUATION_LOCK).unlink(missing_ok=True)
     (run_dir / EVALUATION_FILE).unlink(missing_ok=True)
@@ -168,6 +169,12 @@ def cmd_evaluate(run: str | Path, *, task: str | None = None, train_split: str =
         quality_data = score._read_json(quality_path)
         payload["text_quality"] = freeze_human_quality(quality_data, successful)
         external[str(quality_path)] = sha256_file(quality_path)
+    if local_quality_backend is not None:
+        from anonymisation.judge.local_quality import freeze_local_quality
+
+        docs = {d.doc_id: d for d in read_jsonl(root / split / "documents.jsonl", Document)}
+        payload["local_quality"] = freeze_local_quality(docs, successful,
+            backend_name=local_quality_backend, workers=local_quality_workers)
     context = {"pivot": inputs["pivot"], "external": external,
                "successful_doc_ids": sorted(successful)}
     for section in payload.values():
@@ -209,7 +216,7 @@ def load_evaluation(run_dir: Path, lock: Mapping[str, Any], inputs: Mapping[str,
             raise ValueError("évaluation : référence externe modifiée")
     outputs = verify_run_outputs(run_dir, evaluation_lock["outputs"], (EVALUATION_FILE,), context="score evaluation")
     payload = score._read_json(run_dir / EVALUATION_FILE)
-    if set(payload) - {"utility", "population", "text_quality"}:
+    if set(payload) - {"utility", "population", "text_quality", "local_quality"}:
         raise ValueError("évaluation : section inconnue")
     for section in payload.values():
         context = section["metadata"]["evaluation_context"]
@@ -220,6 +227,8 @@ def load_evaluation(run_dir: Path, lock: Mapping[str, Any], inputs: Mapping[str,
         raise ValueError("évaluation : couverture des documents de tâche divergente")
     if "text_quality" in payload and {r["doc_id"] for r in payload["text_quality"]["rows"]} != expected_doc_ids:
         raise ValueError("évaluation : couverture des notes humaines divergente")
+    if "local_quality" in payload and {r["doc_id"] for r in payload["local_quality"]["rows"]} != expected_doc_ids:
+        raise ValueError("évaluation : couverture des notes locales divergente")
     # Le scorer conserve les empreintes de TOUTES ses dépendances indirectes.
     inputs["pivot"].update(frozen_inputs["pivot"])
     inputs["run"].update(outputs)

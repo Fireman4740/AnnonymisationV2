@@ -159,3 +159,35 @@ répétées. Sans notes valides, ces trois métriques sont `not_applicable`, pas
 La comparaison humaine exige la même étude et les mêmes évaluateurs pour chaque document ; les fichiers de notes propres aux systèmes peuvent différer.
 
 Le fichier facultatif `--review-out` contient les textes originaux, potentiellement personnels : le conserver en local. La grille commence volontairement avec des notes nulles, refusées tant qu’elles ne sont pas complétées.
+
+## Qualité textuelle par juge local : pilote diagnostique
+
+À la demande d'une mesure immédiate, une étape facultative distincte de la
+revue humaine fige trois métriques : `local_readability`, `local_relevance`,
+`local_faithfulness`. Elles ne sont **ni des notes humaines, ni validées comme
+mesures universelles du sens**. Le modèle local peut être le même Qwen que
+l'anonymiseur ; un biais d'auto-évaluation est alors possible.
+
+Pour chaque document, la lisibilité est jugée sans original sur le texte
+anonymisé et un texte vide, présentés dans un ordre masqué. Pertinence et
+fidélité sont jugées en comparant le texte original à trois versions d'ordre
+masqué : originale, anonymisée et vide. Les échelles 0/1/2 sont normalisées sur
+[0,1]. Les contrôles sont effectivement demandés au modèle : le vide doit
+recevoir 0 et l'identique 2 dans les dimensions correspondantes. Une réponse
+invalide ou un contrôle raté est signalé et exclu ; au-delà de 5 % de documents
+exclus, les trois métriques deviennent indisponibles. Ce contrôle élémentaire ne
+prouve pas l'accord avec des évaluateurs humains. Les appels ont lieu dans
+`evaluate` sur une API locale ; `score` ne relance aucun modèle.
+
+Les textes trop longs sont découpés en passages alignés grâce aux décisions
+d'anonymisation, sans couper un remplacement. Leur reconstruction est vérifiée.
+La note d'un document est la moyenne des notes des passages, pondérée par leur
+longueur d'origine. Elle ne mesure donc pas la cohérence à longue distance.
+Chaque passage doit réussir ses contrôles ; les entrées incohérentes sont
+signalées en erreur. La taille des invites est plafonnée en octets UTF-8, avec
+une marge pour le gabarit de conversation et la limite d'entrée du serveur.
+
+```sh
+anonv2 evaluate --run runs/mon-run --local-quality-backend qwen_local_box --local-quality-workers 2
+anonv2 score --run runs/mon-run --protocol <protocole-du-corpus>
+```

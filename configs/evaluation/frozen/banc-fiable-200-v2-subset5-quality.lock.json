@@ -1,0 +1,287 @@
+{
+  "datasets": {
+    "bitextsupport": {
+      "test": [
+        {
+          "doc_id": "bitextsupport:10819",
+          "text_sha256": "28f8c0797aca97d4e34d85d668f0f4b352773a90763afe82e33a7759b2738919"
+        },
+        {
+          "doc_id": "bitextsupport:14415",
+          "text_sha256": "f9ddd9bb3b969e051c8cdbdfc2166d2e493efe00a9aaab9077115a59a5f5ae51"
+        },
+        {
+          "doc_id": "bitextsupport:14579",
+          "text_sha256": "a22d0c9a46deff2630147fd254687629f4d502a6cba447ebdccabaccf1ba5bb6"
+        },
+        {
+          "doc_id": "bitextsupport:13637",
+          "text_sha256": "7f92481f2dc666bc5aed8d6a73b8b767433e3a3110e8c79549a0e2ddcad7bf91"
+        },
+        {
+          "doc_id": "bitextsupport:3089",
+          "text_sha256": "6929aacfa79f11a75d0e1e68985ddce553f36e9a416cb7878ebd4975ea924ae8"
+        }
+      ]
+    },
+    "conll2003": {
+      "test": [
+        {
+          "doc_id": "conll2003:test:2335",
+          "text_sha256": "37037b0647c122c49be5eb48b463bd72b91f8b8fcb456b7c06dfa897b00189f4"
+        },
+        {
+          "doc_id": "conll2003:test:1918",
+          "text_sha256": "84f31d537db3ea17ff181e072f7b1156db3560a86334efdd4c81fbe0a4e9a709"
+        },
+        {
+          "doc_id": "conll2003:test:747",
+          "text_sha256": "d1c5fa32670d621e379053a635f6a5a15c653593bd3aa3251f6342c5f43037a6"
+        },
+        {
+          "doc_id": "conll2003:test:1388",
+          "text_sha256": "155c29bc7abb3c050275cf2eae94f1e2b060e8321cc00d0655538b35ba6fafba"
+        },
+        {
+          "doc_id": "conll2003:test:631",
+          "text_sha256": "7ed9aa7ff3d06d8639e233447c7bf5067a5bd8ce458720eac08ac7a597653915"
+        }
+      ]
+    },
+    "dbbio": {
+      "test": [
+        {
+          "doc_id": "dbbio:test:17",
+          "text_sha256": "91af72e2d967220c1fe8e6af93e94e47a92ad129919791d3fce7ea4d89bfdab2"
+        },
+        {
+          "doc_id": "dbbio:test:234",
+          "text_sha256": "c5768384273c6383a68e75296cbd3f5fa7d01bce11f6538ac7a618345124d72e"
+        },
+        {
+          "doc_id": "dbbio:test:55",
+          "text_sha256": "9ebcf2eea8bc3d8dc5c985e5cf8048416b4593d40cf9f05c9d7a34551b58c58b"
+        },
+        {
+          "doc_id": "dbbio:test:61",
+          "text_sha256": "2a40052f0aba405cac381fe0ef167eb7ba4590448b9bc00c436aa3e00e4451fc"
+        },
+        {
+          "doc_id": "dbbio:test:219",
+          "text_sha256": "decf41c0c35d704e4fe2ac4ef6a65148b7d768bb12b5499f6e726178d23a5697"
+        }
+      ]
+    },
+    "openpii": {
+      "validation": [
+        {
+          "doc_id": "openpii:5612804",
+          "text_sha256": "621d8624fdba8f9cde6dfcd5a9ce66fcd0ff6b003ed46aadb8fa0b029e9e45ce"
+        },
+        {
+          "doc_id": "openpii:5640034",
+          "text_sha256": "d24abfcd9a4ac8b6a01694a30fe3702b3bcaae585f40886f5c92d9416f44d54b"
+        },
+        {
+          "doc_id": "openpii:5364952",
+          "text_sha256": "60766ff0bf19dea896c6245071fa64013394ed17eb4ff7c727dbb2d461f40368"
+        },
+        {
+          "doc_id": "openpii:5832092",
+          "text_sha256": "93b72260579161a89aa5aafe229e3f1de91ac0519343acc4b1d0669d471e5296"
+        },
+        {
+          "doc_id": "openpii:5698778",
+          "text_sha256": "8856e46a10a32caadbc164bbba70c0db25d69079469f610c561f5eff7f0c333f"
+        }
+      ]
+    },
+    "quasifr": {
+      "anonymization": [
+        {
+          "doc_id": "quasifr:anonymization:ticket_002_fr",
+          "text_sha256": "87f2879c38807812061da4020486b8fdc65ec0096fc2064f939476de94e9ed12"
+        },
+        {
+          "doc_id": "quasifr:anonymization:ticket_005",
+          "text_sha256": "7eed1e3edd8bc4c7be3d922ab1da28ec2d6accdab011d0b51123a148d1f906a5"
+        }
+      ],
+      "hard_quasi_id": [
+        {
+          "doc_id": "quasifr:hard_quasi_id:hard_006_es",
+          "text_sha256": "6b951e6c06288e4dee1926bd5b80af4db127e2a0532960cc515993758fec93d0"
+        },
+        {
+          "doc_id": "quasifr:hard_quasi_id:hard_003_it",
+          "text_sha256": "9901ca676d916f94dcb913236573631a8af29ab08d392522ab37df2fa5b3ddd0"
+        }
+      ],
+      "max_anonymization": [
+        {
+          "doc_id": "quasifr:max_anonymization:ticket_001",
+          "text_sha256": "ca5a9973c893bd759a4f5d7705e4a60a0054dd9fd36c9fe8a32d8fc092f43c23"
+        }
+      ]
+    },
+    "ratbench": {
+      "eval": [
+        {
+          "doc_id": "ratbench:L1:73",
+          "text_sha256": "609dd177b26e450508fa2817a028fdad7152ca4f62e59d9bf038de1ad6e58e60"
+        },
+        {
+          "doc_id": "ratbench:L1:53",
+          "text_sha256": "9565e0d36fe38d8f4f65f3fb17d67c3b2526328a4798e8feaade027e766f3c1f"
+        },
+        {
+          "doc_id": "ratbench:L2:93",
+          "text_sha256": "67bb92ba9a1767c61852e392f0a92fa7df877aab7a91c9d1d9d119553452111f"
+        },
+        {
+          "doc_id": "ratbench:L2:21",
+          "text_sha256": "25ec397767f29b4cd7006fd4606606a61fcd36a38f48e6a447afa419b5d8fd8d"
+        },
+        {
+          "doc_id": "ratbench:L3:61",
+          "text_sha256": "4029c4ffb4db645db2e951f1bbd1681990b6e30454520fb6ceb3adbd039a152a"
+        }
+      ]
+    },
+    "spia": {
+      "test": [
+        {
+          "doc_id": "spia:TAB-2fb55",
+          "text_sha256": "371f5d6077bd691335a67b9385ad09b591e9cfcd200fdea468a3247f82a03efa"
+        },
+        {
+          "doc_id": "spia:TAB-cc965",
+          "text_sha256": "1d34a38fff38631ea1fb654ca0630d0dc244b4dc41876ff8e99c9ebab817fed7"
+        },
+        {
+          "doc_id": "spia:TAB-035bd",
+          "text_sha256": "ed837681ec0389ce90cc3e3657dee16770984a822fb8c8cf42fdbeb984bfa71c"
+        },
+        {
+          "doc_id": "spia:PANORAMA-66A13",
+          "text_sha256": "b2134f85ab2003b8b8ac2e6804d8a08068a46857c4064563208b4f9742a683ad"
+        },
+        {
+          "doc_id": "spia:PANORAMA-85273",
+          "text_sha256": "6f35e89d16a4735bffd52128437cc35fc4788d4630697000a111af6d2c37eee9"
+        }
+      ]
+    },
+    "supporttickets": {
+      "test": [
+        {
+          "doc_id": "supporttickets:37611",
+          "text_sha256": "7b4f2639ef8863a2e687e2a622c9934a3ed40d32711e1ddd8947649ff02641a1"
+        },
+        {
+          "doc_id": "supporttickets:52490",
+          "text_sha256": "23711d38be8cca66f3dbe9d0e3e66d11920c32f6ef3d1e683adca7dc891895e4"
+        },
+        {
+          "doc_id": "supporttickets:31505",
+          "text_sha256": "a418709e09184cae26d3ec52686490f415157fd6af1073d90fd06937fbc67331"
+        },
+        {
+          "doc_id": "supporttickets:58884",
+          "text_sha256": "c72b9fb4b033ae501c586cf44c2699c7da82ea6587ca789153649554addfa4f6"
+        },
+        {
+          "doc_id": "supporttickets:54760",
+          "text_sha256": "39f8b36716a081b1514cee1fa711280a08d87b77347beb877cd2990e699c3531"
+        }
+      ]
+    },
+    "tab": {
+      "test": [
+        {
+          "doc_id": "tab:test:001-89128",
+          "text_sha256": "21b13058f13d866d2dc7eebaf657a6c35d92e389cabbc494a2c29221f12e4ee7"
+        },
+        {
+          "doc_id": "tab:test:001-76453",
+          "text_sha256": "cbf8f52eb8ec769c49fb08c5dd6c768239e9dad29fe8e07495e4f247e9d8773d"
+        },
+        {
+          "doc_id": "tab:test:001-68075",
+          "text_sha256": "c41a3d034c3a634c7e1546deca8f46148f6dcc19d76dc7b44e1190db6e0c5d10"
+        },
+        {
+          "doc_id": "tab:test:001-78447",
+          "text_sha256": "1d444751786b670c4a0eec18af090d55e01fa5cc15e1d768dba74dca58db8f30"
+        },
+        {
+          "doc_id": "tab:test:001-58095",
+          "text_sha256": "1ce2e67668d007eae5b00693edb53dfadbe54d390fda7a1640c3240b6330468e"
+        }
+      ]
+    }
+  },
+  "documents_per_dataset": 5,
+  "parent_subset_sha256": "647bfd6535446b290a85aed53530f5cf1ea9b7320f3e2678cad1ca329c80a124",
+  "sampling_seed": "qwen-quality-pilot-2026-10-31-v1",
+  "schema_version": "1",
+  "selection": "sha256 ranking within the frozen 50; balanced corpus strata; source order preserved",
+  "source_cohort_id": "banc-fiable-200-v2",
+  "source_manifest_sha256": "e65112cf37658bd4c61f4842197d83c8ee4da256ffa151d1848663efb3215b66",
+  "stratification": {
+    "bitextsupport": {
+      "test": {
+        "all": 5
+      }
+    },
+    "conll2003": {
+      "test": {
+        "all": 5
+      }
+    },
+    "dbbio": {
+      "test": {
+        "all": 5
+      }
+    },
+    "openpii": {
+      "validation": {
+        "all": 5
+      }
+    },
+    "quasifr": {
+      "anonymization": {
+        "all": 2
+      },
+      "hard_quasi_id": {
+        "all": 2
+      },
+      "max_anonymization": {
+        "all": 1
+      }
+    },
+    "ratbench": {
+      "eval": {
+        "L1": 2,
+        "L2": 2,
+        "L3": 1
+      }
+    },
+    "spia": {
+      "test": {
+        "PANORAMA": 2,
+        "TAB": 3
+      }
+    },
+    "supporttickets": {
+      "test": {
+        "all": 5
+      }
+    },
+    "tab": {
+      "test": {
+        "all": 5
+      }
+    }
+  }
+}

@@ -223,3 +223,27 @@ def test_quality_template_is_unscored_until_reviewed(reference_run, tmp_path):
     assert 'original' in json.loads(paired.read_text())['documents'][0]
     with pytest.raises(ValueError, match='entier'):
         cmd_evaluate(run, quality_ratings=template)
+
+
+def test_local_quality_is_frozen_and_scored_offline(reference_run, monkeypatch):
+    from anonymisation.judge import local_quality
+    from sklearn.linear_model import LogisticRegression
+
+    run, _ = reference_run
+    def fake(documents, predictions, *, backend_name, workers):
+        rows=[]
+        for doc_id in sorted(predictions):
+            rows.append({'doc_id':doc_id,'status':'ok','error':None,'readability':2,'relevance':1,'faithfulness':2,
+                         'controls':{'empty_readability':0,'empty_relevance':0,'empty_faithfulness':0,
+                                     'identity_relevance':2,'identity_faithfulness':2}})
+        return {'rows':rows,'metadata':{'protocol':'local-quality-anchors-v1',
+                'judge':{'model':'stub','backend':backend_name,'temperature':0.0}}}
+    monkeypatch.setattr(local_quality,'freeze_local_quality',fake)
+    assert cmd_evaluate(run,task='routing',local_quality_backend='stub')==0
+    monkeypatch.setattr(LogisticRegression,'fit',lambda *a,**k: (_ for _ in ()).throw(AssertionError('train')))
+    assert score.cmd_score(run,'mini-v1')==0
+    card=json.loads((run/'scorecard.json').read_text())
+    assert card['diagnostic']['local_readability']['value']==1.0
+    assert card['diagnostic']['local_relevance']['value']==0.5
+    assert card['diagnostic']['local_faithfulness']['value']==1.0
+    assert card['diagnostic']['local_relevance']['status']=='diagnostic'

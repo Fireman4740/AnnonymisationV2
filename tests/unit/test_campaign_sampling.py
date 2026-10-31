@@ -190,10 +190,10 @@ def _openrouter_cfg():
 def test_campaign_uses_only_requested_systems_and_caps_evaluation_at_200():
     cfg = _campaign_cfg()
     assert cfg["documents_per_dataset"] == 200 and cfg["cap_documents"] is True
-    assert cfg["evaluation_subset"]["documents_per_dataset"] == 50
-    assert cfg["run_systems"] == ["llm-anchored"]
+    assert cfg["evaluation_subset"]["documents_per_dataset"] == 5
+    assert cfg["run_systems"] == ["llm-windowed", "llm-anchored"]
     assert {v["name"] for v in campaign.system_variants(cfg, remote_allowed=True)} == {
-        "oracle-mask", "regex-only", "llm-anchored"}
+        "oracle-mask", "regex-only", "llm-anchored", "llm-windowed"}
 
 
 def test_local_backend_requires_no_openrouter_price_cap():
@@ -297,7 +297,7 @@ def test_predict_args_carry_policy_and_explicit_parameters(tmp_path):
     cfg = _full_policy_cfg()
     variants = {v["name"]: v for v in campaign.system_variants(cfg, remote_allowed=True)}
     args = campaign.predict_args(cfg, "ratbench", "eval", variants["hybrid-qi-P3"], tmp_path)
-    assert args[args.index("--limit") + 1] == "50"
+    assert args[args.index("--limit") + 1] == "5"
     assert args[args.index("--selection-manifest") + 1] == cfg["evaluation_subset"]["manifest"]
     assert args[args.index("--policy") + 1] == "P3"
     assert args[args.index("--profile") + 1] == "hybrid_qi"
@@ -314,3 +314,13 @@ def test_remote_authorization_is_per_dataset_and_explicit():
     assert campaign.remote_authorized(cfg, "ratbench", synthetic=True)
     with pytest.raises(KeyError):
         campaign.remote_authorized({"remote_real_corpora_authorized": False}, "spia", False)
+
+
+def test_anchored_profile_and_local_quality_are_configured(tmp_path):
+    cfg = _campaign_cfg()
+    variants = {v['name']: v for v in campaign.system_variants(cfg, remote_allowed=True)}
+    args = campaign.predict_args(cfg, 'ratbench', 'eval', variants['llm-anchored'], tmp_path)
+    assert args[args.index('--profile') + 1] == 'llm_anchored'
+    evaluate = campaign.conditional_evaluation_args(cfg, 'ratbench', tmp_path)
+    assert evaluate[evaluate.index('--local-quality-backend') + 1] == 'qwen_local_box'
+    assert evaluate[evaluate.index('--local-quality-workers') + 1] == '2'

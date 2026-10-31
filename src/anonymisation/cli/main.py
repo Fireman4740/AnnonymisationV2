@@ -640,6 +640,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     evaluate_p = sub.add_parser("evaluate", help="Fige un évaluateur aval local et/ou une référence populationnelle indépendante.")
     evaluate_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
+    evaluate_p.add_argument("--local-quality-backend", help="Juge qualité local optionnel (diagnostic, avec contrôles).")
+    evaluate_p.add_argument("--local-quality-workers", type=int, default=2, help="Concurrence du juge local (1 à 4).")
     evaluate_p.add_argument("--quality-ratings", help="JSON de notes humaines de qualité figées.")
     evaluate_p.add_argument("--task", help="Tâche single-label déclarée dans tasks.jsonl.")
     evaluate_p.add_argument("--train-split", default="train", help="Split d'entraînement original verrouillé.")
@@ -772,7 +774,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             return cmd_evaluate(args.run, task=args.task, train_split=args.train_split,
                                 population=args.population, k_threshold=args.k_threshold,
-                                quality_ratings=args.quality_ratings)
+                                quality_ratings=args.quality_ratings, local_quality_backend=args.local_quality_backend,
+                                local_quality_workers=args.local_quality_workers)
         except (OSError, ValueError, KeyError, ImportError) as exc:
             print(f"Évaluation impossible : {exc}", file=sys.stderr)
             return 2

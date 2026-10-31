@@ -328,17 +328,21 @@ def prepare(key: str, splits: list[str], cfg: dict[str, Any], cache: Path,
 
 
 def conditional_evaluation_args(cfg: dict[str, Any], key: str, directory: Path) -> list[str] | None:
-    """Étape explicite optionnelle, avant score ; aucun appel LLM nécessaire."""
-    spec = cfg.get("conditional_evaluations", {}).get(key)
-    if not spec:
+    """Étape optionnelle avant score ; juge local uniquement si configuré."""
+    spec = cfg.get("conditional_evaluations", {}).get(key) or {}
+    local = cfg.get("local_quality") or {}
+    use_local = key in local.get("datasets", [])
+    if not spec and not use_local:
         return None
     args = ["evaluate", "--run", str(directory)]
     if spec.get("task"):
         args += ["--task", spec["task"], "--train-split", spec.get("train_split", "train")]
     if spec.get("population"):
         args += ["--population", spec["population"], "--k-threshold", str(spec.get("k_threshold", 10))]
-    if not spec.get("task") and not spec.get("population"):
-        raise ValueError("évaluation conditionnelle : task ou population requis")
+    if use_local:
+        args += ["--local-quality-backend", local["backend"], "--local-quality-workers", str(local["workers"])]
+    if not spec.get("task") and not spec.get("population") and not use_local:
+        raise ValueError("évaluation conditionnelle : task, population ou qualité locale requis")
     return args
 
 
@@ -373,7 +377,7 @@ def system_variants(cfg: dict[str, Any], remote_allowed: bool) -> list[dict[str,
 
 def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, Any],
                  directory: Path) -> list[str]:
-    profile = {"llm-full": "llm_full", "llm-windowed": "llm_windowed", "llm-contextual": "llm_contextual",
+    profile = {"llm-full": "llm_full", "llm-windowed": "llm_windowed", "llm-contextual": "llm_contextual", "llm-anchored": "llm_anchored",
                "hybrid-qi": "hybrid_qi"}.get(variant["system"], "deterministic")
     args = ["predict", "--dataset", key, "--split", split, "--system", variant["system"],
             "--profile", profile, "--out", str(directory)]

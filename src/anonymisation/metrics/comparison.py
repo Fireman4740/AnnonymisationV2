@@ -47,6 +47,9 @@ _CHECKED_METRICS: tuple[tuple[str, str], ...] = (
     ("diagnostic", "tab_official"),
     ("diagnostic", "utility_retention"),
     ("diagnostic", "task_f1_delta"),
+    ("diagnostic", "local_readability"),
+    ("diagnostic", "local_relevance"),
+    ("diagnostic", "local_faithfulness"),
     ("diagnostic", "human_readability"),
     ("diagnostic", "human_relevance"),
     ("diagnostic", "human_faithfulness"),
@@ -65,13 +68,15 @@ _EVALUATOR_FIELDS: tuple[str, ...] = (
     "extra_body",
     "max_tokens",
     "default_max_output_tokens",
+    "prompt_sha256",
+    "module_sha256",
 )
 
 
 def _evaluator_signature(details: dict[str, Any]) -> tuple[Any, ...]:
     """Attaquant, juge et modèle de risque déclarés par la métrique, s'il y en a."""
     signature: list[Any] = []
-    for role in ("attacker",):
+    for role in ("attacker", "judge"):
         block = details.get(role)
         if isinstance(block, dict):
             signature.append((role, *(block.get(name) for name in _EVALUATOR_FIELDS)))
@@ -216,7 +221,7 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
             details = block.get("details") or {}
             values += 1
             context = details.get("evaluation_context")
-            if metric in {"utility_retention", "task_f1_delta", "human_readability", "human_relevance", "human_faithfulness"} and isinstance(context, dict):
+            if metric in {"utility_retention", "task_f1_delta", "human_readability", "human_relevance", "human_faithfulness", "local_readability", "local_relevance", "local_faithfulness"} and isinstance(context, dict):
                 # Le fichier de notes dépend du système ; il est vérifié par score,
                 # mais son empreinte ne doit pas rendre les notes incomparables.
                 context = {key: context.get(key) for key in ("pivot", "successful_doc_ids")}
@@ -308,6 +313,9 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         "tab_official": "Rappel TAB officiel",
         "utility_retention": "Rétention tâche",
         "task_f1_delta": "Δ F1 tâche",
+        "local_readability": "Lisibilité (juge local)",
+        "local_relevance": "Pertinence (juge local)",
+        "local_faithfulness": "Fidélité (juge local)",
         "human_readability": "Lisibilité humaine",
         "human_relevance": "Pertinence humaine",
         "human_faithfulness": "Fidélité humaine",

@@ -8,6 +8,8 @@ if ! command -v uv >/dev/null; then
 fi
 export ANONV2_V1_DATASETS="${ANONV2_V1_DATASETS:-$HOME/.cache/anonymisation-v2/datasets}"
 export ANONV2_LLM_CACHE_DIR="${ANONV2_LLM_CACHE_DIR:-$HOME/.cache/anonymisation-v2/llm}"
+# Attend le serveur partagé sans interrompre les autres expériences.
+python3 scripts/wait_local_qwen.py
 uv run --isolated --no-project --with huggingface-hub --with gdown --with pandas --with pyarrow \
   python scripts/fetch_ratbench.py --root "$ANONV2_V1_DATASETS"
 # `tab_eval` : évaluateur TAB ORIGINAL (spaCy + en_core_web_md épinglés).

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -74,4 +75,55 @@ def human_quality_metrics(rows: Sequence[Mapping[str, Any]], metadata: Mapping[s
             details={**metadata, "documents": len(rows), "exact_rater_agreement": mean(agreement),
                      "aggregation": "moyenne des évaluateurs par document puis moyenne des documents"})
         result[metric] = with_interval(metric_value.to_dict(), bootstrap_interval(per_doc, mean, unit="document"))
+    return result
+
+
+LOCAL_PROTOCOL = 'local-quality-anchors-v1'
+LOCAL_DIMENSIONS = {'local_readability':'readability', 'local_relevance':'relevance',
+                    'local_faithfulness':'faithfulness'}
+
+
+def local_quality_metrics(rows: Sequence[Mapping[str, Any]], metadata: Mapping[str, Any]) -> dict[str, Any]:
+    """Notes locales seulement si les contrôles texte vide/identique passent."""
+    if metadata.get('protocol') != LOCAL_PROTOCOL or not isinstance(metadata.get('judge'), dict):
+        raise ValueError('qualité locale : protocole ou juge absent')
+    seen = set()
+    valid = []
+    for row in rows:
+        doc_id, status = row.get('doc_id'), row.get('status')
+        if not isinstance(doc_id,str) or doc_id in seen or status not in {'ok','control_failed','error'}:
+            raise ValueError('qualité locale : document dupliqué ou statut invalide')
+        seen.add(doc_id)
+        if status in {'ok','control_failed'}:
+            if any(type(row.get(k)) not in (int, float) or not math.isfinite(row[k]) or not 0 <= row[k] <= 2
+                   for k in LOCAL_DIMENSIONS.values()):
+                raise ValueError('qualité locale : notes hors échelle')
+            controls = row.get('controls') or {}
+            if set(controls) != {'empty_readability','empty_relevance','empty_faithfulness',
+                                 'identity_relevance','identity_faithfulness'} or any(
+                type(v) is not int or v not in (0,1,2) for v in controls.values()):
+                raise ValueError('qualité locale : contrôles manquants ou invalides')
+            passed = (controls['empty_readability']==0 and controls['empty_relevance']==0
+                      and controls['empty_faithfulness']==0 and controls['identity_relevance']==2
+                      and controls['identity_faithfulness']==2)
+            if status == 'ok' and not passed:
+                raise ValueError('qualité locale : contrôle échoué marqué ok')
+            if status == 'ok':
+                valid.append(row)
+    failed = len(rows) - len(valid)
+    error_rate = failed / len(rows) if rows else 1.0
+    eligible = bool(valid) and error_rate <= 0.05
+    result = {}
+    for metric, field in LOCAL_DIMENSIONS.items():
+        values = [row[field] / 2 for row in valid]
+        details = {**metadata, 'documents_total':len(rows), 'documents_valid':len(valid),
+                   'control_failures':sum(r.get('status')=='control_failed' for r in rows),
+                   'model_errors':sum(r.get('status')=='error' for r in rows),
+                   'excluded_fraction':error_rate,
+                   'reason':None if eligible else 'plus de 5 % de contrôles ou appels ont échoué'}
+        value = mean(values) if eligible else None
+        block = MetricValue(name=metric,value=value,protocol=LOCAL_PROTOCOL,protocol_version='1',
+            status=MetricStatus.DIAGNOSTIC if eligible else MetricStatus.UNAVAILABLE,
+            direction=MetricDirection.MAXIMIZE,details=details).to_dict()
+        result[metric] = with_interval(block,bootstrap_interval(values,mean,unit='document') if eligible else None)
     return result

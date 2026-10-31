@@ -1,5 +1,5 @@
 {
-  "purpose": "qwen_anchored_local_subset50_v1",
+  "purpose": "qwen_anchored_local_quality_pilot5_v1",
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",
@@ -81,6 +81,17 @@
         "max_output_tokens": 8192,
         "critique": true
       }
+    },
+    {
+      "system": "llm-windowed",
+      "spia_attack": false,
+      "params": {
+        "backend": "qwen_local_box",
+        "window_chars": 6000,
+        "overlap_chars": 240,
+        "max_output_tokens": 8192,
+        "max_entities": 256
+      }
     }
   ],
   "documents_per_split": 200,
@@ -117,16 +128,39 @@
     "Cohorte banc-fiable-200-v2 (demande utilisateur du 2026-10-28) : 200 documents maximum par dataset, même graine et même méthode de tirage que la cohorte max-500 ; train auxiliaire DB-bio (1900 documents disjoints du test) pour occupation_l3.",
     "Variante contextuelle locale Qwen : même cohorte et attaquants que f525a1c ; plan global puis éditions minimales puis critique aveugle, sans gold ni label aval. Inspirations : IntentAnony, SEAL, AgentStealth ; aucun nouvel entraînement.",
     "Demande utilisateur : évaluer 50 items des 200 de la baseline par corpus ; sous-ensemble stratifié verrouillé, aucun nouveau tirage. Exécuter seulement llm-contextual ; comparer aux sorties parent déjà produites sur ces mêmes identifiants. Les trains auxiliaires restent inchangés.",
-    "Hypothèse ancrée : baseline Qwen fenêtrée suivie d'une critique aveugle n'ajoutant que des indices localisés de façon unique sur le texte original ; comparer sur les mêmes 50 documents. Pas de run pendant la pause demandée."
+    "Hypothèse ancrée : baseline Qwen fenêtrée suivie d'une critique aveugle n'ajoutant que des indices localisés de façon unique sur le texte original ; comparer sur les mêmes 50 documents. Pas de run pendant la pause demandée.",
+    "Pilote demandé : cinq documents par corpus, sélectionnés parmi les 50 déjà évalués ; RAT-Bench 2/2/1 niveaux. Fenêtré et ancré ; juge qualité Qwen local indicatif avec contrôles, deux workers."
   ],
-  "attack_workers": 16,
+  "attack_workers": 2,
   "spia_attack_max_output_tokens": 32768,
   "evaluation_subset": {
-    "documents_per_dataset": 50,
-    "manifest": "configs/evaluation/frozen/banc-fiable-200-v2-subset50.lock.json",
-    "sha256": "647bfd6535446b290a85aed53530f5cf1ea9b7320f3e2678cad1ca329c80a124"
+    "documents_per_dataset": 5,
+    "manifest": "configs/evaluation/frozen/banc-fiable-200-v2-subset5-quality.lock.json",
+    "sha256": "0955d07110bae0de2e88744f07fc78c16863ecbfa50050608206badffff8a732"
   },
   "run_systems": [
+    "llm-windowed",
     "llm-anchored"
-  ]
+  ],
+  "run_only": [
+    "ratbench",
+    "tab",
+    "supporttickets"
+  ],
+  "local_quality": {
+    "backend": "qwen_local_box",
+    "workers": 2,
+    "datasets": [
+      "ratbench",
+      "tab",
+      "supporttickets"
+    ]
+  },
+  "qwen_admission": {
+    "max_wait_s": 86400,
+    "poll_s": 30,
+    "max_queued": 2,
+    "max_running": 4,
+    "max_kv_usage": 0.8
+  }
 }

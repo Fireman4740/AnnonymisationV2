@@ -31,7 +31,7 @@ from anonymisation.metrics.research import (
     task_utility,
 )
 from anonymisation.metrics.spia_protection import spia_protection
-from anonymisation.metrics.text_quality import human_quality_metrics
+from anonymisation.metrics.text_quality import human_quality_metrics, local_quality_metrics
 from anonymisation.schema.io import sha256_file
 
 #: Catégorie hors périmètre, mappée explicitement par l'adaptateur (action
@@ -412,6 +412,9 @@ def build_scorecard(
             raise ScorecardError("utilité : split de test indépendant requis")
         frozen_task = evaluation["utility"]
         research.update(task_utility(frozen_task["rows"], frozen_task["metadata"]))
+    if evaluation and "local_quality" in evaluation:
+        frozen_local = evaluation["local_quality"]
+        research.update(local_quality_metrics(frozen_local["rows"], frozen_local["metadata"]))
     if evaluation and "text_quality" in evaluation:
         frozen_quality = evaluation["text_quality"]
         research.update(human_quality_metrics(frozen_quality["rows"], frozen_quality["metadata"]))

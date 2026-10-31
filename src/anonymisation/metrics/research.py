@@ -17,7 +17,7 @@ from anonymisation.metrics.entities import bounds, categories, field_value
 from anonymisation.metrics.uncertainty import bootstrap_interval, mean, ratio_of_sums, with_interval
 
 SKLEARN_VERSION = "1.8.0"
-RESEARCH_METRICS = frozenset({"utility_retention", "task_f1_delta", "qicr", "male_k", "brier", "ece", "human_readability", "human_relevance", "human_faithfulness"})
+RESEARCH_METRICS = frozenset({"utility_retention", "task_f1_delta", "qicr", "male_k", "brier", "ece", "human_readability", "human_relevance", "human_faithfulness", "local_readability", "local_relevance", "local_faithfulness"})
 
 
 def official_library() -> dict[str, str]:
