@@ -191,9 +191,9 @@ def test_campaign_uses_only_requested_systems_and_caps_evaluation_at_200():
     cfg = _campaign_cfg()
     assert cfg["documents_per_dataset"] == 200 and cfg["cap_documents"] is True
     assert cfg["evaluation_subset"]["documents_per_dataset"] == 50
-    assert cfg["run_systems"] == ["llm-contextual"]
+    assert cfg["run_systems"] == ["llm-anchored"]
     assert {v["name"] for v in campaign.system_variants(cfg, remote_allowed=True)} == {
-        "oracle-mask", "regex-only", "llm-contextual"}
+        "oracle-mask", "regex-only", "llm-anchored"}
 
 
 def test_local_backend_requires_no_openrouter_price_cap():

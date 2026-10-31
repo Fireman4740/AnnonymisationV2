@@ -110,12 +110,13 @@ def freeze_task(
 
 
 def cmd_evaluate(run: str | Path, *, task: str | None = None, train_split: str = "train",
-                 population: str | Path | None = None, k_threshold: int = 10) -> int:
+                 population: str | Path | None = None, k_threshold: int = 10,
+                 quality_ratings: str | Path | None = None) -> int:
     from anonymisation.cli import score
 
     run_dir = Path(run)
-    if task is None and population is None:
-        raise ValueError("evaluate : --task ou --population requis")
+    if task is None and population is None and quality_ratings is None:
+        raise ValueError("evaluate : --task, --population ou --quality-ratings requis")
     # Une tentative échouée ne doit pas laisser une ancienne évaluation utilisable.
     (run_dir / EVALUATION_LOCK).unlink(missing_ok=True)
     (run_dir / EVALUATION_FILE).unlink(missing_ok=True)
@@ -160,6 +161,13 @@ def cmd_evaluate(run: str | Path, *, task: str | None = None, train_split: str =
                          "population_sha256": external[str(population_path)],
                          "population_size": len(population_data["records"]), "k_threshold": k_threshold,
                          "matching": "exact-normalized-equality-v1"}}
+    if quality_ratings is not None:
+        from anonymisation.metrics.text_quality import freeze_human_quality
+
+        quality_path = Path(quality_ratings).resolve()
+        quality_data = score._read_json(quality_path)
+        payload["text_quality"] = freeze_human_quality(quality_data, successful)
+        external[str(quality_path)] = sha256_file(quality_path)
     context = {"pivot": inputs["pivot"], "external": external,
                "successful_doc_ids": sorted(successful)}
     for section in payload.values():
@@ -198,10 +206,10 @@ def load_evaluation(run_dir: Path, lock: Mapping[str, Any], inputs: Mapping[str,
         raise ValueError("évaluation : gold différent")
     for filename, sha in evaluation_lock["external"].items():
         if sha256_file(Path(filename)) != sha:
-            raise ValueError("évaluation : population modifiée")
+            raise ValueError("évaluation : référence externe modifiée")
     outputs = verify_run_outputs(run_dir, evaluation_lock["outputs"], (EVALUATION_FILE,), context="score evaluation")
     payload = score._read_json(run_dir / EVALUATION_FILE)
-    if set(payload) - {"utility", "population"}:
+    if set(payload) - {"utility", "population", "text_quality"}:
         raise ValueError("évaluation : section inconnue")
     for section in payload.values():
         context = section["metadata"]["evaluation_context"]
@@ -210,6 +218,8 @@ def load_evaluation(run_dir: Path, lock: Mapping[str, Any], inputs: Mapping[str,
             raise ValueError("évaluation : documents ou références divergents")
     if "utility" in payload and {r["doc_id"] for r in payload["utility"]["rows"]} != expected_doc_ids:
         raise ValueError("évaluation : couverture des documents de tâche divergente")
+    if "text_quality" in payload and {r["doc_id"] for r in payload["text_quality"]["rows"]} != expected_doc_ids:
+        raise ValueError("évaluation : couverture des notes humaines divergente")
     # Le scorer conserve les empreintes de TOUTES ses dépendances indirectes.
     inputs["pivot"].update(frozen_inputs["pivot"])
     inputs["run"].update(outputs)

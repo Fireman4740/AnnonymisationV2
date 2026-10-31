@@ -114,3 +114,48 @@ Les anciennes campagnes et leurs scorecards 2.0 restent immuables. Une nouvelle
 version peut être recalculée hors ligne à partir des sorties figées, avec sa
 provenance et un répertoire distinct. Aucune campagne modèle n'est nécessaire
 pour appliquer ce retrait.
+
+## Compréhension et pertinence : évaluation humaine conditionnelle
+
+À la demande de l'utilisateur, trois nouvelles mesures **diagnostiques** peuvent
+être ajoutées à partir de notes humaines figées : `human_readability` (texte
+compréhensible), `human_relevance` (informations nécessaires à la tâche
+conservées), et `human_faithfulness` (pas de déformation factuelle). Chacune est
+notée séparément 0 = échec, 1 = partiel, 2 = préservé, puis normalisée sur
+[0,1]. Le score est la moyenne par document des notes de ses évaluateurs,
+puis la moyenne des documents ; l'IC 95 % bootstrap rééchantillonne les
+documents. L'accord exact entre évaluateurs est fourni en détail.
+
+Au moins deux évaluateurs distincts sont requis pour **chaque** document réussi,
+avant toute agrégation. L'évaluation de lisibilité se fait sur le texte
+anonymisé seul ; la pertinence et la fidélité utilisent le texte original et,
+si disponible, la tâche déclarée, sans pénaliser le retrait d'un détail privé
+non nécessaire. Une revue aveugle au système, des contrôles texte intact / texte
+vide et un échantillon indépendant sont recommandés mais ne sont pas vérifiés
+par le programme. Les scores ne démontrent ni la confidentialité, ni une
+validation de l'accord humain. Ils ne réactivent pas l'ancien juge ni ROUGE-L.
+
+Fichier JSON requis : `rubric` vaut `human-text-quality-v1`, `evaluator` vaut
+`human`, `study_id` est un identifiant commun à la campagne de revue, et `rows` contient pour chaque document `doc_id`,
+`anonymized_sha256` (SHA-256 UTF-8 du texte anonymisé) et `ratings` (au moins
+deux objets `{rater, readability, relevance, faithfulness}`). Les identifiants
+d'évaluateurs sont pseudonymes. Notes manquantes, doublons, notes hors échelle
+et empreintes divergentes sont refusés. Les textes restent locaux.
+
+```sh
+python scripts/prepare_text_quality.py --run runs/mon-run --out notes-humaines.json \
+  --study-id etude-1 --raters annotateur-1 annotateur-2 \
+  --readability-out textes-anonymises.json --review-out textes-pour-revue.json
+# Remplir les notes nulles après revue indépendante de chaque document.
+anonv2 evaluate --run runs/mon-run --task ticket_routing --quality-ratings notes-humaines.json
+anonv2 score --run runs/mon-run --protocol <protocole-du-corpus>
+```
+
+`evaluate` fige les notes, l'empreinte du fichier et les prédictions ; `score`
+ne relance aucun modèle. Si une étape `evaluate` doit aussi conserver une tâche
+ou une population déjà évaluée, les options correspondantes doivent être
+répétées. Sans notes valides, ces trois métriques sont `not_applicable`, pas zéro.
+
+La comparaison humaine exige la même étude et les mêmes évaluateurs pour chaque document ; les fichiers de notes propres aux systèmes peuvent différer.
+
+Le fichier facultatif `--review-out` contient les textes originaux, potentiellement personnels : le conserver en local. La grille commence volontairement avec des notes nulles, refusées tant qu’elles ne sont pas complétées.

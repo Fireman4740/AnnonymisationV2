@@ -13,6 +13,6 @@ uv run --isolated --no-project --with huggingface-hub --with gdown --with pandas
 # `tab_eval` : évaluateur TAB ORIGINAL (spaCy + en_core_web_md épinglés).
 uv sync --locked --python 3.11 --extra datasets --extra metrics --extra attack --extra tab_eval
 uv run --locked --extra datasets --extra metrics --extra attack --extra tab_eval \
-  python -m anonymisation.pipelines.llm_contextual.preflight
+  python -m anonymisation.pipelines.llm_anchored.preflight
 uv run --locked --extra datasets --extra metrics --extra attack --extra tab_eval \
   python scripts/evaluation_smoke.py

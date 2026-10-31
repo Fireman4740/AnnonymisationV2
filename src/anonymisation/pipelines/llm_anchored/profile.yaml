@@ -1,0 +1,87 @@
+# Profil d'exécution du pipeline « llm_anchored » (architecture multi-fenêtres)
+#
+# Spéc : documentation/specifications/SPEC-10-pipeline-anonymisation.md
+#
+# Comme pour `llm_full`, ce profil ne sert qu'à satisfaire la validation
+# structurelle de `RuntimeProfile` : `llm-anchored-v1` fait sa propre détection
+# et sa propre décision, fenêtre par fenêtre, hors du pipeline à 8 étapes.
+# Les valeurs de `stages.*` sont des remplisseurs syntaxiquement valides.
+#
+# `llm.allow_remote` reste `false` : le backend par défaut est le serveur vLLM
+# local `qwen_local_box` (127.0.0.1:18020 sur la box d'évaluation). Un backend
+# distant ne doit être choisi que sur corpus synthétique autorisé.
+
+profile: llm_anchored
+schema_version: "2.0"
+
+stages:
+  detect:
+    enabled: false
+    deterministic:
+      enabled: false
+      patterns: "configs/detection/patterns.yaml"
+      min_confidence: 0.30
+    ner:
+      enabled: false
+    llm_reviewer:
+      enabled: false
+
+  fuse:
+    enabled: false
+    strategy: priority_longest
+    keep_multilabel_overlap: true
+
+  assess:
+    enabled: false
+    estimator: naive
+    risk_model: prosecutor
+    population_id: null
+    use_upper_bound: true
+
+  plan:
+    enabled: false
+    policy_set: "configs/policy/policies.yaml"
+    policy: P2
+
+  transform:
+    enabled: false
+    pseudonymization:
+      secret_env: "ANONV2_PSEUDO_SECRET"
+      scope: "default"
+      length: 6
+    masking:
+      mode: full
+
+  validate:
+    enabled: false
+    check_placeholders: false
+    check_forbidden_patterns: false
+    check_gold_leakage: false
+    fail_on_leak: false
+
+  audit:
+    enabled: false
+
+  rewrite:
+    enabled: false
+
+llm:
+  mode: local
+  allow_remote: false
+
+budgets:
+  # Le temps par fenêtre est borné par le backend ; ce budget est le garde-fou
+  # du profil commun, pas une mesure du découpage.
+  per_document_timeout_s: 600
+  max_document_chars: 20000
+
+determinism:
+  seed: 42
+  # La sortie d'un LLM n'est pas bit-à-bit reproductible même à température
+  # basse : `strict` reste informatif, pas une garantie.
+  strict: false
+
+output:
+  root: "runs"
+  write_traces: true
+  write_decisions: true

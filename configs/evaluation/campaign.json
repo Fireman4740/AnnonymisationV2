@@ -1,5 +1,5 @@
 {
-  "purpose": "qwen_contextual_local_subset50_v1",
+  "purpose": "qwen_anchored_local_subset50_v1",
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",
@@ -72,14 +72,14 @@
       "spia_attack": true
     },
     {
-      "system": "llm-contextual",
+      "system": "llm-anchored",
       "spia_attack": true,
       "params": {
         "backend": "qwen_local_box",
-        "window_chars": 3000,
+        "window_chars": 6000,
         "overlap_chars": 240,
         "max_output_tokens": 8192,
-        "critique_rounds": 1
+        "critique": true
       }
     }
   ],
@@ -116,7 +116,8 @@
     "Attaques originales actives sur tous les systèmes : RAT-Bench (R_succ, parité avec le code officiel) et SPIA (CPR/IPR, calculate_ipr_cpr original), attaquant Qwen3.8-27B local — différent des attaquants des articles, résultats non comparables aux chiffres publiés.",
     "Cohorte banc-fiable-200-v2 (demande utilisateur du 2026-10-28) : 200 documents maximum par dataset, même graine et même méthode de tirage que la cohorte max-500 ; train auxiliaire DB-bio (1900 documents disjoints du test) pour occupation_l3.",
     "Variante contextuelle locale Qwen : même cohorte et attaquants que f525a1c ; plan global puis éditions minimales puis critique aveugle, sans gold ni label aval. Inspirations : IntentAnony, SEAL, AgentStealth ; aucun nouvel entraînement.",
-    "Demande utilisateur : évaluer 50 items des 200 de la baseline par corpus ; sous-ensemble stratifié verrouillé, aucun nouveau tirage. Exécuter seulement llm-contextual ; comparer aux sorties parent déjà produites sur ces mêmes identifiants. Les trains auxiliaires restent inchangés."
+    "Demande utilisateur : évaluer 50 items des 200 de la baseline par corpus ; sous-ensemble stratifié verrouillé, aucun nouveau tirage. Exécuter seulement llm-contextual ; comparer aux sorties parent déjà produites sur ces mêmes identifiants. Les trains auxiliaires restent inchangés.",
+    "Hypothèse ancrée : baseline Qwen fenêtrée suivie d'une critique aveugle n'ajoutant que des indices localisés de façon unique sur le texte original ; comparer sur les mêmes 50 documents. Pas de run pendant la pause demandée."
   ],
   "attack_workers": 16,
   "spia_attack_max_output_tokens": 32768,
@@ -126,6 +127,6 @@
     "sha256": "647bfd6535446b290a85aed53530f5cf1ea9b7320f3e2678cad1ca329c80a124"
   },
   "run_systems": [
-    "llm-contextual"
+    "llm-anchored"
   ]
 }

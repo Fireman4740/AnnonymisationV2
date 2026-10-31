@@ -174,3 +174,52 @@ def test_observed_event_calibration_is_wired_to_verified_attack_and_run(referenc
     lock_path.write_text(json.dumps(lock))
     with pytest.raises(ValueError, match="autres prédictions"):
         score.cmd_score(run, "mini-v1")
+
+
+def test_human_quality_is_frozen_scored_and_invalidated_if_modified(reference_run, tmp_path):
+    import hashlib
+
+    run, _ = reference_run
+    predictions = [json.loads(line) for line in (run / 'predictions.jsonl').read_text().splitlines()]
+    rows = []
+    for item in predictions:
+        rows.append({'doc_id': item['doc_id'],
+            'anonymized_sha256': hashlib.sha256(item['anonymized_text'].encode()).hexdigest(),
+            'ratings': [{'rater': 'r1', 'readability': 2, 'relevance': 1, 'faithfulness': 2},
+                        {'rater': 'r2', 'readability': 2, 'relevance': 2, 'faithfulness': 2}]})
+    ratings = tmp_path / 'ratings.json'
+    ratings.write_text(json.dumps({'rubric': 'human-text-quality-v1', 'evaluator': 'human', 'study_id': 'study-1', 'rows': rows}))
+    assert cmd_evaluate(run, task='routing', quality_ratings=ratings) == 0
+    assert score.cmd_score(run, 'mini-v1') == 0
+    card = json.loads((run / 'scorecard.json').read_text())
+    assert card['diagnostic']['human_readability']['value'] == 1.0
+    assert card['diagnostic']['human_relevance']['value'] == 0.75
+    assert card['diagnostic']['human_faithfulness']['value'] == 1.0
+    assert card['inputs']['external'][str(ratings)] == sha256_file(ratings)
+    other = copy.deepcopy(card)
+    for name in ('utility_retention', 'task_f1_delta', 'human_readability', 'human_relevance', 'human_faithfulness'):
+        other['diagnostic'][name]['details']['evaluation_context']['external'] = {'other-rating-file': 'different'}
+    assert_comparable_across_systems([card, other])
+    other['diagnostic']['human_readability']['details']['reviewers_by_doc_sha256'] = 'different'
+    with pytest.raises(MetricComparisonError, match='définition incompatible'):
+        assert_comparable_across_systems([card, other])
+    ratings.write_text(ratings.read_text() + ' ')
+    with pytest.raises(ValueError, match='modifiée|modifié'):
+        score.cmd_score(run, 'mini-v1')
+
+
+def test_quality_template_is_unscored_until_reviewed(reference_run, tmp_path):
+    from scripts.prepare_text_quality import prepare
+
+    run, _ = reference_run
+    template = tmp_path / 'template.json'
+    anonymous = tmp_path / 'readability.json'
+    paired = tmp_path / 'review.json'
+    assert prepare(run, template, study_id='study-1', raters=['r1', 'r2'],
+                   review_out=paired, readability_out=anonymous) == 2
+    data = json.loads(template.read_text())
+    assert data['rows'][0]['ratings'][0]['readability'] is None
+    assert 'original' not in json.loads(anonymous.read_text())['documents'][0]
+    assert 'original' in json.loads(paired.read_text())['documents'][0]
+    with pytest.raises(ValueError, match='entier'):
+        cmd_evaluate(run, quality_ratings=template)

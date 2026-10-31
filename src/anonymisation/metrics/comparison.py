@@ -47,6 +47,9 @@ _CHECKED_METRICS: tuple[tuple[str, str], ...] = (
     ("diagnostic", "tab_official"),
     ("diagnostic", "utility_retention"),
     ("diagnostic", "task_f1_delta"),
+    ("diagnostic", "human_readability"),
+    ("diagnostic", "human_relevance"),
+    ("diagnostic", "human_faithfulness"),
     ("diagnostic", "qicr"),
     ("diagnostic", "male_k"),
     ("diagnostic", "brier"),
@@ -212,13 +215,20 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                 continue
             details = block.get("details") or {}
             values += 1
+            context = details.get("evaluation_context")
+            if metric in {"utility_retention", "task_f1_delta", "human_readability", "human_relevance", "human_faithfulness"} and isinstance(context, dict):
+                # Le fichier de notes dépend du système ; il est vérifié par score,
+                # mais son empreinte ne doit pas rendre les notes incomparables.
+                context = {key: context.get(key) for key in ("pivot", "successful_doc_ids")}
             signature = (
                 block.get("protocol", sc.get("protocol")),
                 block.get("protocol_version", sc.get("protocol_version")),
                 details.get("definition_id"),
                 details.get("denominator"),
                 _evaluator_signature(details),
-                details.get("evaluation_context"),
+                context,
+                details.get("study_id"),
+                details.get("reviewers_by_doc_sha256"),
                 details.get("event_contract"),
                 details.get("evaluator"),
                 details.get("model_sha256"),
@@ -298,6 +308,9 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         "tab_official": "Rappel TAB officiel",
         "utility_retention": "Rétention tâche",
         "task_f1_delta": "Δ F1 tâche",
+        "human_readability": "Lisibilité humaine",
+        "human_relevance": "Pertinence humaine",
+        "human_faithfulness": "Fidélité humaine",
         "qicr": "QICR (détection)",
         "male_k": "MALE-k",
         "brier": "Brier (événement)",

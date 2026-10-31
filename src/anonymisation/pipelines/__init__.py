@@ -20,6 +20,7 @@ système de fichiers. Ajouter un pipeline = ajouter une ligne ici.
 
 from anonymisation.pipelines import deterministic as _deterministic  # noqa: F401
 from anonymisation.pipelines import hybrid_qi as _hybrid_qi  # noqa: F401
+from anonymisation.pipelines import llm_anchored as _llm_anchored  # noqa: F401
 from anonymisation.pipelines import llm_contextual as _llm_contextual  # noqa: F401
 from anonymisation.pipelines import llm_full as _llm_full  # noqa: F401
 from anonymisation.pipelines import llm_windowed as _llm_windowed  # noqa: F401
@@ -38,6 +39,7 @@ PIPELINE_PACKAGES: tuple[str, ...] = (
     "llm_full",
     "llm_windowed",
     "llm_contextual",
+    "llm_anchored",
     "oracle_mask",
 )
 

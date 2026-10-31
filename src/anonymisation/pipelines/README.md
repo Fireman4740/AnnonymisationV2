@@ -29,6 +29,7 @@ parcours du système de fichiers.
 | [`deterministic/`](deterministic/) | `deterministic-v1` | `spans`, `decisions`, `traces`, `risk`, `policy`, `gold_aware` | **oui** | Noyau 8 étapes de SPEC-10, hors ligne |
 | [`llm_full/`](llm_full/) | `llm-full-v1` | `spans`, `decisions` | non | Anonymisation intégrale par LLM, un appel par document |
 | [`llm_windowed/`](llm_windowed/) | `llm-windowed-v1` | `spans`, `decisions` | non | Anonymisation LLM par fenêtres recouvrantes, pour documents longs |
+| [`llm_anchored/`](llm_anchored/) | `llm-anchored-v1` | `spans`, `decisions` | non | Baseline fenêtrée et critique aveugle à ancrage vérifié (expérimental) |
 
 **Les deux ancres ne sont pas des gadgets** : sans elles, aucun chiffre de
 protection n'a d'échelle, et rien ne détecte une métrique fausse (un système
