@@ -91,6 +91,11 @@ def run() -> int:
 
 
 if __name__ == "__main__":
+    # Suite QuasiLeak prioritaire : la campagne multi-corpus figée reste intacte.
+    if Path("configs/evaluation/quasileak_suite.json").is_file():
+        from quasileak_suite import run_suite
+
+        raise SystemExit(run_suite())
     if Path("configs/evaluation/campaign.json").is_file():
         from evaluation_campaign import run_campaign
 
