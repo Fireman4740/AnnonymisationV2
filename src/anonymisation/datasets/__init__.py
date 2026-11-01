@@ -20,6 +20,7 @@ from anonymisation.datasets import (  # noqa: F401
     panorama,
     personalreddit,
     quasifr,
+    quasileak,
     ratbench,
     spia,
     supporttickets,

@@ -99,6 +99,7 @@ def test_repo_manifests_all_load() -> None:
         "supporttickets",
         "bitextsupport",
         "conll2003",
+        "quasileak",
     }
 
 

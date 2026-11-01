@@ -33,6 +33,7 @@ METRIC_CAPABILITY_GATE: Final[Mapping[str, frozenset[str]]] = {
        ("span_precision", "span_recall", "span_f1", "span_strict_f1")},
     "mask_coverage": frozenset({CAP_DECISIONS}),
     "tab_official": frozenset({CAP_DECISIONS}),
+    "quasileak_group_mask_rate": frozenset({CAP_DECISIONS}),
     "qicr": frozenset({CAP_SPANS}),
     **{name: frozenset({CAP_RISK}) for name in ("male_k", "brier", "ece")},
     **{name: frozenset() for name in ("utility_retention", "task_f1_delta", "human_readability", "human_relevance", "human_faithfulness", "local_readability", "local_relevance", "local_faithfulness")},

@@ -404,6 +404,17 @@ def build_scorecard(
         if name != "tab_official":
             raise ScorecardError(f"diagnostic externe {name!r} retiré ou absent du catalogue actif")
         diagnostic[name] = dict(value)
+    if dataset == 'quasileak':
+        from anonymisation.metrics.quasileak_masks import group_mask_rate
+        from anonymisation.metrics.uncertainty import with_interval
+
+        block = group_mask_rate(scored, gold_by_doc, documents_by_doc)
+        masked_metric = gate(
+            'quasileak_group_mask_rate', block['value'], capabilities=capabilities,
+            protocol=block['protocol'], protocol_version=block['protocol_version'],
+            status=MetricStatus(block['status']), direction=MetricDirection.MAXIMIZE,
+            details=block['details'])
+        diagnostic['quasileak_group_mask_rate'] = with_interval(masked_metric, block['interval'])
     diagnostic = apply_intervals(diagnostic, intervals)
     research = {}
     scored_by_doc = {str(r["doc_id"]): r for r in scored}

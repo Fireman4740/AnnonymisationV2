@@ -556,6 +556,11 @@ def ingest(
         — évite de re-hacher le corpus ; recalculée si absente.
     """
     key = manifest.key
+    if limit is not None and getattr(adapter, 'requires_complete_annotations', False):
+        raise IngestionError(
+            f"{key} : --limit tronque chaque table séparément et peut couper un groupe ; "
+            "ingérer le split complet puis utiliser un manifeste de sélection de documents"
+        )
 
     # --- Étape 1 : ACQUIRE ----------------------------------------------- #
     if resolution is None:

@@ -19,6 +19,7 @@ DIAGNOSTIC_METRICS: Final = DETAILED_QUALITY_METRICS | frozenset(
         "direct_leak_rate",
         "mask_coverage",
         "tab_official",
+        "quasileak_group_mask_rate",
         "local_readability",
         "local_relevance",
         "local_faithfulness",

@@ -1,0 +1,62 @@
+key: quasileak
+name: "QuasiLeak-Bench — groupes de quasi-indices sous politique"
+description: >
+  Messages synthétiques avec profils, politiques HIDE/KEEP/NEUTRAL et groupes
+  d'indices faibles pris isolément. Le protocole officiel exige des groupes
+  prédits avec leur attribut ; les simples masques n'en sont pas.
+doc: documentation/datasets/quasileak.md
+aliases: ["quasileak-bench", "quasileak_bench"]
+source:
+  kind: local
+  path: QuasiLeak-Bench
+  path_env: ANONV2_V1_DATASETS
+  files: ["quasileak_bench_data_full.jsonl", "split_manifest.json"]
+  repo: "Yufannnn/QuasiLeak-Bench"
+  revision: "75987cdf029fac5fecce160bea218b458ed46dbb"
+  paper: "arXiv:2610.21333"
+  instructions: >
+    Executer scripts/fetch_quasileak.py --root "$ANONV2_V1_DATASETS".
+    Le telechargement verifie les empreintes et ne place aucune donnee dans Git.
+license:
+  spdx: "CC-BY-NC-SA-4.0"
+  redistribution: true
+  restricted: true
+  citation: "zhu2026quasileak"
+  notes: "Donnees CC BY-NC-SA 4.0 ; scorer source MIT. Respecter les restrictions non commerciales et le partage a l'identique."
+integrity:
+  sha256: "2d70694af86ca0e5d4ca11df052be793b083fdcff66d02da9d9a659fb656ef5e"
+  expected_documents: 5000
+  expected_profiles: 500
+structure:
+  domain: generic
+  languages: ["en"]
+  synthetic: true
+  has_profiles: true
+  has_combinations: false
+  has_organizations: false
+  has_tasks: false
+  split_by: person_id
+  splits: ["train", "validation", "test"]
+label_map:
+  age: {identifier_type: QUASI, qi_categories: [GEN_AGE], granularity: COARSE, stability: STABLE}
+  gender: {identifier_type: QUASI, qi_categories: [GEN_GENDER], granularity: COARSE, stability: STABLE}
+  nationality: {identifier_type: QUASI, qi_categories: [GEN_ORIGIN_BELIEF], granularity: COARSE, stability: STABLE}
+  education: {identifier_type: QUASI, qi_categories: [GEN_EDUCATION], granularity: COARSE, stability: STABLE}
+  occupation: {identifier_type: QUASI, qi_categories: [GEN_OCCUPATION], granularity: COARSE, stability: VOLATILE}
+  income: {identifier_type: QUASI, qi_categories: [GEN_SOCIOECON], granularity: COARSE, stability: VOLATILE}
+  relationship: {identifier_type: QUASI, qi_categories: [GEN_FAMILY], granularity: COARSE, stability: VOLATILE}
+  health: {identifier_type: QUASI, qi_categories: [GEN_HEALTH_STATE], granularity: COARSE, stability: VOLATILE}
+evaluation:
+  protocol: "quasileak-v1"
+  protocol_version: "1"
+  official_eligible: false
+  default_metric_status: "DIAGNOSTIC"
+  granularities: ["document", "evidence_group"]
+  report_by: ["attribute", "context"]
+  gold_scope:
+    exhaustive: false
+    reason: "Seuls les groupes de quasi-indices construits et verifies sont annotes ; les autres informations sensibles ne sont pas exhaustives."
+population:
+  population_id: null
+  k_computable: false
+  notes: "Les groupes annotés ne constituent pas une population indépendante pour k."

@@ -638,6 +638,13 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
     score_p.add_argument("--protocol", required=True, help="Protocole d'évaluation.")
 
+    quasileak_p = sub.add_parser('quasileak-score', help='Score les groupes réellement prédits avec le scorer officiel QuasiLeak-Bench.')
+    quasileak_p.add_argument('--root', required=True, type=Path, help='Racine de la release QuasiLeak vérifiée.')
+    quasileak_p.add_argument('--predictions', required=True, type=Path, help='JSONL natif de groupes prédits.')
+    quasileak_p.add_argument('--split', required=True, choices=('train', 'validation', 'test'))
+    quasileak_p.add_argument('--selection', type=Path, help='Liste JSON explicite de sample_id, sous-ensemble du split.')
+    quasileak_p.add_argument('--out', required=True, type=Path)
+
     evaluate_p = sub.add_parser("evaluate", help="Fige un évaluateur aval local et/ou une référence populationnelle indépendante.")
     evaluate_p.add_argument("--run", required=True, help="Répertoire produit par predict.")
     evaluate_p.add_argument("--local-quality-backend", help="Juge qualité local optionnel (diagnostic, avec contrôles).")
@@ -770,6 +777,18 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_systems_list()
         print(f"Sous-commande inconnue : {args.systems_command}", file=sys.stderr)
         return 2
+    if args.command == 'quasileak-score':
+        from anonymisation.metrics.quasileak_official import score_official
+
+        try:
+            result = score_official(args.root / 'quasileak_bench_data_full.jsonl', args.root / 'split_manifest.json',
+                                    args.predictions, split=args.split, selection=args.selection)
+            write_json(args.out, result)
+            print(f"QuasiLeak : {result['scores_0_100']['N_docs']} documents, statut {result['status']}.")
+            return 0
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f'Score QuasiLeak impossible : {exc}', file=sys.stderr)
+            return 2
     if args.command == "evaluate":
         from anonymisation.cli.evaluate import cmd_evaluate
 
