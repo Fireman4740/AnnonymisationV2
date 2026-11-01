@@ -8,6 +8,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from anonymisation.llm.config import load_backends_config
+
 METRICS_URL = 'http://127.0.0.1:18020/metrics'
 
 
@@ -28,18 +30,31 @@ def admissible(values: dict[str,float], settings: dict) -> bool:
             and values['kv_cache_usage_perc'] <= settings['max_kv_usage'])
 
 
+def fetch_metrics(api_key: str | None) -> dict[str, float]:
+    """La clé reste en mémoire et n'est envoyée qu'au serveur local."""
+    headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+    request = urllib.request.Request(METRICS_URL, headers=headers)
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return parse_metrics(response.read().decode())
+
+
 def main() -> None:
-    settings = json.loads(Path('configs/evaluation/campaign.json').read_text())['qwen_admission']
+    campaign = json.loads(Path('configs/evaluation/campaign.json').read_text())
+    settings = campaign['qwen_admission']
     if not 1 <= settings['poll_s'] <= 60 or settings['max_wait_s'] < 1:
         raise ValueError('qwen_admission : délais invalides')
+    api_key = load_backends_config().resolve(campaign['anonymizer_backend']).resolve_api_key()
     deadline = time.monotonic() + settings['max_wait_s']
     while True:
         try:
-            with urllib.request.urlopen(METRICS_URL,timeout=5) as response:
-                values = parse_metrics(response.read().decode())
+            values = fetch_metrics(api_key)
             print('QWEN_ADMISSION', json.dumps({'metrics':values,'ready':admissible(values,settings)},sort_keys=True),flush=True)
             if admissible(values,settings):
                 return
+        except urllib.error.HTTPError as exc:
+            print('QWEN_ADMISSION', json.dumps({'ready':False,'error':'HTTPError','status':exc.code}),flush=True)
+            if exc.code in (401, 403):
+                raise RuntimeError('accès aux métriques Qwen refusé : vérifier la clé API locale') from exc
         except (OSError,ValueError,urllib.error.URLError) as exc:
             print('QWEN_ADMISSION',json.dumps({'ready':False,'error':type(exc).__name__}),flush=True)
         if time.monotonic() >= deadline:
