@@ -6,8 +6,10 @@ les statistiques internes des pipelines ; ils ne sont plus publiés par score.
 
 from typing import Final
 
+from anonymisation.metrics.detailed_quality import METRICS as DETAILED_QUALITY_METRICS
+
 PRIMARY_METRICS: Final = frozenset({"cpr", "ipr", "reid_success_rate"})
-DIAGNOSTIC_METRICS: Final = frozenset(
+DIAGNOSTIC_METRICS: Final = DETAILED_QUALITY_METRICS | frozenset(
     {
         "span_precision",
         "span_recall",

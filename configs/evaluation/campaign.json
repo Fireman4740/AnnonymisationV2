@@ -156,6 +156,11 @@
       "supporttickets"
     ]
   },
+  "detailed_quality": {
+    "backend": "qwen_local_box",
+    "workers": 2,
+    "datasets": ["ratbench", "tab", "supporttickets"]
+  },
   "qwen_admission": {
     "max_wait_s": 86400,
     "poll_s": 30,

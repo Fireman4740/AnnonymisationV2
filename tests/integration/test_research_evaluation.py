@@ -226,8 +226,9 @@ def test_quality_template_is_unscored_until_reviewed(reference_run, tmp_path):
 
 
 def test_local_quality_is_frozen_and_scored_offline(reference_run, monkeypatch):
-    from anonymisation.judge import local_quality
     from sklearn.linear_model import LogisticRegression
+
+    from anonymisation.judge import local_quality
 
     run, _ = reference_run
     def fake(documents, predictions, *, backend_name, workers):
@@ -247,3 +248,79 @@ def test_local_quality_is_frozen_and_scored_offline(reference_run, monkeypatch):
     assert card['diagnostic']['local_relevance']['value']==0.5
     assert card['diagnostic']['local_faithfulness']['value']==1.0
     assert card['diagnostic']['local_relevance']['status']=='diagnostic'
+
+
+def test_detailed_quality_freezing_scoring_and_human_calibration(reference_run, monkeypatch, tmp_path):
+    from anonymisation.judge import detailed_quality
+    from anonymisation.metrics.comparison import render_comparison_markdown
+    from anonymisation.metrics.detailed_quality import QUESTION_METRICS
+    from scripts.detailed_quality_human import calibrate, prepare
+
+    run, _ = reference_run
+    def fake(documents, predictions, *, backend_name, workers, facts_payload):
+        rows = [{'doc_id': doc_id, 'status': 'ok', 'facts': [], 'chunks': [
+            {'weight': 10, 'answers': {q: 'yes' for q in QUESTION_METRICS.values()}, 'invention_count': 0}]}
+            for doc_id in sorted(predictions)]
+        return {'rows': rows, 'metadata': {'protocol': 'local-quality-checklist-v1', 'judge': {'model': 'stub'}}}
+    monkeypatch.setattr(detailed_quality, 'freeze_detailed_quality', fake)
+    assert cmd_evaluate(run, detailed_quality_backend='stub') == 0
+    assert score.cmd_score(run, 'mini-v1') == 0
+    card = json.loads((run / 'scorecard.json').read_text())
+    assert card['diagnostic']['quality_grammar']['value'] == 1
+    assert card['diagnostic']['quality_errors_per_document']['value'] == 0
+    assert 'quality_fact_retention' in card['not_applicable']
+    assert 'Grammaire (juge local)' in render_comparison_markdown([card, copy.deepcopy(card)])
+    changed = copy.deepcopy(card)
+    changed['diagnostic']['quality_grammar']['details']['quality_applicability_sha256'] = 'different'
+    with pytest.raises(MetricComparisonError, match='définition incompatible'):
+        assert_comparable_across_systems([card, changed])
+    ratings_path = tmp_path / 'annotations.json'
+    assert prepare(run, ratings_path, study_id='etude', raters=['a', 'b']) == 2
+    data = json.loads(ratings_path.read_text())
+    with pytest.raises(ValueError, match='incomplètes'):
+        calibrate(run, ratings_path)
+    for row in data['rows']:
+        for rating in row['ratings']:
+            rating['answers'] = {q: 'yes' for q in QUESTION_METRICS.values()}
+    ratings_path.write_text(json.dumps(data))
+    result = calibrate(run, ratings_path)
+    assert result['questions']['read_grammar']['compared'] == 2
+    assert result['questions']['read_grammar']['agreement'] == 1
+    assert result['facts']['agreement'] is None
+    data['rows'][0]['anonymized_sha256'] = 'changed'
+    ratings_path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match='modifié'):
+        calibrate(run, ratings_path)
+
+
+def test_degraded_controls_require_manual_review(reference_run, monkeypatch, tmp_path):
+    import hashlib
+
+    from scripts import detailed_quality_controls as controls
+
+    run, _ = reference_run
+    docs, _ = score._load_gold('mini', 'test')
+    reference = {'protocol': 'nonprivate-facts-v1', 'study_id': 's', 'documents': []}
+    for doc_id, doc in sorted(docs.items()):
+        term = 'facture' if 'facture' in doc.text else 'connexion'
+        start = doc.text.index(term)
+        reference['documents'].append({'doc_id': doc_id, 'source_sha256': hashlib.sha256(doc.text.encode()).hexdigest(),
+            'facts': [{'id': 'f1', 'start': start, 'end': start + len(term), 'text': term}]})
+    facts = tmp_path / 'facts.json'
+    facts.write_text(json.dumps(reference))
+    case_path = tmp_path / 'controls.json'
+    assert controls.prepare(run, facts, case_path) == 2
+    with pytest.raises(ValueError, match='relus'):
+        controls.evaluate(case_path, backend='stub', workers=1)
+    cases = json.loads(case_path.read_text())
+    for case in cases['cases']:
+        case['reviewed'] = True
+        case['expected_facts'] = {'f1': 'omitted'}
+    case_path.write_text(json.dumps(cases))
+    def fake(docs, predictions, *, backend_name, workers, facts_payload):
+        return {'metadata': {'judge': {'model': 'stub'}}, 'rows': [
+            {'doc_id': doc_id, 'status': 'ok', 'chunks': [], 'facts': [{'id': 'f1', 'verdict': 'omitted'}]}
+            for doc_id in sorted(predictions)]}
+    monkeypatch.setattr(controls, 'freeze_detailed_quality', fake)
+    result = controls.evaluate(case_path, backend='stub', workers=1)
+    assert result['fact_verdicts'] == {'correct': 2, 'incorrect': 0, 'unavailable': 0}

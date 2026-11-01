@@ -22,6 +22,7 @@ from anonymisation.metrics.contracts import (
     MetricValue,
     assert_comparable,
 )
+from anonymisation.metrics.detailed_quality import METRICS as DETAILED_QUALITY_METRICS
 
 __all__ = [
     "MetricComparisonError",
@@ -34,6 +35,7 @@ __all__ = [
 
 #: Métriques dont la comparabilité est contrôlée ligne à ligne.
 _CHECKED_METRICS: tuple[tuple[str, str], ...] = (
+    *(("diagnostic", name) for name in sorted(DETAILED_QUALITY_METRICS)),
     ("primary", "cpr"),
     ("primary", "ipr"),
     ("primary", "reid_success_rate"),
@@ -221,7 +223,7 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
             details = block.get("details") or {}
             values += 1
             context = details.get("evaluation_context")
-            if metric in {"utility_retention", "task_f1_delta", "human_readability", "human_relevance", "human_faithfulness", "local_readability", "local_relevance", "local_faithfulness"} and isinstance(context, dict):
+            if (metric in {"utility_retention", "task_f1_delta", "human_readability", "human_relevance", "human_faithfulness", "local_readability", "local_relevance", "local_faithfulness"} or metric in DETAILED_QUALITY_METRICS) and isinstance(context, dict):
                 # Le fichier de notes dépend du système ; il est vérifié par score,
                 # mais son empreinte ne doit pas rendre les notes incomparables.
                 context = {key: context.get(key) for key in ("pivot", "successful_doc_ids")}
@@ -233,6 +235,9 @@ def assert_comparable_across_systems(scorecards: Sequence[dict[str, Any]]) -> No
                 _evaluator_signature(details),
                 context,
                 details.get("study_id"),
+                details.get("fact_study_id"),
+                details.get("fact_reference_sha256"),
+                details.get("quality_applicability_sha256"),
                 details.get("reviewers_by_doc_sha256"),
                 details.get("event_contract"),
                 details.get("evaluator"),
@@ -316,6 +321,16 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         "local_readability": "Lisibilité (juge local)",
         "local_relevance": "Pertinence (juge local)",
         "local_faithfulness": "Fidélité (juge local)",
+        "quality_understandable": "Compréhension (juge local)",
+        "quality_grammar": "Grammaire (juge local)",
+        "quality_references": "Références (juge local)",
+        "quality_main_information": "Information principale (juge local)",
+        "quality_no_contradiction": "Absence de contradiction (juge local)",
+        "quality_no_invention": "Absence d'invention (juge local)",
+        "quality_errors_per_document": "Erreurs détectées/document (juge local)",
+        "quality_fact_retention": "Faits conservés (juge local)",
+        "quality_fact_omission": "Faits omis (juge local)",
+        "quality_fact_contradiction": "Faits contredits (juge local)",
         "human_readability": "Lisibilité humaine",
         "human_relevance": "Pertinence humaine",
         "human_faithfulness": "Fidélité humaine",

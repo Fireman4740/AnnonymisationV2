@@ -22,11 +22,13 @@ from typing import Any, Final
 
 from anonymisation.capabilities import CAP_DECISIONS, CAP_RISK, CAP_SPANS
 from anonymisation.metrics.contracts import MetricDirection, MetricStatus, MetricValue
+from anonymisation.metrics.detailed_quality import METRICS as DETAILED_QUALITY_METRICS
 
 #: Capacités requises par métrique. Une métrique publiée absente de cette
 #: table est un défaut : le test ``test_gate_table_covers_published_metrics``
 #: échoue, ce qui force à décider explicitement de son portillon.
 METRIC_CAPABILITY_GATE: Final[Mapping[str, frozenset[str]]] = {
+    **{name: frozenset() for name in DETAILED_QUALITY_METRICS},
     **{name: frozenset({CAP_SPANS}) for name in
        ("span_precision", "span_recall", "span_f1", "span_strict_f1")},
     "mask_coverage": frozenset({CAP_DECISIONS}),

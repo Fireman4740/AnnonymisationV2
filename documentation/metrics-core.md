@@ -151,6 +151,101 @@ anonv2 evaluate --run runs/mon-run --task ticket_routing --quality-ratings notes
 anonv2 score --run runs/mon-run --protocol <protocole-du-corpus>
 ```
 
+## Qualité détaillée et calibration humaine (protocole expérimental v1)
+
+L'option `--detailed-quality-backend` ajoute un juge local distinct des notes
+globales. Elle s'inspire des questions élémentaires de BinEval (Cho et al.,
+2026, https://www.alphaxiv.org/pdf/2606.27226) et de l'évaluation de la
+cohérence factuelle par passages (AlignScore, Zha et al., 2023,
+https://aclanthology.org/2023.acl-long.634.pdf). Les questions, réponses et
+agrégations ci-dessous sont propres à ce projet : ce n'est ni une
+implémentation officielle de BinEval ou AlignScore, ni un score humain validé.
+
+Le modèle local répond `yes`, `no` ou `na` à six questions séparées : texte
+compréhensible, grammaire, références compréhensibles, information principale
+conservée, absence de contradiction et absence d'invention. Les trois premières
+voient uniquement le texte anonymisé ; les autres voient aussi la source. Les
+réponses applicables sont pondérées par la longueur du passage source puis les
+documents applicables sont moyennés. `na` est exclu, et le nombre de passages
+et documents applicables est publié. Les documents longs sont reconstruits et
+découpés sans couper une décision ; la cohérence entre passages reste une
+limite. Les contrôles texte vide et identité sont évalués pour chaque passage.
+Si plus de 5 % des documents ont une erreur ou un contrôle échoué, les mesures
+sont indisponibles. Les noms de système sont masqués ; un même modèle juge et
+anonymiseur demeure une source possible de biais.
+
+Une seconde consigne relève les contradictions ou inventions non privées en
+citant pour chaque erreur un extrait exact et distinct du texte anonymisé.
+Les citations sont vérifiées puis seules leurs quantités sont figées. La
+métrique `quality_errors_per_document` est le nombre moyen de citations
+détectées par document, avec le total dans les détails ; elle combine les deux
+types d'erreurs et ne garantit pas leur détection exhaustive.
+
+Les métriques `quality_fact_retention`, `quality_fact_omission` et
+`quality_fact_contradiction` requièrent en plus un fichier de référence externe
+`--quality-facts` de protocole `nonprivate-facts-v1`. Un annotateur doit y
+choisir les faits utiles et non privés ; le code ne peut pas vérifier seul ce
+choix. Chaque fait est une citation exacte de la source, par offsets Python
+`start` inclus et `end` exclus, avec `id` unique par document. Pour chaque
+document, `source_sha256` est l'empreinte SHA-256 UTF-8 de la source. Les
+documents de la référence doivent couvrir exactement les prédictions réussies.
+Le juge répond `preserved`, `omitted`, `contradicted` ou `uncertain` pour
+chaque fait. Les trois taux ont pour dénominateur les faits jugés ; les faits
+incertains sont exclus et comptés explicitement. Un fait traversant deux
+passages est `uncertain`. Sans référence ou sans fait jugé, ces taux sont
+indisponibles. Les résultats d'attaque restent séparés et ne sont pas déduits
+de ces scores.
+
+Le squelette de référence ne contient **aucun fait validé** et ne produit donc
+aucune mesure de préservation tant qu'il n'a pas été renseigné :
+
+```sh
+python scripts/detailed_quality_human.py prepare --run runs/mon-run \
+  --out notes-vierges.json --study-id pilote-1 --raters a b \
+  --facts-out faits.json --readability-out lecture.json --review-out revue.json
+# Compléter faits.json après revue : {"id":"f1","start":0,"end":12,"text":"citation ..."}
+anonv2 evaluate --run runs/mon-run --detailed-quality-backend qwen_local_box \
+  --quality-facts faits.json --local-quality-workers 2
+anonv2 score --run runs/mon-run --protocol <protocole-du-corpus>
+# Préparer une grille correspondant à la référence effectivement utilisée :
+python scripts/detailed_quality_human.py prepare --run runs/mon-run \
+  --out annotations.json --study-id pilote-1 --raters a b --facts faits.json \
+  --readability-out lecture.json --review-out revue.json
+# Remplir les notes indépendamment (yes/no/na et verdicts de faits), puis :
+python scripts/detailed_quality_human.py calibrate --run runs/mon-run \
+  --ratings annotations.json --out accord.json
+```
+
+Le document de revue appariée et la référence de faits contiennent ou peuvent
+contenir des informations personnelles : les garder localement. Les notes
+humaines doivent être remplies indépendamment et à l'aveugle du système ; le
+programme ne peut pas garantir cette indépendance. La calibration vérifie les
+empreintes, puis rapporte l'accord et les matrices de confusion par question et
+par fait ; les égalités humaines, réponses incertaines et documents jugés
+automatiquement de façon non unanime entre passages sont exclus et comptés.
+Une grille non remplie est refusée. La calibration ne devient pas une
+validation humaine tant que des personnes n'ont pas réellement annoté les
+sorties. Pour comparer des systèmes, utiliser les mêmes documents, questions,
+modèle et empreinte de référence de faits.
+
+Des contrôles volontairement dégradés peuvent être préparés à partir de cette
+référence : chaque cas supprime un fait de la source. La suppression peut laisser
+une preuve ailleurs dans le texte ; aucun résultat attendu n'est donc supposé.
+Une personne doit vérifier chaque cas, remplir `expected_facts` et/ou
+`expected_questions`, puis passer `reviewed` à `true` avant toute évaluation.
+Le fichier des cas contient le texte original ; le rapport ne contient que des
+comptages, l'empreinte du fichier et l'identité du juge.
+
+```sh
+python scripts/detailed_quality_controls.py prepare --run runs/mon-run --facts faits.json --out controles.json
+# Relire les cas et leurs attentes dans controles.json.
+python scripts/detailed_quality_controls.py evaluate --controls controles.json \
+  --backend qwen_local_box --workers 2 --out accord-controles.json
+```
+
+Ces suppressions constituent des contrôles synthétiques et ne remplacent pas
+une revue de sorties réelles, ni une évaluation des erreurs plus subtiles.
+
 `evaluate` fige les notes, l'empreinte du fichier et les prédictions ; `score`
 ne relance aucun modèle. Si une étape `evaluate` doit aussi conserver une tâche
 ou une population déjà évaluée, les options correspondantes doivent être

@@ -415,6 +415,10 @@ def build_scorecard(
     if evaluation and "local_quality" in evaluation:
         frozen_local = evaluation["local_quality"]
         research.update(local_quality_metrics(frozen_local["rows"], frozen_local["metadata"]))
+    if evaluation and "detailed_quality" in evaluation:
+        from anonymisation.metrics.detailed_quality import detailed_quality_metrics
+        frozen_detailed = evaluation['detailed_quality']
+        research.update(detailed_quality_metrics(frozen_detailed['rows'], frozen_detailed['metadata']))
     if evaluation and "text_quality" in evaluation:
         frozen_quality = evaluation["text_quality"]
         research.update(human_quality_metrics(frozen_quality["rows"], frozen_quality["metadata"]))

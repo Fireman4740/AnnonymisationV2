@@ -332,7 +332,9 @@ def conditional_evaluation_args(cfg: dict[str, Any], key: str, directory: Path) 
     spec = cfg.get("conditional_evaluations", {}).get(key) or {}
     local = cfg.get("local_quality") or {}
     use_local = key in local.get("datasets", [])
-    if not spec and not use_local:
+    detailed = cfg.get('detailed_quality') or {}
+    use_detailed = key in detailed.get('datasets', [])
+    if not spec and not use_local and not use_detailed:
         return None
     args = ["evaluate", "--run", str(directory)]
     if spec.get("task"):
@@ -341,7 +343,15 @@ def conditional_evaluation_args(cfg: dict[str, Any], key: str, directory: Path) 
         args += ["--population", spec["population"], "--k-threshold", str(spec.get("k_threshold", 10))]
     if use_local:
         args += ["--local-quality-backend", local["backend"], "--local-quality-workers", str(local["workers"])]
-    if not spec.get("task") and not spec.get("population") and not use_local:
+    if use_detailed:
+        args += ['--detailed-quality-backend', detailed['backend']]
+        if not use_local:
+            args += ['--local-quality-workers', str(detailed['workers'])]
+        elif detailed['workers'] != local['workers']:
+            raise ValueError('les deux juges doivent utiliser le même nombre de workers')
+        if (detailed.get('facts') or {}).get(key):
+            args += ['--quality-facts', detailed['facts'][key]]
+    if not spec.get("task") and not spec.get("population") and not use_local and not use_detailed:
         raise ValueError("évaluation conditionnelle : task, population ou qualité locale requis")
     return args
 

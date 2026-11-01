@@ -127,14 +127,15 @@ def _fits(doc_id: str, original: str, anonymized: str) -> bool:
     return max(len((SYSTEM + prompt).encode('utf-8')) for prompt in (read_prompt, pair_prompt)) <= MAX_PROMPT_BYTES
 
 
-def _aligned_chunks(doc_id: str, original: str, anonymized: str, decisions: Any):
+def _aligned_chunks(doc_id: str, original: str, anonymized: str, decisions: Any, *, fits=None):
     """Fenêtres alignées exactement via les offsets, sans couper un remplacement.
 
     Ne suppose pas que les longueurs des textes d'entrée et de sortie sont
     identiques. Refuse les décisions incohérentes plutôt que de juger une
     correspondance approximative entre deux passages.
     """
-    if _fits(doc_id, original, anonymized):
+    fits = fits or _fits
+    if fits(doc_id, original, anonymized):
         return [(original, anonymized)]
     if not isinstance(decisions, list):
         raise ValueError('décisions requises pour découper le texte')
@@ -181,7 +182,7 @@ def _aligned_chunks(doc_id: str, original: str, anonymized: str, decisions: Any)
                 raise ValueError('remplacement trop long pour le juge')
             attempted.add(end)
             a, b = candidate_offset(cursor), candidate_offset(end)
-            if end > cursor and _fits(f'{doc_id}:{len(chunks)}', original[cursor:end], anonymized[a:b]):
+            if end > cursor and fits(f'{doc_id}:{len(chunks)}', original[cursor:end], anonymized[a:b]):
                 chunks.append((original[cursor:end], anonymized[a:b]))
                 cursor = end
                 break
