@@ -272,3 +272,41 @@ def test_llm_grouping_never_invents_spans_and_hides_gold():
                       {'attribute': 'age', 'candidates': [1, 7]}, 'bad'], candidates)
     assert groups == [{'attribute': 'education', 'spans': [{'start': 0, 'end': 17}, {'start': 22, 'end': 39}]},
                       {'attribute': 'age', 'spans': []}, {'attribute': None, 'spans': []}]
+
+
+def test_llm_grouping_retries_invalid_json_then_fails_loudly(source, tmp_path, monkeypatch):
+    from anonymisation.llm.client import LlmCompletion
+    from scripts import quasileak_llm_grouping as grouping
+
+    root, _, _ = source
+    data, manifest = root / 'quasileak_bench_data_full.jsonl', root / 'split_manifest.json'
+    monkeypatch.setattr(grouping, 'DATA_SHA256', hashlib.sha256(data.read_bytes()).hexdigest())
+    monkeypatch.setattr(grouping, 'SPLIT_SHA256', hashlib.sha256(manifest.read_bytes()).hexdigest())
+    monkeypatch.setattr(grouping, 'load_backends_config', lambda: SimpleNamespace(
+        resolve=lambda name: SimpleNamespace(name='stub', kind='stub', model='stub', extra_body={})))
+    monkeypatch.setattr(grouping, 'assert_local_backend', lambda backend: None)
+    run = tmp_path / 'run'
+    run.mkdir()
+    (run / 'predictions.jsonl').write_text(json.dumps({'doc_id': 'test-1', 'status': 'ok', 'decisions': [
+        {'start': 0, 'end': 17, 'action': 'SUPPRESS', 'qi_category': 'X'},
+        {'start': 22, 'end': 39, 'action': 'SUPPRESS', 'qi_category': 'Y'}]}) + '\n')
+    selection = tmp_path / 'ids.json'
+    selection.write_text(json.dumps(['test-1']))
+    replies = iter(['{"evidence":', '{"evidence": [{"attribute": "education", "candidates": [1, 2]}]}'])
+
+    class FakeClient:
+        def complete(self, prompt, **kwargs):
+            content = next(replies)
+            kwargs['validate'](content)
+            return LlmCompletion(content=content, backend='stub', model='stub', cached=False,
+                                 finish_reason='stop', latency_ms=0)
+
+    monkeypatch.setattr(grouping.LlmClient, 'for_backend', lambda *a, **k: FakeClient())
+    out = tmp_path / 'groups.jsonl'
+    lock = grouping.group_run(root, run, selection, out, backend_name='stub')
+    assert (lock['errors'], lock['llm_calls']) == (0, 2)
+    assert json.loads(out.read_text())['evidence'][0]['spans'] == [{'start': 0, 'end': 17}, {'start': 22, 'end': 39}]
+    replies = iter(['{"evidence":'] * 3)
+    lock = grouping.group_run(root, run, selection, out, backend_name='stub')
+    assert (lock['errors'], lock['llm_calls']) == (1, 3)
+    assert json.loads(out.read_text())['status'] == 'error'
