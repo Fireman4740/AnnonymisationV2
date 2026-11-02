@@ -178,3 +178,38 @@ def test_ingest_predict_and_score_do_not_fabricate_official_group_predictions(so
     assert card['diagnostic']['quasileak_group_mask_rate']['value'] == 0
     assert card['diagnostic']['quasileak_group_mask_rate']['details']['groups_total'] == 1
     assert 'P-GF1' not in card['diagnostic'] and 'P-GF1' not in card['primary']
+
+
+def test_decision_export_groups_by_attribute_without_gold(tmp_path):
+    from anonymisation.metrics.quasileak_export import category_to_attribute, export_run
+
+    mapping = category_to_attribute({'education': SimpleNamespace(qi_categories=['GEN_EDUCATION']),
+                                     'age': SimpleNamespace(qi_categories=['GEN_AGE'])})
+    run = tmp_path / 'run'
+    run.mkdir()
+    decisions = [{'start': 22, 'end': 39, 'action': 'SUPPRESS', 'qi_category': 'GEN_EDUCATION'},
+                 {'start': 0, 'end': 17, 'action': 'MASK', 'qi_category': 'GEN_EDUCATION'},
+                 {'start': 40, 'end': 45, 'action': 'KEEP', 'qi_category': 'GEN_AGE'},
+                 {'start': 50, 'end': 55, 'action': 'SUPPRESS', 'qi_category': 'DIR_EMAIL'}]
+    rows = [{'doc_id': 'a', 'status': 'partial', 'decisions': decisions,
+             'annotations': [{'meta': {'attribute': 'health'}}]},
+            {'doc_id': 'b', 'status': 'ok', 'decisions': []}]
+    (run / 'predictions.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+    selection = tmp_path / 'ids.json'
+    selection.write_text(json.dumps(['a', 'b']))
+    out = tmp_path / 'groups.jsonl'
+    lock = export_run(run, selection, out, mapping=mapping, dataset_sha256='d', split_sha256='s')
+    exported = [json.loads(line) for line in out.read_text().splitlines()]
+    assert exported == [{'sample_id': 'a', 'evidence': [{'attribute': 'education', 'spans': [
+                            {'start': 0, 'end': 17}, {'start': 22, 'end': 39}]}]},
+                        {'sample_id': 'b', 'evidence': []}]
+    assert (lock['errors'], lock['groups'], lock['unmapped_decisions']) == (0, 1, 1)
+    rows[1]['status'] = 'error'
+    (run / 'predictions.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
+    assert export_run(run, selection, out, mapping=mapping, dataset_sha256='d', split_sha256='s')['errors'] == 1
+    selection.write_text(json.dumps(['a']))
+    with pytest.raises(ValueError, match='sélection'):
+        export_run(run, selection, out, mapping=mapping, dataset_sha256='d', split_sha256='s')
+    with pytest.raises(ValueError, match='rattaché'):
+        category_to_attribute({'x': SimpleNamespace(qi_categories=['GEN_AGE']),
+                               'y': SimpleNamespace(qi_categories=['GEN_AGE'])})

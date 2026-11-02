@@ -37,7 +37,16 @@ prédiction partielle échoue explicitement. Le scorer reçoit des groupes
 reconstruction à partir des groupes gold n'est effectuée.
 
 Les systèmes d'anonymisation existants ne produisent pas de prédictions
-groupées avec attribution : leur score P-GF1 est donc indisponible. Le script
+groupées : leurs décisions sont donc **exportées** au format officiel par
+`metrics/quasileak_export.py` (protocole `quasileak-decision-groups-v1`) puis
+scorées par le scorer officiel. Décisions non `KEEP` seulement ; attribut =
+inverse strict du `label_map` ci-dessus (les autres catégories sont écartées
+et comptées) ; un groupe par document et attribut. Aucun gold, aucune
+politique n'est lu : un système qui masque un attribut `KEEP` est pénalisé,
+comme prévu par le protocole. Ancres de contrôle sur test-50 : oracle-mask
+P-GF1 = 100, regex-only = 0. Ce P-GF1 mesure la détection groupée implicite
+des décisions, pas la confidentialité résiduelle du texte. Un document en
+erreur bloque le score. Le script
 `predict_quasileak_local.py` fournit un détecteur séparé utilisant Qwen local
 et le renderer/invite zéro-shot officiels. L'invite officielle fournit le
 profil synthétique complet au détecteur, comme dans le papier ; les systèmes
