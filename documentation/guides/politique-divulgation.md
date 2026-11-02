@@ -48,6 +48,8 @@ table par dataset avec une clé `default` explicite :
 ## Limites
 
 Le verdict suit la catégorie choisie par le système : une erreur de
-catégorisation n'est pas corrigée. La table d'attributs couvre les huit
-attributs de QuasiLeak ; une politique pour d'autres attributs exige
-d'étendre la table, testée contre le manifeste QuasiLeak.
+catégorisation n'est pas corrigée. Les tables d'attributs (`attribute_tables` : `strict`,
+`extended-v1`) couvrent les huit attributs de QuasiLeak ; chaque politique
+nomme sa table. La table `strict` est testée contre le manifeste QuasiLeak.
+Sur QuasiLeak, le P-GF1 (adaptateur D.8) applique déjà la politique fournie :
+l'étape de divulgation ne le change pas, elle change le texte produit.

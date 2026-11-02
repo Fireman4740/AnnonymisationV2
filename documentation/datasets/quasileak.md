@@ -37,16 +37,37 @@ prédiction partielle échoue explicitement. Le scorer reçoit des groupes
 reconstruction à partir des groupes gold n'est effectuée.
 
 Les systèmes d'anonymisation existants ne produisent pas de prédictions
-groupées : leurs décisions sont donc **exportées** au format officiel par
-`metrics/quasileak_export.py` (protocole `quasileak-decision-groups-v1`) puis
-scorées par le scorer officiel. Décisions non `KEEP` seulement ; attribut =
-inverse strict du `label_map` ci-dessus (les autres catégories sont écartées
-et comptées) ; un groupe par document et attribut. Aucun gold, aucune
-politique n'est lu : un système qui masque un attribut `KEEP` est pénalisé,
-comme prévu par le protocole. Ancres de contrôle sur test-50 : oracle-mask
-P-GF1 = 100, regex-only = 0. Ce P-GF1 mesure la détection groupée implicite
-des décisions, pas la confidentialité résiduelle du texte. Un document en
-erreur bloque le score. Le script
+groupées. Ils sont scorés par le **protocole d'adaptation de l'annexe D.8 de
+l'article** (§5.3), repris dans `metrics/quasileak_export.py` et exposé dans la
+scorecard (`quasileak_pgf1_d8`, `quasileak_er_pre_policy`) :
+
+1. indices = décisions du système **avant** toute politique de divulgation ;
+2. table fixe catégorie → attribut (`configs/policy/disclosure.yaml`), le reste
+   vaut `OTHER` et n'est jamais rapporté ;
+3. un groupe par attribut ;
+4. la politique fournie décide : seuls les groupes d'un attribut `HIDE` sont
+   rapportés ;
+5. `E_R` pré-politique sur tout l'inventaire de spans, avant traduction,
+   regroupement et filtrage.
+
+Conséquence : le P-GF1 D.8 ne dépend pas de l'étape de divulgation du banc,
+qui agit sur le texte produit (utilité). Le code des adaptateurs de l'article
+n'est pas publié : seul le protocole est repris. Ancres sur test-50 : oracle-mask
+P-GF1 = 1, regex-only = 0. Un document en erreur bloque le score.
+
+**Table d'attributs.** `strict` = inverse du `label_map` ci-dessus ;
+`extended-v1` ajoute, fixées a priori, `HR_JOB_TITLE → occupation` et
+`HR_SALARY_BAND → income`. Le choix entre les deux se fait sur la sélection
+validation-50 (`configs/evaluation/frozen/quasileak-validation-50-v1.*`) par
+la règle `table_decision_rule` de `configs/evaluation/quasileak_suite.json`,
+écrite avant le run ; le test n'intervient pas.
+
+**Variante « + regroupement LLM ».** `scripts/quasileak_llm_grouping.py`
+reproduit le module de l'annexe D.8 avec Qwen local (température 0) : il reçoit
+document, **profil**, politique et l'inventaire numéroté des spans du système,
+et ne renvoie que des identifiants de candidats. Il ne peut ni inventer ni
+élargir un span. Comme il reçoit le profil, son score est **rapporté à part**.
+L'invite de l'article n'étant pas publiée, la nôtre est une reconstruction. Le script
 `predict_quasileak_local.py` fournit un détecteur séparé utilisant Qwen local
 et le renderer/invite zéro-shot officiels. L'invite officielle fournit le
 profil synthétique complet au détecteur, comme dans le papier ; les systèmes

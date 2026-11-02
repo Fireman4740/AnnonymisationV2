@@ -7,33 +7,63 @@
 # décisions de n'importe quel système : aucune instruction n'est ajoutée au
 # prompt d'un modèle.
 #
-# `attributes` : table catégorie de taxonomie → attribut, identique à
-# l'inverse du label_map de configs/datasets/quasileak.yaml (vérifié par test).
-# Une catégorie absente (identifiants directs, HR_*, SUP_*, GEN_GEO...) n'est
-# gouvernée par aucune politique : la décision du système est conservée.
+# `attribute_tables` : tables catégorie de taxonomie → attribut, partagées par
+# l'étape de divulgation et par l'adaptateur QuasiLeak (annexe D.8 de l'article :
+# « table fixe des étiquettes natives vers les huit attributs »).
+# - `strict` = inverse exact du label_map de configs/datasets/quasileak.yaml
+#   (vérifié par test) ;
+# - `extended-v1` = strict + deux correspondances sémantiques fixées A PRIORI,
+#   avant tout run : HR_JOB_TITLE → occupation, HR_SALARY_BAND → income.
+#   Adoption décidée sur la partition validation uniquement, par la règle
+#   écrite dans configs/evaluation/quasileak_suite.json (`table_decision_rule`).
+# Une catégorie absente d'une table (identifiants directs, autres HR_*, SUP_*,
+# GEN_GEO...) n'est gouvernée par aucune politique : décision conservée.
 #
-# `neutral_action` est obligatoire : aucune valeur par défaut silencieuse.
+# `default_adapter_table` : table utilisée par le score QuasiLeak quand le run
+# n'a pas de politique de divulgation (sinon : table de la politique du run).
+#
+# `neutral_action` et `attribute_table` sont obligatoires : aucune valeur par
+# défaut silencieuse.
 
-attributes:
-  age: [GEN_AGE]
-  gender: [GEN_GENDER]
-  nationality: [GEN_ORIGIN_BELIEF]
-  education: [GEN_EDUCATION]
-  occupation: [GEN_OCCUPATION]
-  income: [GEN_SOCIOECON]
-  relationship: [GEN_FAMILY]
-  health: [GEN_HEALTH_STATE]
+default_adapter_table: strict
+
+attribute_tables:
+  strict:
+    age: [GEN_AGE]
+    gender: [GEN_GENDER]
+    nationality: [GEN_ORIGIN_BELIEF]
+    education: [GEN_EDUCATION]
+    occupation: [GEN_OCCUPATION]
+    income: [GEN_SOCIOECON]
+    relationship: [GEN_FAMILY]
+    health: [GEN_HEALTH_STATE]
+  extended-v1:
+    age: [GEN_AGE]
+    gender: [GEN_GENDER]
+    nationality: [GEN_ORIGIN_BELIEF]
+    education: [GEN_EDUCATION]
+    occupation: [GEN_OCCUPATION, HR_JOB_TITLE]
+    income: [GEN_SOCIOECON, HR_SALARY_BAND]
+    relationship: [GEN_FAMILY]
+    health: [GEN_HEALTH_STATE]
 
 policies:
   document:
     label: "Politique fournie par chaque document (Document.meta.policy)"
     source: document
+    attribute_table: strict
     # Le protocole n'exige de masquer que HIDE ; NEUTRAL reste visible pour
     # préserver l'utilité (principe de minimisation de la transformation).
+    neutral_action: keep
+  document-extended:
+    label: "Politique du document, table d'attributs extended-v1"
+    source: document
+    attribute_table: extended-v1
     neutral_action: keep
   all-hide:
     label: "Contrôle : tous les attributs HIDE — doit laisser le run inchangé"
     source: static
+    attribute_table: strict
     hide: [age, gender, nationality, education, occupation, income, relationship, health]
     keep: []
     neutral: []

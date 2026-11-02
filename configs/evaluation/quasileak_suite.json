@@ -1,41 +1,33 @@
 {
-  "purpose": "quasileak_test50_disclosure_v1",
-  "selection": "configs/evaluation/frozen/quasileak-test-50-v1.ids.json",
-  "pivot_selection": "configs/evaluation/frozen/quasileak-test-50-v1.lock.json",
+  "purpose": "quasileak_validation50_table_choice_v1",
+  "split": "validation",
+  "selection": "configs/evaluation/frozen/quasileak-validation-50-v1.ids.json",
+  "pivot_selection": "configs/evaluation/frozen/quasileak-validation-50-v1.lock.json",
   "detector_backend": "qwen_local_box",
   "detector_max_tokens": 8192,
+  "grouping_backend": "qwen_local_box",
+  "native_detector": false,
+  "table_decision_rule": {
+    "note": "Fixée le 2026-11-02 avant tout run sur validation. Adopter extended-v1 si son P-GF1 D.8 est >= celui de strict pour chacun des deux anonymiseurs LLM, sous politique document ; sinon garder strict. Le test n'intervient pas dans ce choix.",
+    "systems": [
+      "llm-anchored",
+      "llm-windowed"
+    ],
+    "baseline_policy": "document",
+    "baseline_table": "strict",
+    "candidate_policy": "document-extended",
+    "candidate_table": "extended-v1"
+  },
   "systems": [
-    {
-      "system": "oracle-mask"
-    },
-    {
-      "system": "regex-only"
-    },
-    {
-      "system": "llm-anchored",
-      "params": {
-        "backend": "qwen_local_box",
-        "window_chars": 6000,
-        "overlap_chars": 240,
-        "max_output_tokens": 8192,
-        "critique": true
-      }
-    },
-    {
-      "system": "llm-windowed",
-      "params": {
-        "backend": "qwen_local_box",
-        "window_chars": 6000,
-        "overlap_chars": 240,
-        "max_output_tokens": 8192,
-        "max_entities": 256
-      }
-    },
     {
       "system": "oracle-mask",
       "disclosure_policy": "document"
     },
     {
+      "system": "regex-only",
+      "disclosure_policy": "document"
+    },
+    {
       "system": "llm-anchored",
       "params": {
         "backend": "qwen_local_box",
@@ -44,7 +36,19 @@
         "max_output_tokens": 8192,
         "critique": true
       },
-      "disclosure_policy": "document"
+      "disclosure_policy": "document",
+      "llm_grouping": true
+    },
+    {
+      "system": "llm-anchored",
+      "params": {
+        "backend": "qwen_local_box",
+        "window_chars": 6000,
+        "overlap_chars": 240,
+        "max_output_tokens": 8192,
+        "critique": true
+      },
+      "disclosure_policy": "document-extended"
     },
     {
       "system": "llm-windowed",
@@ -58,15 +62,15 @@
       "disclosure_policy": "document"
     },
     {
-      "system": "llm-anchored",
+      "system": "llm-windowed",
       "params": {
         "backend": "qwen_local_box",
         "window_chars": 6000,
         "overlap_chars": 240,
         "max_output_tokens": 8192,
-        "critique": true
+        "max_entities": 256
       },
-      "disclosure_policy": "all-hide"
+      "disclosure_policy": "document-extended"
     }
   ]
 }

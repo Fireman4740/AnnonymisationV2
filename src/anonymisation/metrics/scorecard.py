@@ -401,7 +401,7 @@ def build_scorecard(
                 "aucun gold de spans déclaré : absence d'annotations, pas des vrais négatifs"
             )
     for name, value in (external_diagnostics or {}).items():
-        if name != "tab_official":
+        if name not in {"tab_official", "quasileak_pgf1_d8", "quasileak_er_pre_policy"}:
             raise ScorecardError(f"diagnostic externe {name!r} retiré ou absent du catalogue actif")
         diagnostic[name] = dict(value)
     if dataset == 'quasileak':

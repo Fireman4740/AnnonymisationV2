@@ -1,0 +1,208 @@
+{
+  "datasets": {
+    "quasileak": {
+      "validation": [
+        {
+          "doc_id": "llmgen-d7ef911f-000--restaurant-booking--20260804T004429Z--ba25ed3e83d8",
+          "text_sha256": "0af3d58d02bda33fdf5ad2bf9648c5e88a9adca94d6b860247b95960478c6eb6"
+        },
+        {
+          "doc_id": "llmgen-d7ef911f-001--annual-tax-filing-support--20260802T090610Z--168970dddeaa",
+          "text_sha256": "f8b725ebe324104ab2bdc03e205a1e67251b2f3eca8ab377134dd3a6cee190f9"
+        },
+        {
+          "doc_id": "llmgen-d7ef911f-009--movie-recommendation--20260806T054401Z--3a0e2868b0c7",
+          "text_sha256": "5e3fdcd921c29bb2fd4d701cb0a34a5afe9a9e9c8eb05d71c20f2eb0f1f9d898"
+        },
+        {
+          "doc_id": "llmgen-gpt55-024--government-id-renewal-request--20260807T001459Z--028b140a8ae4",
+          "text_sha256": "017c2e7f0bdba38e6ff64dc5b4e4eace2a2a5a317b98a72014a2b5a4166434e3"
+        },
+        {
+          "doc_id": "llmgen-gpt55-028--mobile-plan-renewal-chat--20260806T183051Z--5eadef16a41f",
+          "text_sha256": "90345b3403eb3adc1edcff32d4f906297ede0bd0849fafdc9dceec3eecabe2ce"
+        },
+        {
+          "doc_id": "llmgen-gpt55-043--movie-recommendation--20260807T081609Z--c81941fbff09",
+          "text_sha256": "88028d11adb6ba7257ce5ba1911d1a887129ae54af1aad2c2f54ea90c61941a3"
+        },
+        {
+          "doc_id": "llmgen-gpt55-072--doctor-appointment--20260731T155146Z--1ef158fd3103",
+          "text_sha256": "67997e568ea8fd3deb616f3cde446af0da1c31fa921faff9bd1acaa41d50891a"
+        },
+        {
+          "doc_id": "llmgen-gpt55-085--job-interview--20260807T200858Z--a0d91a03a3a3",
+          "text_sha256": "0164530cb0fe424e18d7e056302ffa3b45562edfa4ab9ca94db4ee6c81001770"
+        },
+        {
+          "doc_id": "llmgen-gpt55-087--professional-licence-renewal--20260719T010342Z--08af0b3ac477",
+          "text_sha256": "4eb17d47f6226d57fd11a30c46f134458f1f479fe63d154e89ce18e67519d003"
+        },
+        {
+          "doc_id": "llmgen-gpt55-093--pharmacy-vaccine-booking--20260710T204449Z--674348e38d88",
+          "text_sha256": "e459318c8ab2b3ee79707223d17e0357173b882153237288fe2da30b2907b7a4"
+        },
+        {
+          "doc_id": "llmgen-gpt55-095--pharmacy-vaccine-booking--20260808T163809Z--b532ac9175ea",
+          "text_sha256": "72e36e512a3e1ea34b67b17042e9fcd5a64562133919ec7f934d17538b1172b0"
+        },
+        {
+          "doc_id": "llmgen-gpt55-104--job-interview--20260806T200558Z--aa7a762821be",
+          "text_sha256": "28ecb47d9644702cc7f984abc839c9d232b31bbf9ab0e5da1d1eac18f1924a6b"
+        },
+        {
+          "doc_id": "llmgen-gpt55-118--retailer-refund-request--20260806T172255Z--ac50a058be86",
+          "text_sha256": "c881eeb07f7ded82369f8e06e440fdee0ae36b5421d3fdb7d07d3ded2f334e81"
+        },
+        {
+          "doc_id": "llmgen-gpt55-128--mobile-plan-renewal-chat--20260731T121106Z--136fc2a14717",
+          "text_sha256": "8147bd068a9f4d39eb424840b125ed258b34ff7bd253341f4bb751dfc73a1eec"
+        },
+        {
+          "doc_id": "llmgen-gpt55-132--individual-bank-account-opening--20260717T033838Z--c0fe31636083",
+          "text_sha256": "b1a702433fde66a412c8fc58236767b977b9d9d61f6119793483033ae52bd2c9"
+        },
+        {
+          "doc_id": "llmgen-gpt55-133--online-course-enrollment-inquiry--20260808T021745Z--36f016b86e3a",
+          "text_sha256": "646d12d641c0ad02fa417f3dcbebdee7156ed5d6cc24508964f878ab9d44fd5b"
+        },
+        {
+          "doc_id": "llmgen-gpt55-134--online-course-enrollment-inquiry--20260710T184549Z--1f29732fdd23",
+          "text_sha256": "d6f1bf602e912cc4a5a3a30f5bc5eaf469cc920bdf9c2fcf9ef3a95b23b1eda3"
+        },
+        {
+          "doc_id": "llmgen-gpt55-143--annual-tax-filing-support--20260808T155822Z--754f61ac2ab1",
+          "text_sha256": "109e41e6047886f821f9d6a7eec67cc22309e13133f6e235388d04dffa5a0a23"
+        },
+        {
+          "doc_id": "llmgen-gpt55-157--government-id-renewal-request--20260808T064041Z--ed3ee486c545",
+          "text_sha256": "bbbeb6450c5f2b6c273c4bdeeedc40466586b16c28e852b43419e6bbd657449f"
+        },
+        {
+          "doc_id": "llmgen-gpt55-173--annual-tax-filing-support--20260808T002551Z--da35604d7bbe",
+          "text_sha256": "315d8e5a3ba63011660ba075a1cf2cdf83404908c2c2f009316acbfeef1e3481"
+        },
+        {
+          "doc_id": "synthpai-pers103--online-course-enrollment-inquiry--20260804T094330Z--e879b3b8de47",
+          "text_sha256": "f3330a61d40f3feac871cf99c6f4571875b53efb1012fde34b06882c1f7234c1"
+        },
+        {
+          "doc_id": "synthpai-pers113--job-interview--20260718T041406Z--e6a902ea2633",
+          "text_sha256": "2c053ff4c29ced0a3f53f691ce16eb099b200b08d130f082c9b5010b72b0d1d0"
+        },
+        {
+          "doc_id": "synthpai-pers119--social-worker-visit--20260801T200922Z--4e5f837b1407",
+          "text_sha256": "f883849a06c08d9fb2d80d9744cc19fcff6ff1d0aaa8c91c3d60b14812301796"
+        },
+        {
+          "doc_id": "synthpai-pers133--vacation-recommendation--20260806T073350Z--099e9036008a",
+          "text_sha256": "699360883329280a341643d4e78e0c07123b7650711c7157c806376bf4612b47"
+        },
+        {
+          "doc_id": "synthpai-pers166--doctor-appointment--20260804T032841Z--bb7e816c3511",
+          "text_sha256": "f2c185ee0c647d6d5b6d633b4c0e5e7551896b2715482f6d7bb510a52ca0ebf8"
+        },
+        {
+          "doc_id": "synthpai-pers173--restaurant-booking--20260804T040418Z--676c3600c347",
+          "text_sha256": "c7a9c375c8fbb54dd07646360b323dedb552f95e415a6b84058323dba058b988"
+        },
+        {
+          "doc_id": "synthpai-pers174--online-course-enrollment-inquiry--20260806T093138Z--e1199880315f",
+          "text_sha256": "5b24fa19948862a885bc75bba3855e05bc431c91c603481a18798eaddb12e8b3"
+        },
+        {
+          "doc_id": "synthpai-pers176--doctor-appointment--20260805T182919Z--b927261a357f",
+          "text_sha256": "12ba4f0ca5649afb9b2d8e55d431868742c1be2d95ba7871d5e0821218d2f877"
+        },
+        {
+          "doc_id": "synthpai-pers193--professional-licence-renewal--20260803T013124Z--52312d7ad144",
+          "text_sha256": "98301d0c09b4a812668d93506a914f39cd3cd396c46a0e51091a453ac15e70df"
+        },
+        {
+          "doc_id": "synthpai-pers195--restaurant-booking--20260804T101308Z--eec56451d234",
+          "text_sha256": "9cd6f7902e6f9b49852ed605470fa7ee598b16f8c26d48c2cf0a157b64ace8ec"
+        },
+        {
+          "doc_id": "synthpai-pers204--vacation-recommendation--20260804T043814Z--562973746ed4",
+          "text_sha256": "a4cef56c6dd4bc435b3e636e9655fe8d30b88f32feca5334245d1ed60c882653"
+        },
+        {
+          "doc_id": "synthpai-pers214--restaurant-recommendation--20260803T185355Z--e0ce0e846e0c",
+          "text_sha256": "1b96d715249cbeadd4dcf0bd3a5660c6715548f7f40fd97bb3375968ae0b0d1c"
+        },
+        {
+          "doc_id": "synthpai-pers224--movie-recommendation--20260805T211535Z--ec9bd4e4b06b",
+          "text_sha256": "ff49baf49cf27844f2f6efa86cdfc5d509ade0466d6b4cbda692846e05f7cb68"
+        },
+        {
+          "doc_id": "synthpai-pers233--job-interview--20260801T215027Z--a776d8d116f5",
+          "text_sha256": "9c552196542bedea07d9fc468aa4aa75c71336539bb661f26327f1a404007c8b"
+        },
+        {
+          "doc_id": "synthpai-pers249--online-course-enrollment-inquiry--20260805T181425Z--0fb35c079898",
+          "text_sha256": "05d1d1298d53700aa627874afc172b46f93972a88ea0498819b048cb446276ea"
+        },
+        {
+          "doc_id": "synthpai-pers258--job-interview--20260803T212341Z--691fd41955fd",
+          "text_sha256": "14d5a7e825fd1c8b2eb677b62ec3dcb246732fa45584d0fc2dbc1c55533fe62c"
+        },
+        {
+          "doc_id": "synthpai-pers260--movie-recommendation--20260805T205137Z--48e8891a51f4",
+          "text_sha256": "dbef0ef0e6bb4ce6c03f3e63258eafc7920406c6a74f18490eda6826bcc2e423"
+        },
+        {
+          "doc_id": "synthpai-pers261--household-utility-account-change--20260804T083553Z--aa99b23a50e6",
+          "text_sha256": "d3e2dbf6ccecba6e3cfac693a8d482f73aaefd36fbfbe5d482f95f5f85bc6f54"
+        },
+        {
+          "doc_id": "synthpai-pers27--pharmacy-vaccine-booking--20260801T104854Z--eff601f6a6ef",
+          "text_sha256": "d455f2d1d58e070cfd8cde5dd40e7f3ec549ccfde350f54beda54e0bede9611c"
+        },
+        {
+          "doc_id": "synthpai-pers276--restaurant-recommendation--20260713T034912Z--1be5fcee6d30",
+          "text_sha256": "5d0148846b0f57f71798c1f38bd2314a8304ff5741ed78959b5e7b55a66fe2f0"
+        },
+        {
+          "doc_id": "synthpai-pers280--restaurant-booking--20260805T114040Z--ef8957f84b02",
+          "text_sha256": "ebdf4ed35e14c6dce1a187a0c5bb8755d8a7113a7b1964a1a4835f3a5bc34ae1"
+        },
+        {
+          "doc_id": "synthpai-pers47--age-restricted-purchase--20260803T183451Z--e8077ec907cf",
+          "text_sha256": "75e4b8223a4e507bc1436d0297027381383e855d760432b4e6ca1166e9c4e87d"
+        },
+        {
+          "doc_id": "synthpai-pers48--restaurant-booking--20260803T112850Z--f41c71937f86",
+          "text_sha256": "ddf6bb219d065179107f95d2a1285cff81d6dc98663abd77682e3d106d0a1b10"
+        },
+        {
+          "doc_id": "synthpai-pers55--landlord-application--20260806T105349Z--a40aa4c2027d",
+          "text_sha256": "c3d4cc41f0f0e453afb0f9369ac9eda891855ec8baaea8fe16dc9a3d2b94920f"
+        },
+        {
+          "doc_id": "synthpai-pers72--government-id-renewal-request--20260804T053010Z--3c6ace5aae0d",
+          "text_sha256": "dcbf17a90f2cb79f0938812dc1a09ae0327a2fd2fc1b05be65425b8675a62780"
+        },
+        {
+          "doc_id": "synthpai-pers73--payment-card-replacement--20260804T214711Z--252f8c4cf116",
+          "text_sha256": "0efae2671da5e43803d0acbe5b7d6bce570fe8b09c946fee68f048fae862e5f7"
+        },
+        {
+          "doc_id": "synthpai-pers85--annual-tax-filing-support--20260805T102626Z--bfd2890aea82",
+          "text_sha256": "e0c5146aec0f08335b6dd61570dc8de74a9dfd69dbacb7788d4c6100c05c78d2"
+        },
+        {
+          "doc_id": "synthpai-pers87--doctor-appointment--20260720T144204Z--eeba4d6982b5",
+          "text_sha256": "4ed73266f1f02f37f644d6c32dac7d8a93377415d3c60bb8bacc6b4a26613263"
+        },
+        {
+          "doc_id": "synthpai-pers89--annual-tax-filing-support--20260806T015545Z--3f3ad69666ce",
+          "text_sha256": "a449ce8e1c9f825235c83bd9a12bf293ed27a40d433ec7c4f6c5d1ac6a8708bc"
+        },
+        {
+          "doc_id": "synthpai-pers91--pharmacy-vaccine-booking--20260806T083700Z--e9799424c4de",
+          "text_sha256": "67cce0139289f6d65f3612aabdaf74e85cdb8234c7c226a08c3dfca13772c8bc"
+        }
+      ]
+    }
+  }
+}

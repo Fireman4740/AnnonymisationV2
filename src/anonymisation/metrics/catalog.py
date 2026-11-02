@@ -20,6 +20,8 @@ DIAGNOSTIC_METRICS: Final = DETAILED_QUALITY_METRICS | frozenset(
         "mask_coverage",
         "tab_official",
         "quasileak_group_mask_rate",
+        "quasileak_pgf1_d8",
+        "quasileak_er_pre_policy",
         "local_readability",
         "local_relevance",
         "local_faithfulness",

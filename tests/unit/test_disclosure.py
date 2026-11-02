@@ -91,7 +91,20 @@ def test_static_policy_requires_explicit_lists_and_neutral_action(tmp_path):
 def test_attribute_table_matches_quasileak_manifest():
     data = yaml.safe_load(CONFIG.read_text())
     manifest = load_manifest(REPO / 'configs/datasets/quasileak.yaml', resolve_source=False).manifest
-    assert {a: list(m.qi_categories) for a, m in manifest.label_map.items()} == data['attributes']
+    assert {a: list(m.qi_categories) for a, m in manifest.label_map.items()} == data['attribute_tables']['strict']
+
+
+def test_extended_table_only_adds_the_two_a_priori_codes():
+    from anonymisation.policy.disclosure import load_config
+
+    config = load_config(CONFIG)
+    strict, extended = config.category_to_attribute('strict'), config.category_to_attribute('extended-v1')
+    assert {k: v for k, v in extended.items() if k not in strict} == {'HR_JOB_TITLE': 'occupation',
+                                                                       'HR_SALARY_BAND': 'income'}
+    assert all(extended[k] == v for k, v in strict.items())
+    stage = load_stage('document-extended', CONFIG)
+    assert stage.policy_for(_doc(POLICY)).evaluate('HR_JOB_TITLE') is Verdict.KEEP
+    assert load_stage('document', CONFIG).policy_for(_doc(POLICY)).evaluate('HR_JOB_TITLE') is Verdict.UNGOVERNED
 
 
 def test_verdict_vocabulary():

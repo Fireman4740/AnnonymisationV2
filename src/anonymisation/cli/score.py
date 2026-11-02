@@ -33,6 +33,7 @@ from anonymisation.schema.taxonomy import TAXONOMY_VERSION
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PROCESSED_ROOT = REPO_ROOT / "data" / "processed"
 DATASETS_CONFIG = REPO_ROOT / "configs" / "datasets"
+DISCLOSURE_FILE = REPO_ROOT / "configs" / "policy" / "disclosure.yaml"
 LOCK_NAME = "manifest.lock.json"
 PREDICTIONS_NAME = "predictions.jsonl"
 SCORECARD_NAME = "scorecard.json"
@@ -301,6 +302,80 @@ def _load_spia_attack(
     return rows, lock
 
 
+def _quasileak_d8(
+    lock: Mapping[str, Any],
+    run_dir: Path,
+    split: str,
+    capabilities: frozenset[str],
+    protocol_version: str,
+) -> dict[str, dict[str, Any]]:
+    """P-GF1 officiel et E_R pré-politique via l'adaptateur de l'annexe D.8.
+
+    Les sources brutes sont relues depuis le lock d'ingestion (empreinte
+    revérifiée) ; le scorer officiel recopié tourne sans modèle (C5). La table
+    d'attributs est celle de la politique de divulgation du run, sinon la table
+    par défaut déclarée dans ``configs/policy/disclosure.yaml``.
+    """
+    from anonymisation.datasets._local import fingerprint
+    from anonymisation.metrics import quasileak_official as official
+    from anonymisation.metrics.quasileak_export import (
+        ER_PROTOCOL,
+        EXPORT_PROTOCOL,
+        export_run,
+        pre_policy_evidence_recall,
+    )
+    from anonymisation.schema.disclosure import load_config
+
+    def metric(name: str, value: Any, status: MetricStatus, proto: str, details: dict) -> dict[str, Any]:
+        return MetricValue(name=name, value=value, protocol=proto, protocol_version=protocol_version,
+                           status=status, direction=MetricDirection.MAXIMIZE, details=details).to_dict()
+
+    if "decisions" not in capabilities:
+        reason = {"reason": "système sans capacité 'decisions' : aucun span retenu à adapter"}
+        return {"quasileak_pgf1_d8": metric("quasileak_pgf1_d8", None, MetricStatus.UNAVAILABLE, EXPORT_PROTOCOL, reason),
+                "quasileak_er_pre_policy": metric("quasileak_er_pre_policy", None, MetricStatus.UNAVAILABLE,
+                                                  ER_PROTOCOL, reason)}
+    source = (lock.get("data_version") or {}).get("source") or {}
+    files = {Path(p).name: Path(p) for p in source.get("files") or ()}
+    data, manifest = files.get("quasileak_bench_data_full.jsonl"), files.get("split_manifest.json")
+    if data is None or manifest is None or not data.is_file() or not manifest.is_file():
+        raise ScoreError("QuasiLeak : sources brutes du lock d'ingestion introuvables ; "
+                         "relancer scripts/fetch_quasileak.py à l'emplacement verrouillé")
+    if fingerprint(list(files.values())) != source.get("fingerprint"):
+        raise ScoreError("QuasiLeak : sources modifiées depuis l'ingestion (empreinte divergente)")
+    config = load_config(DISCLOSURE_FILE)
+    disclosure = lock.get("disclosure") or {}
+    table = disclosure.get("attribute_table") if disclosure.get("id") else config.default_adapter_table
+    predictions = _read_predictions(run_dir / PREDICTIONS_NAME)
+    ids = [str(p["doc_id"]) for p in predictions]
+    selection = run_dir / "quasileak_d8_selection.json"
+    write_json(selection, ids)
+    wanted = set(ids)
+    rows = [r for r in official.official.read_jsonl(data) if r["sample_id"] in wanted]
+    out = run_dir / "quasileak_d8_groups.jsonl"
+    export = export_run(run_dir, selection, out, mapping=config.category_to_attribute(table),
+                        dataset_sha256=official.DATA_SHA256, split_sha256=official.SPLIT_SHA256,
+                        policies={r["sample_id"]: r["policy"] for r in rows}, table=table)
+    common = {"attribute_table": table, "export": export,
+              "reference": "Zhu et al., arXiv:2610.21333, §5.3 et annexe D.8 (adaptation des détecteurs à spans)"}
+    if export["errors"]:
+        reason = {**common, "reason": f"{export['errors']} document(s) en erreur : score officiel refusé (C4)"}
+        return {"quasileak_pgf1_d8": metric("quasileak_pgf1_d8", None, MetricStatus.UNAVAILABLE, EXPORT_PROTOCOL, reason),
+                "quasileak_er_pre_policy": metric("quasileak_er_pre_policy", None, MetricStatus.UNAVAILABLE,
+                                                  ER_PROTOCOL, reason)}
+    result = official.score_official(data, manifest, out, split=split, selection=selection)
+    status = MetricStatus.SAMPLED if result["status"] == "sampled" else MetricStatus.DIAGNOSTIC
+    recall = pre_policy_evidence_recall(run_dir, rows)
+    pgf1 = result["scores_0_100"]["P-GF1"]
+    return {
+        "quasileak_pgf1_d8": metric("quasileak_pgf1_d8", None if pgf1 is None else pgf1 / 100, status,
+                                    EXPORT_PROTOCOL, {**common, "official": result,
+                                                      "value_is": "P-GF1 / 100 (scorer officiel inchangé)"}),
+        "quasileak_er_pre_policy": metric("quasileak_er_pre_policy", recall["value"], status, ER_PROTOCOL,
+                                          {**common, **recall}),
+    }
+
+
 def _tab_official(
     lock: Mapping[str, Any],
     split: str,
@@ -445,7 +520,11 @@ def cmd_score(run: str | Path, protocol: str) -> int:
                     frozenset(str(c) for c in system_block.get("capabilities") or ()),
                     protocol_name, protocol_version,
                 )}
-                if dataset == "tab" else None
+                if dataset == "tab"
+                else _quasileak_d8(lock, run_dir, split,
+                                   frozenset(str(c) for c in system_block.get("capabilities") or ()),
+                                   protocol_version)
+                if dataset == "quasileak" else None
             ),
         )
     except (TypeError, ValueError) as exc:

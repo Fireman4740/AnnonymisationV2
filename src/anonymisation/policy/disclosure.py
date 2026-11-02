@@ -33,21 +33,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
-
-import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Any
 
 from anonymisation.pipeline.orchestrator import _merge_overlapping
 from anonymisation.pipeline.traces import PipelineResult
+from anonymisation.schema.disclosure import (
+    DisclosureConfig,
+    DisclosureError,
+    PolicySpec,
+    load_config,
+)
 from anonymisation.schema.io import sha256_file
 from anonymisation.schema.models import Document
 from anonymisation.transform.apply import apply_decisions
 from anonymisation.transform.decisions import Action, AnonymizationDecision
-
-
-class DisclosureError(ValueError):
-    """Politique de divulgation absente, incomplète ou inapplicable."""
 
 
 class Verdict(str, Enum):
@@ -55,46 +54,6 @@ class Verdict(str, Enum):
     KEEP = "KEEP"
     NEUTRAL = "NEUTRAL"
     UNGOVERNED = "UNGOVERNED"
-
-
-class _Strict(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-
-class PolicySpec(_Strict):
-    label: str = Field(min_length=1)
-    source: Literal["document", "static"]
-    neutral_action: Literal["hide", "keep"]
-    hide: tuple[str, ...] | None = None
-    keep: tuple[str, ...] | None = None
-    neutral: tuple[str, ...] | None = None
-
-    @model_validator(mode="after")
-    def lists_match_source(self):
-        lists = (self.hide, self.keep, self.neutral)
-        if self.source == "static" and any(x is None for x in lists):
-            raise ValueError("politique statique : hide, keep et neutral sont requis")
-        if self.source == "document" and any(x is not None for x in lists):
-            raise ValueError("politique document : les listes viennent du document, pas du YAML")
-        return self
-
-
-class DisclosureConfig(_Strict):
-    attributes: dict[str, tuple[str, ...]]
-    policies: dict[str, PolicySpec]
-
-    @model_validator(mode="after")
-    def injective(self):
-        seen: dict[str, str] = {}
-        for attribute, codes in self.attributes.items():
-            for code in codes:
-                if code in seen:
-                    raise ValueError(f"{code!r} rattaché à {seen[code]!r} et {attribute!r}")
-                seen[code] = attribute
-        return self
-
-    def category_to_attribute(self) -> dict[str, str]:
-        return {code: a for a, codes in self.attributes.items() for code in codes}
 
 
 @dataclass(frozen=True)
@@ -140,7 +99,7 @@ class DisclosureStage:
     source_path: Path
 
     def policy_for(self, doc: Document) -> DisclosurePolicy:
-        mapping = self.config.category_to_attribute()
+        mapping = self.config.category_to_attribute(self.spec.attribute_table)
         if self.spec.source == "static":
             lists = (self.spec.hide, self.spec.keep, self.spec.neutral)
         else:
@@ -156,14 +115,12 @@ class DisclosureStage:
 
     def lock_block(self) -> dict[str, Any]:
         return {"id": self.policy_id, "source": self.spec.source, "neutral_action": self.spec.neutral_action,
+                "attribute_table": self.spec.attribute_table,
                 "config": str(self.source_path), "sha256": sha256_file(self.source_path)}
 
 
 def load_stage(policy_id: str, path: Path) -> DisclosureStage:
-    try:
-        config = DisclosureConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
-    except (OSError, yaml.YAMLError, ValueError) as exc:
-        raise DisclosureError(f"{path} : configuration de divulgation invalide — {exc}") from exc
+    config = load_config(path)
     if policy_id not in config.policies:
         raise DisclosureError(f"{path} : politique {policy_id!r} inconnue ; disponibles : {sorted(config.policies)}")
     return DisclosureStage(policy_id, config.policies[policy_id], config, path)

@@ -1,11 +1,12 @@
-"""Suite QuasiLeak-Bench sur la sélection figée de 50 documents de test.
+"""Suite QuasiLeak-Bench sur une sélection figée (validation ou test, ≤ 50 documents).
 
-Deux tâches distinctes, rapportées séparément et jamais fusionnées :
-1. anonymiseurs du banc → scorecard pivot `quasileak-v1` (diagnostic
-   `quasileak_group_mask_rate`, proxy, pas P-GF1) ;
-2. détecteur natif Qwen local, invite zéro-shot officielle → scorer officiel
-   (P-GF1 etc., statut `sampled` : 50 documents, pas les 1 000 du test).
-Toute erreur du détecteur natif bloque le score officiel (C3/C4).
+Trois mesures, rapportées séparément et jamais fusionnées :
+1. anonymiseurs du banc → scorecard `quasileak-v1`, dont le P-GF1 officiel via
+   l'adaptateur de l'annexe D.8 (`quasileak_pgf1_d8`) et l'E_R pré-politique ;
+2. variante D.8 « + regroupement LLM » (reçoit le profil : rapportée à part) ;
+3. détecteur natif Qwen, invite zéro-shot officielle (reçoit aussi le profil).
+Toute erreur bloque le score officiel concerné (C3/C4). Sur validation, la
+suite applique en plus la règle de décision de table écrite dans la config.
 """
 from __future__ import annotations
 
@@ -30,22 +31,20 @@ def _errors(path: Path) -> tuple[int, int]:
     return sum(r.get('status') == 'error' for r in rows), len(rows)
 
 
-def _official_from_run(cfg: dict, root: Path, directory: Path) -> dict:
-    """P-GF1 officiel des décisions exportées en groupes, sans lecture du gold."""
-    from anonymisation.datasets.manifest import load_manifest
-    from anonymisation.metrics import quasileak_official as official
-    from anonymisation.metrics.quasileak_export import category_to_attribute, export_run
+def _llm_grouping(cfg: dict, root: Path, directory: Path, failures: list[str], name: str) -> dict:
+    from quasileak_llm_grouping import group_run
 
-    label_map = load_manifest(Path('configs/datasets/quasileak.yaml'), resolve_source=False).manifest.label_map
-    out = directory / 'quasileak_groups.jsonl'
-    lock = export_run(directory, Path(cfg['selection']), out, mapping=category_to_attribute(label_map),
-                      dataset_sha256=official.DATA_SHA256, split_sha256=official.SPLIT_SHA256)
+    from anonymisation.metrics import quasileak_official as official
+
+    out = directory / 'quasileak_llm_groups.jsonl'
+    lock = group_run(root, directory, Path(cfg['selection']), out, backend_name=cfg['grouping_backend'])
     if lock['errors']:
-        return {'export': lock, 'official': None, 'reason': 'documents en erreur : score officiel refusé'}
+        failures.append(f'{name}:llm_grouping_errors={lock["errors"]}')
+        return {'lock': lock, 'official': None}
     result = official.score_official(root / 'quasileak_bench_data_full.jsonl', root / 'split_manifest.json',
-                                     out, split='test', selection=Path(cfg['selection']))
-    write_json(directory / 'quasileak_official.json', result)
-    return {'export': lock, 'official': result}
+                                     out, split=cfg['split'], selection=Path(cfg['selection']))
+    write_json(directory / 'quasileak_llm_grouping_official.json', result)
+    return {'lock': lock, 'official': result, 'receives_profile': True}
 
 
 def _anonymizers(cfg: dict, root: Path, failures: list[str]) -> list[dict]:
@@ -53,8 +52,8 @@ def _anonymizers(cfg: dict, root: Path, failures: list[str]) -> list[dict]:
     for variant in cfg['systems']:
         system, disclosure = variant['system'], variant.get('disclosure_policy')
         name = system + (f'+{disclosure}' if disclosure else '')
-        directory = Path('runs') / f'quasileak-{name}'
-        args = ['predict', '--dataset', 'quasileak', '--split', 'test', '--system', system,
+        directory = Path('runs') / f'quasileak-{cfg["split"]}-{name}'
+        args = ['predict', '--dataset', 'quasileak', '--split', cfg['split'], '--system', system,
                 '--profile', PROFILES.get(system, 'deterministic'), '--out', str(directory),
                 '--selection-manifest', cfg['pivot_selection']]
         if disclosure:
@@ -70,15 +69,19 @@ def _anonymizers(cfg: dict, root: Path, failures: list[str]) -> list[dict]:
             failures.append(f'{name}:score')
             continue
         card = json.loads(card_path.read_text(encoding='utf-8'))
-        lock = json.loads((directory / 'manifest.lock.json').read_text(encoding='utf-8'))
-        entry = {'system': name, 'disclosure': lock['disclosure'], 'publishable': card['publishable'],
-                 'blockers': card['publication_blockers'],
-                 'quasileak_group_mask_rate': card['diagnostic']['quasileak_group_mask_rate']}
-        try:
-            entry['decision_groups'] = _official_from_run(cfg, root, directory)
-        except (OSError, ValueError, KeyError) as exc:
-            failures.append(f'{name}:official_export')
-            entry['decision_groups'] = {'error': f'{type(exc).__name__}: {exc}'}
+        diagnostic = card['diagnostic']
+        entry = {'system': name, 'publishable': card['publishable'], 'blockers': card['publication_blockers'],
+                 'disclosure': json.loads((directory / 'manifest.lock.json').read_text())['disclosure'],
+                 **{k: diagnostic[k] for k in ('quasileak_group_mask_rate', 'quasileak_pgf1_d8',
+                                               'quasileak_er_pre_policy')}}
+        if diagnostic['quasileak_pgf1_d8']['value'] is None:
+            failures.append(f'{name}:pgf1_d8_unavailable')
+        if variant.get('llm_grouping'):
+            try:
+                entry['d8_llm_grouping'] = _llm_grouping(cfg, root, directory, failures, name)
+            except (OSError, ValueError, KeyError) as exc:
+                failures.append(f'{name}:llm_grouping')
+                entry['d8_llm_grouping'] = {'error': f'{type(exc).__name__}: {exc}'}
         results.append(entry)
         print('QUASILEAK_ANONYMIZER', json.dumps(entry, ensure_ascii=False, sort_keys=True), flush=True)
     return results
@@ -97,7 +100,7 @@ def _native(cfg: dict, root: Path, failures: list[str]) -> dict | None:
         failures.append(f'native:errors={failed}/{total}')
         return {'errors': failed, 'documents': total}
     scores = Path('runs/quasileak-native/scores.json')
-    if command(['quasileak-score', '--root', str(root), '--predictions', str(out), '--split', 'test',
+    if command(['quasileak-score', '--root', str(root), '--predictions', str(out), '--split', cfg['split'],
                 '--selection', cfg['selection'], '--out', str(scores)]):
         failures.append('native:score')
         return None
@@ -106,17 +109,39 @@ def _native(cfg: dict, root: Path, failures: list[str]) -> dict | None:
     return result
 
 
+def table_decision(cfg: dict, anonymizers: list[dict]) -> dict | None:
+    """Applique la règle de choix de table fixée dans la config avant le run."""
+    rule = cfg.get('table_decision_rule')
+    if rule is None:
+        return None
+    by_name = {a['system']: a['quasileak_pgf1_d8']['value'] for a in anonymizers}
+    comparisons = []
+    for system in rule['systems']:
+        baseline = by_name.get(f"{system}+{rule['baseline_policy']}")
+        candidate = by_name.get(f"{system}+{rule['candidate_policy']}")
+        if baseline is None or candidate is None:
+            raise ValueError(f'règle de table : scores manquants pour {system}')
+        comparisons.append({'system': system, 'baseline': baseline, 'candidate': candidate,
+                            'candidate_not_worse': candidate >= baseline})
+    adopt = all(c['candidate_not_worse'] for c in comparisons)
+    return {'rule': rule, 'comparisons': comparisons,
+            'selected_table': rule['candidate_table'] if adopt else rule['baseline_table']}
+
+
 def run_suite() -> int:
     from fetch_quasileak import fetch
 
     cfg = json.loads(CONFIG.read_text(encoding='utf-8'))
     root = fetch(Path(os.environ['ANONV2_V1_DATASETS']))
-    if command(['datasets', 'ingest', 'quasileak', '--split', 'test']):
+    if command(['datasets', 'ingest', 'quasileak', '--split', cfg['split']]):
         return 2
     failures: list[str] = []
-    summary = {'purpose': cfg['purpose'], 'documents': 50, 'status_note': 'sampled, 50/1000 test',
-               'anonymizers': _anonymizers(cfg, root, failures),
-               'native_detector': _native(cfg, root, failures), 'failures': failures}
-    write_json(Path('runs/quasileak-summary.json'), summary)
+    anonymizers = _anonymizers(cfg, root, failures)
+    native = _native(cfg, root, failures) if cfg.get('native_detector') else None
+    summary = {'purpose': cfg['purpose'], 'split': cfg['split'], 'status_note': 'sampled',
+               'documents': len(json.loads(Path(cfg['selection']).read_text(encoding='utf-8'))),
+               'anonymizers': anonymizers, 'native_detector': native,
+               'table_decision': None if failures else table_decision(cfg, anonymizers), 'failures': failures}
+    write_json(Path(f"runs/quasileak-{cfg['split']}-summary.json"), summary)
     print('FINAL_SUMMARY', json.dumps(summary, ensure_ascii=False, sort_keys=True), flush=True)
     return 1 if failures else 0

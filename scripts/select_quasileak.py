@@ -1,4 +1,4 @@
-"""Sélection reproductible de profils distincts dans le test QuasiLeak."""
+"""Sélection reproductible de profils distincts dans un split officiel QuasiLeak."""
 from __future__ import annotations
 
 import argparse
@@ -10,13 +10,13 @@ from anonymisation.metrics.quasileak_official import DATA_SHA256, SPLIT_SHA256
 from anonymisation.schema.io import sha256_file, write_json
 
 
-def select(root: Path, count: int, seed: int):
+def select(root: Path, count: int, seed: int, split: str = 'test'):
     if type(count) is not int or not 1 <= count <= 50:
         raise ValueError('la sélection doit contenir entre 1 et 50 documents')
     data, manifest = root / 'quasileak_bench_data_full.jsonl', root / 'split_manifest.json'
     if sha256_file(data) != DATA_SHA256 or sha256_file(manifest) != SPLIT_SHA256:
         raise ValueError('source QuasiLeak non vérifiée')
-    members = set(json.loads(manifest.read_text())['membership']['test'])
+    members = set(json.loads(manifest.read_text())['membership'][split])
     by_profile, ordered = {}, []
     with data.open(encoding='utf-8') as stream:
         for line in stream:
@@ -25,7 +25,7 @@ def select(root: Path, count: int, seed: int):
                 by_profile.setdefault(row['profile']['profile_id'], []).append(row['sample_id'])
                 ordered.append(row['sample_id'])
     if len(by_profile) < count:
-        raise ValueError('nombre insuffisant de profils test distincts')
+        raise ValueError(f'nombre insuffisant de profils {split} distincts')
     rng = random.Random(seed)
     profiles = sorted(by_profile)
     selected = rng.sample(profiles, count)
@@ -33,7 +33,7 @@ def select(root: Path, count: int, seed: int):
     return [doc_id for doc_id in ordered if doc_id in ids]
 
 
-def pivot_manifest(root: Path, selected):
+def pivot_manifest(root: Path, selected, split: str = 'test'):
     import hashlib
 
     wanted = set(selected)
@@ -46,7 +46,7 @@ def pivot_manifest(root: Path, selected):
                              'text_sha256': hashlib.sha256(item['document'].encode()).hexdigest()})
     if [r['doc_id'] for r in rows] != selected:
         raise ValueError('ordre ou contenu de la sélection divergent')
-    return {'datasets': {'quasileak': {'test': rows}}}
+    return {'datasets': {'quasileak': {split: rows}}}
 
 
 def main():
@@ -55,13 +55,14 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--count', type=int, default=50)
     parser.add_argument('--seed', type=int, default=20261016)
+    parser.add_argument('--split', choices=('train', 'validation', 'test'), default='test')
     parser.add_argument('--pivot-out', type=Path, help='Manifeste optionnel pour anonv2 predict.')
     args = parser.parse_args()
-    items = select(args.root, args.count, args.seed)
+    items = select(args.root, args.count, args.seed, args.split)
     write_json(args.out, items)
     if args.pivot_out:
-        write_json(args.pivot_out, pivot_manifest(args.root, items))
-    print(f'{len(items)} documents test, chacun issu d’un profil distinct.')
+        write_json(args.pivot_out, pivot_manifest(args.root, items, args.split))
+    print(f'{len(items)} documents {args.split}, chacun issu d’un profil distinct.')
 
 
 if __name__ == '__main__':

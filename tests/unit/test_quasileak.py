@@ -170,14 +170,25 @@ def test_ingest_predict_and_score_do_not_fabricate_official_group_predictions(so
     monkeypatch.setattr(score, 'PROCESSED_ROOT', pivot)
     monkeypatch.setattr(score, 'DATASETS_CONFIG', config)
     monkeypatch.setattr(predict, '_git_dirty', lambda root: False)
-    run = tmp_path / 'run'
-    assert predict.cmd_predict('quasileak', 'test', None, 'deterministic', str(run), None,
-                               system='regex-only') == 0
-    assert score.cmd_score(run, 'quasileak-v1') == 0
-    card = json.loads((run / 'scorecard.json').read_text())
-    assert card['diagnostic']['quasileak_group_mask_rate']['value'] == 0
-    assert card['diagnostic']['quasileak_group_mask_rate']['details']['groups_total'] == 1
-    assert 'P-GF1' not in card['diagnostic'] and 'P-GF1' not in card['primary']
+    root = tmp_path / 'QuasiLeak-Bench'
+    monkeypatch.setattr(quasileak_official, 'DATA_SHA256',
+                        hashlib.sha256((root / 'quasileak_bench_data_full.jsonl').read_bytes()).hexdigest())
+    monkeypatch.setattr(quasileak_official, 'SPLIT_SHA256',
+                        hashlib.sha256((root / 'split_manifest.json').read_bytes()).hexdigest())
+    cards = {}
+    for system in ('regex-only', 'oracle-mask'):
+        run = tmp_path / system
+        assert predict.cmd_predict('quasileak', 'test', None, 'deterministic', str(run), None, system=system) == 0
+        assert score.cmd_score(run, 'quasileak-v1') == 0
+        cards[system] = json.loads((run / 'scorecard.json').read_text())['diagnostic']
+    regex, oracle = cards['regex-only'], cards['oracle-mask']
+    assert regex['quasileak_group_mask_rate']['value'] == 0
+    assert regex['quasileak_group_mask_rate']['details']['groups_total'] == 1
+    # P-GF1 officiel via l'adaptateur D.8 : bornes 0 et 1, rappel pré-politique idem.
+    assert (regex['quasileak_pgf1_d8']['value'], oracle['quasileak_pgf1_d8']['value']) == (0, 1)
+    assert (regex['quasileak_er_pre_policy']['value'], oracle['quasileak_er_pre_policy']['value']) == (0, 1)
+    assert oracle['quasileak_pgf1_d8']['protocol'] == 'quasileak-d8-span-adapter-v1'
+    assert oracle['quasileak_pgf1_d8']['details']['attribute_table'] == 'strict'
 
 
 def test_decision_export_groups_by_attribute_without_gold(tmp_path):
@@ -213,3 +224,51 @@ def test_decision_export_groups_by_attribute_without_gold(tmp_path):
     with pytest.raises(ValueError, match='rattaché'):
         category_to_attribute({'x': SimpleNamespace(qi_categories=['GEN_AGE']),
                                'y': SimpleNamespace(qi_categories=['GEN_AGE'])})
+
+
+def test_d8_adapter_filters_by_supplied_policy_and_counts_pre_policy_spans(tmp_path):
+    from anonymisation.metrics.quasileak_export import export_run, pre_policy_evidence_recall, pre_policy_inventory
+
+    run = tmp_path / 'run'
+    run.mkdir()
+    disclosed = {'start': 0, 'end': 17, 'action': 'KEEP', 'qi_category': 'GEN_OCCUPATION',
+                 'meta': {'disclosure': {'initial_action': 'SUPPRESS'}}}
+    decisions = [disclosed, {'start': 22, 'end': 39, 'action': 'SUPPRESS', 'qi_category': 'GEN_EDUCATION'},
+                 {'start': 40, 'end': 45, 'action': 'KEEP', 'qi_category': 'GEN_AGE'}]
+    assert [d['action'] for d in pre_policy_inventory(decisions)] == ['SUPPRESS', 'SUPPRESS']
+    (run / 'predictions.jsonl').write_text(json.dumps({'doc_id': 'a', 'status': 'ok', 'decisions': decisions}) + '\n')
+    selection = tmp_path / 'ids.json'
+    selection.write_text(json.dumps(['a']))
+    mapping = {'GEN_OCCUPATION': 'occupation', 'GEN_EDUCATION': 'education'}
+    out = tmp_path / 'groups.jsonl'
+    lock = export_run(run, selection, out, mapping=mapping, dataset_sha256='d', split_sha256='s',
+                      policies={'a': {'hide': ['education']}}, table='strict')
+    assert json.loads(out.read_text())['evidence'] == [{'attribute': 'education',
+                                                        'spans': [{'start': 22, 'end': 39}]}]
+    assert (lock['groups'], lock['groups_filtered_by_policy'], lock['protocol']) == (
+        1, 1, 'quasileak-d8-span-adapter-v1')
+    # E_R pré-politique : le span remis en clair (occupation) compte encore dans l'inventaire.
+    gold = {'sample_id': 'a', 'document': 'clinical rotation and four-year tuition xxxxx',
+            'policy': {'hide': ['education']},
+            'gold': {'groups': [{'attribute': 'education', 'cue_ids': ['s1', 's2']}],
+                     'spans': [{'span_id': 's1', 'start': 0, 'end': 17}, {'span_id': 's2', 'start': 22, 'end': 39}]}}
+    recall = pre_policy_evidence_recall(run, [gold])
+    assert (recall['cues_found'], recall['cues_hide'], recall['value']) == (2, 2, 1.0)
+
+
+def test_llm_grouping_never_invents_spans_and_hides_gold():
+    from scripts.quasileak_llm_grouping import build_prompt, inventory, resolve
+
+    row = {'document': 'clinical rotation and four-year tuition', 'profile': {'education': 'nursing'},
+           'policy': {'hide': ['education'], 'keep': [], 'neutral': []},
+           'gold': {'groups': [{'group_id': 'SECRET-GOLD'}]}}
+    candidates = inventory([{'start': 22, 'end': 39, 'action': 'SUPPRESS', 'qi_category': 'X'},
+                            {'start': 0, 'end': 17, 'action': 'MASK', 'qi_category': 'Y'},
+                            {'start': 0, 'end': 17, 'action': 'SUPPRESS', 'qi_category': 'Z'}])
+    assert candidates == [(0, 17), (22, 39)]
+    prompt = build_prompt(row, candidates)
+    assert 'SECRET-GOLD' not in prompt and '[1] "clinical rotation"' in prompt and 'nursing' in prompt
+    groups = resolve([{'attribute': 'education', 'candidates': [1, 2]},
+                      {'attribute': 'age', 'candidates': [1, 7]}, 'bad'], candidates)
+    assert groups == [{'attribute': 'education', 'spans': [{'start': 0, 'end': 17}, {'start': 22, 'end': 39}]},
+                      {'attribute': 'age', 'spans': []}, {'attribute': None, 'spans': []}]
