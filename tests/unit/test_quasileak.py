@@ -175,12 +175,24 @@ def test_ingest_predict_and_score_do_not_fabricate_official_group_predictions(so
                         hashlib.sha256((root / 'quasileak_bench_data_full.jsonl').read_bytes()).hexdigest())
     monkeypatch.setattr(quasileak_official, 'SPLIT_SHA256',
                         hashlib.sha256((root / 'split_manifest.json').read_bytes()).hexdigest())
+    from anonymisation.pipelines.oracle_mask.system import OracleMaskSystem
+    from anonymisation.pipelines.regex_only.system import RegexOnlySystem
+
+    seen = {}
+    for cls in (RegexOnlySystem, OracleMaskSystem):
+        original = cls._execute
+        def spy(self, doc, gold, _original=original, _name=cls.system_id):
+            seen[_name] = len(gold)
+            return _original(self, doc, gold)
+        monkeypatch.setattr(cls, '_execute', spy)
     cards = {}
     for system in ('regex-only', 'oracle-mask'):
         run = tmp_path / system
         assert predict.cmd_predict('quasileak', 'test', None, 'deterministic', str(run), None, system=system) == 0
         assert score.cmd_score(run, 'quasileak-v1') == 0
         cards[system] = json.loads((run / 'scorecard.json').read_text())['diagnostic']
+    # Le gold n'atteint que le système qui déclare le lire.
+    assert seen == {'regex-only-v1': 0, 'oracle-mask-v1': 2}
     regex, oracle = cards['regex-only'], cards['oracle-mask']
     assert regex['quasileak_group_mask_rate']['value'] == 0
     assert regex['quasileak_group_mask_rate']['details']['groups_total'] == 1

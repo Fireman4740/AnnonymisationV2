@@ -376,6 +376,8 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         # Même système, politique de divulgation différente : lignes distinctes.
         if identity.get("disclosure_policy"):
             name = f"{name}+{identity['disclosure_policy']}"
+        if identity.get("gold_aware"):
+            name = f"{name} (lit le gold : ancre)"
         blocked = card.get("publishable") is False
         values = [
             "—" if blocked else _cell(card.get(section, {}).get(key)) for section, key in columns

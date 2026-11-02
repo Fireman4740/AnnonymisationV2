@@ -88,7 +88,19 @@ La sélection est reproductible, limitée à 50 documents et tire au plus un
 document par profil test. La sélection de graine 20261016 est figée dans
 `configs/evaluation/frozen/quasileak-test-50-v1.ids.json` et son manifeste pivot
 dans `quasileak-test-50-v1.lock.json`. La liste des identifiants et le manifeste
-du pivot doivent être conservés et figés avant toute comparaison. Cette nouvelle cohorte
+du pivot doivent être conservés et figés avant toute comparaison.
+
+**test-50 a servi au développement** (export D.8, étape de divulgation) : ce
+n'est plus un test indépendant. Le résultat de référence se lit sur
+`quasileak-test-holdout-50-v1` (graine 20261103, `--exclude-profiles-of
+quasileak-test-50-v1.ids.json`) : 50 documents des 50 autres profils test,
+aucun document ni profil commun. Le holdout ne doit servir à aucun réglage.
+Le choix de table se fait sur `quasileak-validation-50-v1`.
+
+**Accès au gold.** `predict` ne transmet les annotations gold qu'aux systèmes
+qui déclarent `gold_aware` (oracle-mask, contrôle VALIDATE de
+`deterministic`) ; le lock note `gold_access`, la scorecard
+`system.gold_aware`, et `compare` marque ces systèmes comme ancres. Cette nouvelle cohorte
 est indépendante des cohortes à 200/50 déjà verrouillées pour les autres
 corpus : aucun ancien manifeste n'est modifié.
 

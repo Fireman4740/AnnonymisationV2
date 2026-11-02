@@ -33,7 +33,7 @@ from typing import Any
 import yaml
 
 from anonymisation import __version__
-from anonymisation.capabilities import CAP_DECISIONS
+from anonymisation.capabilities import CAP_DECISIONS, CAP_GOLD_AWARE
 from anonymisation.datasets.ingest import LOCK_NAME
 from anonymisation.datasets.registry import (
     ALIASES,
@@ -481,6 +481,11 @@ def cmd_predict(
         except DisclosureError as exc:
             raise PredictError(str(exc)) from exc
     disclosure_counts: dict[str, int] = {}
+    # Le gold n'est remis qu'aux systèmes qui déclarent le lire (ancres,
+    # contrôle VALIDATE) : pour les autres, ne pas le lire n'est plus une
+    # convention mais une impossibilité.
+    gold_aware = identity.has(CAP_GOLD_AWARE)
+    system_gold = gold if gold_aware else {}
 
     if out is not None:
         out_dir = Path(out)
@@ -502,7 +507,7 @@ def cmd_predict(
         out_dir / "traces.jsonl"
     ) as traces:
         for completed, doc in enumerate(docs, start=1):
-            result = pipe.run(doc, gold.get(doc.doc_id))
+            result = pipe.run(doc, system_gold.get(doc.doc_id))
             if disclosure is not None:
                 try:
                     result, applied = apply_disclosure(result, doc, disclosure)
@@ -546,6 +551,7 @@ def cmd_predict(
         data_version=data_version,
         system_block=_system_reproducibility(pipe),
     )
+    lock["gold_access"] = "provided:gold_aware" if gold_aware else "withheld"
     lock["disclosure"] = (
         {**disclosure.lock_block(), "decision_verdicts": dict(sorted(disclosure_counts.items()))}
         if disclosure is not None

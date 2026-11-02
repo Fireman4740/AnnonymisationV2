@@ -554,6 +554,8 @@ def build_scorecard(
             **{k: v for k, v in system.items() if k != "prompts"},
             "policy": run_info.get("policy"),
             "disclosure_policy": (reproducibility.get("disclosure") or {}).get("id"),
+            # Un système qui lit le gold est une ancre, jamais un concurrent.
+            "gold_aware": "gold_aware" in (system.get("capabilities") or ()),
             "profile": run_info.get("profile"),
         },
         "dataset": dataset,
