@@ -51,29 +51,33 @@ def _official_from_run(cfg: dict, root: Path, directory: Path) -> dict:
 def _anonymizers(cfg: dict, root: Path, failures: list[str]) -> list[dict]:
     results = []
     for variant in cfg['systems']:
-        system = variant['system']
-        directory = Path('runs') / f'quasileak-{system}'
+        system, disclosure = variant['system'], variant.get('disclosure_policy')
+        name = system + (f'+{disclosure}' if disclosure else '')
+        directory = Path('runs') / f'quasileak-{name}'
         args = ['predict', '--dataset', 'quasileak', '--split', 'test', '--system', system,
                 '--profile', PROFILES.get(system, 'deterministic'), '--out', str(directory),
                 '--selection-manifest', cfg['pivot_selection']]
+        if disclosure:
+            args += ['--disclosure-policy', disclosure]
         for name, value in sorted(variant.get('params', {}).items()):
             args += ['--param', f'{name}={value}']
         if command(args):
-            failures.append(f'{system}:predict')
+            failures.append(f'{name}:predict')
             continue
         code = command(['score', '--run', str(directory), '--protocol', 'quasileak-v1'])
         card_path = directory / 'scorecard.json'
         if code not in (0, 1) or not card_path.is_file():
-            failures.append(f'{system}:score')
+            failures.append(f'{name}:score')
             continue
         card = json.loads(card_path.read_text(encoding='utf-8'))
-        entry = {'system': system, 'publishable': card['publishable'],
+        lock = json.loads((directory / 'manifest.lock.json').read_text(encoding='utf-8'))
+        entry = {'system': name, 'disclosure': lock['disclosure'], 'publishable': card['publishable'],
                  'blockers': card['publication_blockers'],
                  'quasileak_group_mask_rate': card['diagnostic']['quasileak_group_mask_rate']}
         try:
             entry['decision_groups'] = _official_from_run(cfg, root, directory)
         except (OSError, ValueError, KeyError) as exc:
-            failures.append(f'{system}:official_export')
+            failures.append(f'{name}:official_export')
             entry['decision_groups'] = {'error': f'{type(exc).__name__}: {exc}'}
         results.append(entry)
         print('QUASILEAK_ANONYMIZER', json.dumps(entry, ensure_ascii=False, sort_keys=True), flush=True)

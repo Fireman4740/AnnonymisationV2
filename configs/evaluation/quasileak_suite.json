@@ -1,15 +1,72 @@
 {
-  "purpose": "quasileak_test50_v1",
+  "purpose": "quasileak_test50_disclosure_v1",
   "selection": "configs/evaluation/frozen/quasileak-test-50-v1.ids.json",
   "pivot_selection": "configs/evaluation/frozen/quasileak-test-50-v1.lock.json",
   "detector_backend": "qwen_local_box",
   "detector_max_tokens": 8192,
   "systems": [
-    {"system": "oracle-mask"},
-    {"system": "regex-only"},
-    {"system": "llm-anchored", "params": {"backend": "qwen_local_box", "window_chars": 6000,
-      "overlap_chars": 240, "max_output_tokens": 8192, "critique": true}},
-    {"system": "llm-windowed", "params": {"backend": "qwen_local_box", "window_chars": 6000,
-      "overlap_chars": 240, "max_output_tokens": 8192, "max_entities": 256}}
+    {
+      "system": "oracle-mask"
+    },
+    {
+      "system": "regex-only"
+    },
+    {
+      "system": "llm-anchored",
+      "params": {
+        "backend": "qwen_local_box",
+        "window_chars": 6000,
+        "overlap_chars": 240,
+        "max_output_tokens": 8192,
+        "critique": true
+      }
+    },
+    {
+      "system": "llm-windowed",
+      "params": {
+        "backend": "qwen_local_box",
+        "window_chars": 6000,
+        "overlap_chars": 240,
+        "max_output_tokens": 8192,
+        "max_entities": 256
+      }
+    },
+    {
+      "system": "oracle-mask",
+      "disclosure_policy": "document"
+    },
+    {
+      "system": "llm-anchored",
+      "params": {
+        "backend": "qwen_local_box",
+        "window_chars": 6000,
+        "overlap_chars": 240,
+        "max_output_tokens": 8192,
+        "critique": true
+      },
+      "disclosure_policy": "document"
+    },
+    {
+      "system": "llm-windowed",
+      "params": {
+        "backend": "qwen_local_box",
+        "window_chars": 6000,
+        "overlap_chars": 240,
+        "max_output_tokens": 8192,
+        "max_entities": 256
+      },
+      "disclosure_policy": "document"
+    },
+    {
+      "system": "llm-anchored",
+      "params": {
+        "backend": "qwen_local_box",
+        "window_chars": 6000,
+        "overlap_chars": 240,
+        "max_output_tokens": 8192,
+        "critique": true
+      },
+      "disclosure_policy": "all-hide"
+    }
   ]
 }

@@ -33,6 +33,7 @@ from typing import Any
 import yaml
 
 from anonymisation import __version__
+from anonymisation.capabilities import CAP_DECISIONS
 from anonymisation.datasets.ingest import LOCK_NAME
 from anonymisation.datasets.registry import (
     ALIASES,
@@ -43,6 +44,7 @@ from anonymisation.datasets.registry import (
 from anonymisation.pipeline.guards import LocalOnlyViolationError, assert_local_only
 from anonymisation.pipeline.profiles import RuntimeProfile, load_runtime_profile
 from anonymisation.pipeline.traces import serialize_pipeline_result, serialize_stage_trace
+from anonymisation.policy.disclosure import DisclosureError, apply_disclosure, load_stage
 from anonymisation.schema.integrity import (
     DataIntegrityError,
     locked_files,
@@ -63,6 +65,7 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[3]
 PROCESSED_ROOT = REPO_ROOT / "data" / "processed"
 DATASETS_CONFIG = REPO_ROOT / "configs" / "datasets"
 POLICY_FILE = REPO_ROOT / "configs" / "policy" / "policies.yaml"
+DISCLOSURE_FILE = REPO_ROOT / "configs" / "policy" / "disclosure.yaml"
 LLM_BACKENDS_FILE = REPO_ROOT / "configs" / "llm" / "backends.yaml"
 
 
@@ -407,6 +410,7 @@ def cmd_predict(
     system: str = "deterministic",
     params: Mapping[str, Any] | None = None,
     selection_manifest: str | None = None,
+    disclosure_policy: str | None = None,
 ) -> int:
     """Exécute le pipeline sur le pivot du dataset et fige les artefacts.
 
@@ -466,6 +470,17 @@ def cmd_predict(
         )
     )
     identity = pipe.identity()
+    disclosure = None
+    if disclosure_policy is not None:
+        if not identity.has(CAP_DECISIONS):
+            raise PredictError(
+                f"Système {identity.system_id!r} : --disclosure-policy exige des décisions "
+                f"(capacité {CAP_DECISIONS!r}) ; une boîte noire ne peut pas être gouvernée.")
+        try:
+            disclosure = load_stage(disclosure_policy, DISCLOSURE_FILE)
+        except DisclosureError as exc:
+            raise PredictError(str(exc)) from exc
+    disclosure_counts: dict[str, int] = {}
 
     if out is not None:
         out_dir = Path(out)
@@ -476,6 +491,7 @@ def cmd_predict(
         run_id = (
             f"{identity.system_id}-{key}-{split}-"
             f"{policy or 'nopolicy'}-{identity.params_digest[:8]}"
+            + (f"-disclosure-{disclosure_policy}" if disclosure_policy else "")
         )
         out_dir = REPO_ROOT / "runs" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -487,6 +503,15 @@ def cmd_predict(
     ) as traces:
         for completed, doc in enumerate(docs, start=1):
             result = pipe.run(doc, gold.get(doc.doc_id))
+            if disclosure is not None:
+                try:
+                    result, applied = apply_disclosure(result, doc, disclosure)
+                except DisclosureError as exc:
+                    # Politique absente ou système non gouvernable : défaut de
+                    # configuration du run entier, pas d'un document.
+                    raise PredictError(str(exc)) from exc
+                for name, value in applied.items():
+                    disclosure_counts[name] = disclosure_counts.get(name, 0) + value
             counts[result.status] = counts.get(result.status, 0) + 1
             predictions.write(
                 json.dumps(
@@ -521,6 +546,11 @@ def cmd_predict(
         data_version=data_version,
         system_block=_system_reproducibility(pipe),
     )
+    lock["disclosure"] = (
+        {**disclosure.lock_block(), "decision_verdicts": dict(sorted(disclosure_counts.items()))}
+        if disclosure is not None
+        else {"id": None, "reason": "aucune politique de divulgation"}
+    )
     if selection_sha256 is not None:
         lock["run"]["selection_manifest_sha256"] = selection_sha256
         lock["run"]["status"] = "sampled"
@@ -538,6 +568,8 @@ def cmd_predict(
         f"dataset {key!r}, split {split!r}, politique {policy!r}, "
         f"profil {loaded.profile.profile!r}"
     )
+    if disclosure is not None:
+        print(f"  divulgation {disclosure_policy!r} : {dict(sorted(disclosure_counts.items()))}")
     for status in ("ok", "partial", "error"):
         if counts.get(status):
             print(f"  {status} : {counts[status]}")

@@ -623,6 +623,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--selection-manifest", default=None,
         help="Manifeste JSON de doc_id et text_sha256 à sélectionner dans le pivot figé.",
     )
+    predict_p.add_argument(
+        "--disclosure-policy", default=None,
+        help=("Politique HIDE/KEEP appliquée après détection (configs/policy/disclosure.yaml) : "
+              "`document` lit la politique de chaque document, sinon politique statique."),
+    )
 
     systems_p = sub.add_parser(
         "systems",
@@ -759,6 +764,7 @@ def main(argv: list[str] | None = None) -> int:
                 system=args.system,
                 params=_parse_params(args.param),
                 selection_manifest=args.selection_manifest,
+                disclosure_policy=args.disclosure_policy,
             )
         except (
             PredictError,

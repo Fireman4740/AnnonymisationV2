@@ -380,9 +380,28 @@ def system_variants(cfg: dict[str, Any], remote_allowed: bool) -> list[dict[str,
         for policy in policies:
             name = spec["system"] + (f"-{policy}" if policy else "")
             spia_attack = spec.get("spia_attack", False) or policy in spec.get("spia_attack_policies", ())
+            disclosure = spec.get("disclosure_policy")
+            if disclosure is not None:
+                name += "+disclosure"
             variants.append({"name": name, "system": spec["system"], "policy": policy,
-                             "params": dict(spec.get("params") or {}), "spia_attack": spia_attack})
+                             "params": dict(spec.get("params") or {}), "spia_attack": spia_attack,
+                             "disclosure_policy": disclosure})
     return variants
+
+
+def disclosure_for(setting: str | dict[str, Any] | None, key: str) -> str | None:
+    """Politique HIDE/KEEP d'un dataset : chaîne commune, ou table par dataset.
+
+    Une table doit nommer le dataset ou porter une clé `default` explicite
+    (valeur `null` permise) : un dataset oublié n'hérite de rien en silence.
+    """
+    if setting is None or isinstance(setting, str):
+        return setting
+    if key in setting:
+        return setting[key]
+    if "default" not in setting:
+        raise ValueError(f"campaign.json : disclosure_policy sans entrée pour {key!r} ni `default`")
+    return setting["default"]
 
 
 def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, Any],
@@ -401,6 +420,9 @@ def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, A
                  "--selection-manifest", cfg["evaluation_subset"]["manifest"]]
     if variant["policy"]:
         args += ["--policy", variant["policy"]]
+    disclosure = disclosure_for(variant.get("disclosure_policy"), key)
+    if disclosure:
+        args += ["--disclosure-policy", disclosure]
     params = dict(variant["params"])
     if variant["system"] == "llm-full":
         params.update(backend=cfg["anonymizer_backend"],

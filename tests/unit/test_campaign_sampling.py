@@ -324,3 +324,18 @@ def test_anchored_profile_and_local_quality_are_configured(tmp_path):
     evaluate = campaign.conditional_evaluation_args(cfg, 'ratbench', tmp_path)
     assert evaluate[evaluate.index('--local-quality-backend') + 1] == 'qwen_local_box'
     assert evaluate[evaluate.index('--local-quality-workers') + 1] == '2'
+
+
+def test_disclosure_policy_per_dataset_requires_explicit_default():
+    assert campaign.disclosure_for(None, "tab") is None
+    assert campaign.disclosure_for("all-hide", "tab") == "all-hide"
+    table = {"quasileak": "document", "default": None}
+    assert campaign.disclosure_for(table, "quasileak") == "document"
+    assert campaign.disclosure_for(table, "tab") is None
+    with pytest.raises(ValueError, match="default"):
+        campaign.disclosure_for({"quasileak": "document"}, "tab")
+    cfg = {"systems": [{"system": "llm-anchored", "disclosure_policy": table}]}
+    (variant,) = campaign.system_variants(cfg, remote_allowed=False)
+    args = campaign.predict_args({}, "quasileak", "test", variant, Path("runs/x"))
+    assert args[args.index("--disclosure-policy") + 1] == "document"
+    assert "--disclosure-policy" not in campaign.predict_args({}, "tab", "test", variant, Path("runs/y"))

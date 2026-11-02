@@ -302,6 +302,7 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
         key=lambda s: (
             str(s.get("system", {}).get("system_id", "")),
             str(s.get("system", {}).get("system_version", "")),
+            str(s.get("system", {}).get("disclosure_policy") or ""),
         ),
     )
     first = cards[0]
@@ -368,6 +369,9 @@ def render_comparison_markdown(scorecards: Sequence[dict[str, Any]]) -> str:
     for card in cards:
         identity = card.get("system") or {}
         name = identity.get("system_id", "unknown")
+        # Même système, politique de divulgation différente : lignes distinctes.
+        if identity.get("disclosure_policy"):
+            name = f"{name}+{identity['disclosure_policy']}"
         blocked = card.get("publishable") is False
         values = [
             "—" if blocked else _cell(card.get(section, {}).get(key)) for section, key in columns

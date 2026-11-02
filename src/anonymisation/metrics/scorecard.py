@@ -553,6 +553,7 @@ def build_scorecard(
         "system": {
             **{k: v for k, v in system.items() if k != "prompts"},
             "policy": run_info.get("policy"),
+            "disclosure_policy": (reproducibility.get("disclosure") or {}).get("id"),
             "profile": run_info.get("profile"),
         },
         "dataset": dataset,
