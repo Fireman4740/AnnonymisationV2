@@ -59,8 +59,8 @@ def _anonymizers(cfg: dict, root: Path, failures: list[str]) -> list[dict]:
                 '--selection-manifest', cfg['pivot_selection']]
         if disclosure:
             args += ['--disclosure-policy', disclosure]
-        for name, value in sorted(variant.get('params', {}).items()):
-            args += ['--param', f'{name}={value}']
+        for param, value in sorted(variant.get('params', {}).items()):
+            args += ['--param', f'{param}={value}']
         if command(args):
             failures.append(f'{name}:predict')
             continue
