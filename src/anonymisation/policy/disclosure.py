@@ -38,6 +38,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from anonymisation.pipeline.orchestrator import _merge_overlapping
 from anonymisation.pipeline.traces import PipelineResult
 from anonymisation.schema.io import sha256_file
 from anonymisation.schema.models import Document
@@ -168,6 +169,17 @@ def load_stage(policy_id: str, path: Path) -> DisclosureStage:
     return DisclosureStage(policy_id, config.policies[policy_id], config, path)
 
 
+def render(text: str, decisions) -> str:
+    """Rendu canonique : fusion des décisions non KEEP chevauchantes, puis application.
+
+    Certains systèmes (llm-windowed) conservent des décisions brutes qui se
+    chevauchent et rendent leur texte depuis leur fusion ; d'autres stockent
+    des décisions déjà disjointes, pour lesquelles la fusion est neutre.
+    """
+    non_keep = [d for d in decisions if d.action is not Action.KEEP]
+    return apply_decisions(text, _merge_overlapping(non_keep, text)).anonymized_text
+
+
 def apply_disclosure(result: PipelineResult, doc: Document, stage: DisclosureStage) -> tuple[PipelineResult, Counter]:
     """Rend un nouveau résultat ; un document en erreur reste inchangé."""
     counts: Counter = Counter()
@@ -176,7 +188,7 @@ def apply_disclosure(result: PipelineResult, doc: Document, stage: DisclosureSta
     policy = stage.policy_for(doc)
     # Réappliquer les décisions doit redonner le texte du système ; sinon le
     # texte vient d'ailleurs (réécriture libre) et la politique le falsifierait.
-    if apply_decisions(doc.text, result.decisions).anonymized_text != result.anonymized_text:
+    if render(doc.text, result.decisions) != result.anonymized_text:
         raise DisclosureError(f"{doc.doc_id} : texte anonymisé non reproductible depuis les décisions ; "
                               "politique de divulgation inapplicable à ce système")
     decisions = []
@@ -197,5 +209,5 @@ def apply_disclosure(result: PipelineResult, doc: Document, stage: DisclosureSta
                                                       "initial_action": decision.action.value}}))
         else:
             decisions.append(decision)
-    text = apply_decisions(doc.text, decisions).anonymized_text
+    text = render(doc.text, decisions)
     return replace(result, decisions=tuple(decisions), anonymized_text=text), counts

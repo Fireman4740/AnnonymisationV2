@@ -98,3 +98,18 @@ def test_verdict_vocabulary():
     policy = load_stage('document', CONFIG).policy_for(_doc(POLICY))
     assert policy.evaluate('GEN_AGE') is Verdict.HIDE
     assert policy.evaluate('DIR_EMAIL') is Verdict.UNGOVERNED
+
+
+def test_overlapping_raw_decisions_use_the_canonical_merged_rendering():
+    from anonymisation.pipeline.orchestrator import _merge_overlapping
+
+    stage = load_stage('document', CONFIG)
+    # Comme llm-windowed : décisions brutes chevauchantes, texte rendu depuis leur fusion.
+    raw = [_decision(0, 13, 'GEN_OCCUPATION'), _decision(6, 13, 'GEN_AGE')]
+    original = PipelineResult(doc_id='d', original_text=TEXT,
+        anonymized_text=apply_decisions(TEXT, _merge_overlapping(raw, TEXT)).anonymized_text,
+        annotations=(), decisions=tuple(raw), risk=None, policy_id='', traces=(), status='ok')
+    result, counts = apply_disclosure(original, _doc(POLICY), stage)
+    # Occupation KEEP remise en clair ; l'âge HIDE reste masqué.
+    assert result.anonymized_text == 'nurse [GEN_AGE] in Lyon, two kids'
+    assert counts['disclosed'] == 1
