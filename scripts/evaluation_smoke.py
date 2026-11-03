@@ -90,13 +90,34 @@ def run() -> int:
     return 1 if summary["failures"] else 0
 
 
+SUITES = ("quasileak", "campaign", "smoke")
+ACTIVE_SUITE = Path("configs/evaluation/active_suite.json")
+
+
+def active_suite() -> str:
+    """Suite lancée par le contrat fixe : choix versionné, jamais déduit.
+
+    Plusieurs configurations coexistent (campagne multi-corpus, suite
+    QuasiLeak) : laisser la présence d'un fichier décider masquerait l'autre
+    sans le dire.
+    """
+    try:
+        suite = json.loads(ACTIVE_SUITE.read_text(encoding="utf-8"))["suite"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise SystemExit(f"{ACTIVE_SUITE} illisible ou sans clé `suite` ({exc}) ; valeurs : {SUITES}")
+    if suite not in SUITES:
+        raise SystemExit(f"{ACTIVE_SUITE} : suite {suite!r} inconnue ; valeurs : {SUITES}")
+    return suite
+
+
 if __name__ == "__main__":
-    # Suite QuasiLeak prioritaire : la campagne multi-corpus figée reste intacte.
-    if Path("configs/evaluation/quasileak_suite.json").is_file():
+    selected = active_suite()
+    print("ACTIVE_SUITE", selected, flush=True)
+    if selected == "quasileak":
         from quasileak_suite import run_suite
 
         raise SystemExit(run_suite())
-    if Path("configs/evaluation/campaign.json").is_file():
+    if selected == "campaign":
         from evaluation_campaign import run_campaign
 
         raise SystemExit(run_campaign())

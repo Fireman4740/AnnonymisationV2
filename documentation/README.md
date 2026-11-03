@@ -16,6 +16,8 @@ catalogue de SPEC-07 et sur les anciens rapports de campagne.
 
 | Guide | Quand le lire |
 |-------|---------------|
+| [`guides/utiliser-le-banc.md`](guides/utiliser-le-banc.md) | **Pour faire tourner le banc** : ingestion, predict/score/compare, accès au gold, politique HIDE/KEEP, QuasiLeak, suites figées, état de vérification par corpus |
+| [`guides/politique-divulgation.md`](guides/politique-divulgation.md) | Politiques HIDE/KEEP/NEUTRAL appliquées après détection |
 | [`guides/creer-un-pipeline.md`](guides/creer-un-pipeline.md) | **Avant d'ajouter tout système d'anonymisation** : où créer les fichiers, le contrat `SystemBase`, les capacités et ce qu'elles débloquent à l'évaluation, les invariants, le branchement obligatoire, la checklist de revue |
 
 Les instructions courtes chargées automatiquement par les agents vivent dans
