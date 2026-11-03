@@ -1,5 +1,5 @@
 {
-  "purpose": "full_bench_real_10_per_dataset_v1",
+  "purpose": "full_bench_real_10_per_dataset_with_quasileak_v1",
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",
@@ -150,7 +150,8 @@
       "conll2003",
       "dbbio",
       "spia",
-      "openpii"
+      "openpii",
+      "quasileak"
     ]
   },
   "detailed_quality": {
@@ -165,7 +166,8 @@
       "conll2003",
       "dbbio",
       "spia",
-      "openpii"
+      "openpii",
+      "quasileak"
     ]
   },
   "qwen_admission": {
@@ -174,5 +176,25 @@
     "max_queued": 2,
     "max_running": 4,
     "max_kv_usage": 0.8
+  },
+  "external_datasets": {
+    "quasileak": {
+      "note": "Partition officielle par profil (arXiv:2610.21333) ; 10 premiers documents du holdout test, profils disjoints de test-50 (développement).",
+      "split": "test",
+      "selection": "configs/evaluation/frozen/quasileak-test-holdout-10-full.ids.json",
+      "selection_sha256": "fc1e8b20ade23e3175d6314072d23e065fc15bc436c8b534132f12b87fb002ef",
+      "pivot_selection": "configs/evaluation/frozen/quasileak-test-holdout-10-full.lock.json",
+      "pivot_selection_sha256": "03d4d3484d799544f00a8d363a0c899c6b06d9a8466a55a85b8ba9cf9eef1bad",
+      "protocol": "quasileak-v1",
+      "disclosure_policy": "document",
+      "excluded_selections": [
+        "configs/evaluation/frozen/quasileak-test-50-v1.ids.json"
+      ],
+      "llm_grouping": true,
+      "grouping_backend": "qwen_local_box",
+      "native_detector": true,
+      "detector_backend": "qwen_local_box",
+      "detector_max_tokens": 8192
+    }
   }
 }

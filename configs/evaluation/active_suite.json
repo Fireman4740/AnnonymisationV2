@@ -1,4 +1,4 @@
 {
-  "note": "Suite exécutée par scripts/run_evaluation_smoke.sh : quasileak (configs/evaluation/quasileak_suite.json), campaign (configs/evaluation/campaign.json), full (campaign puis quasileak) ou smoke (sanité 2 documents).",
-  "suite": "full"
+  "note": "Suite exécutée par scripts/run_evaluation_smoke.sh : campaign (configs/evaluation/campaign.json, QuasiLeak inclus via external_datasets), quasileak (suite seule, choix de table sur validation) ou smoke (sanité 2 documents).",
+  "suite": "campaign"
 }

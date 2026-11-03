@@ -411,7 +411,12 @@ def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, A
     args = ["predict", "--dataset", key, "--split", split, "--system", variant["system"],
             "--profile", profile, "--out", str(directory)]
     limits = cfg.get("_evaluation_subset_limits")
-    if cfg.get("evaluation_subset") is not None:
+    external = (cfg.get("external_datasets") or {}).get(key)
+    if external is not None:
+        # Sélection officielle propre au dataset, jamais la sous-cohorte commune.
+        count = len(json.loads(Path(external["selection"]).read_text()))
+        args += ["--limit", str(count), "--selection-manifest", external["pivot_selection"]]
+    elif cfg.get("evaluation_subset") is not None:
         # run_campaign valide l'appartenance et les empreintes avant les modèles.
         # Le constructeur d'arguments reste utilisable isolément, sans import du runner.
         count = (limits[key][split] if limits is not None else len(json.loads(
@@ -421,6 +426,8 @@ def predict_args(cfg: dict[str, Any], key: str, split: str, variant: dict[str, A
     if variant["policy"]:
         args += ["--policy", variant["policy"]]
     disclosure = disclosure_for(variant.get("disclosure_policy"), key)
+    if disclosure is None and external is not None:
+        disclosure = external.get("disclosure_policy")
     if disclosure:
         args += ["--disclosure-policy", disclosure]
     params = dict(variant["params"])
@@ -583,6 +590,15 @@ def run_campaign() -> int:
             "documents_evaluated": sum(sum(parts.values()) for parts in subset_limits.values()),
             "limits": subset_limits,
         }, sort_keys=True), flush=True)
+    from campaign_external import (
+        llm_grouping,
+        native_detector,
+        parity,
+        prepare_external,
+        validate_external,
+    )
+
+    external = validate_external(cfg)
     llm_cfg = load_backends_config()
     models = campaign_models(cfg, llm_cfg)
     uses_remote = any(spec.get("remote") for spec in models.values())
@@ -602,18 +618,25 @@ def run_campaign() -> int:
                               "evaluation_subset": cfg.get("evaluation_subset"),
                               "documents_per_dataset": cfg.get("documents_per_dataset"),
                               "datasets": [], "results": [], "failures": [],
+                              "external_datasets": sorted(external), "reference_results": [],
                               "remote_skipped": [], "parity": {}, "audit": [],
                               "excluded_datasets": cfg.get("excluded_datasets", {}),
                               "not_executable_here": cfg["not_executable_here"]}
     if baseline:
         summary["cohort"] = {"id": baseline["id"], "manifest_sha256": sha256_file(Path(baseline["manifest"]))}
     ratbench_runs: list[Path] = []
-    for key, splits in cfg["datasets"].items():
+    quasileak_runs: list[Path] = []
+    sources: dict[str, Path] = {}
+    for key, splits in [*cfg["datasets"].items(), *((k, [v["split"]]) for k, v in external.items())]:
         if run_only is not None and key not in run_only:
             continue
         try:
-            info = (frozen[key] if frozen is not None
-                    else prepare(key, splits, cfg, cache, official_rat_root))
+            if key in external:
+                info = prepare_external(key, external[key], official_rat_root, command)
+                sources[key] = Path(info["source"])
+            else:
+                info = (frozen[key] if frozen is not None
+                        else prepare(key, splits, cfg, cache, official_rat_root))
         except (OSError, ValueError, KeyError) as exc:
             failure = {"dataset": key, "stage": "ingest", "error": f"{type(exc).__name__}: {exc}"}
             summary["failures"].append(failure)
@@ -634,7 +657,7 @@ def run_campaign() -> int:
                 return command(args)
 
         for split in info["evaluation_splits"]:
-            if subset_limits is not None and subset_limits[key][split] == 0:
+            if subset_limits is not None and key in subset_limits and subset_limits[key][split] == 0:
                 continue
             for variant in system_variants(cfg, remote_allowed):
                 if run_systems is not None and variant["system"] not in run_systems:
@@ -676,7 +699,16 @@ def run_campaign() -> int:
                         "primary", "diagnostic", "publishable", "publication_blockers", "status")})
                     entry["scorecard_sha256"] = before
                     entry["prediction_counts"] = card["accounting"]
+                    entry["gold_aware"] = card["system"].get("gold_aware")
                     failed = stage_failures(stages, entry["replay_identical"])
+                    if key == "quasileak":
+                        quasileak_runs.append(directory)
+                        if external[key]["llm_grouping"] and not entry["gold_aware"]:
+                            # Référence D.8 « + regroupement LLM » : reçoit le profil, rapportée à part.
+                            grouped = llm_grouping(external[key], sources[key], directory)
+                            entry["reference_d8_llm_grouping"] = grouped
+                            if grouped.get("official") is None:
+                                failed.append("d8_llm_grouping")
                     if stages.get("attack_spia"):
                         failed.append("attack_spia")
                     if failed:
@@ -690,6 +722,22 @@ def run_campaign() -> int:
                 summary["results"].append(entry)
                 print("CAMPAIGN_RESULT", json.dumps(entry, ensure_ascii=False, sort_keys=True), flush=True)
                 write_json(Path("runs/campaign/summary.json"), summary)
+
+        if key in external and external[key]["native_detector"] and key in sources:
+            try:
+                native = native_detector(external[key], sources[key], Path("runs/campaign") / key / "native-detector")
+            except (OSError, ValueError, KeyError) as exc:
+                native = {"official": None, "error": f"{type(exc).__name__}: {exc}"}
+            summary["reference_results"].append({"dataset": key, "reference": "native-detector-zero-shot",
+                                                 **native})
+            if native.get("official") is None:
+                summary["failures"].append({"dataset": key, "stage": "native_detector", "error": native.get("error")})
+            write_json(Path("runs/campaign/summary.json"), summary)
+
+    if quasileak_runs:
+        summary["parity_quasileak"] = parity(quasileak_runs, sources["quasileak"], Path("runs/campaign/parity-quasileak"))
+        if not summary["parity_quasileak"]["ok"]:
+            summary["failures"].append({"stage": "parity-quasileak", "report": "runs/campaign/parity-quasileak/parity.json"})
 
     # Contrôles bloquants hors modèle : équivalence avec le code RAT-Bench
     # officiel sur les sorties figées, puis fiches d'audit de chaque run.
@@ -719,12 +767,20 @@ def run_campaign() -> int:
         summary["audit"].append({"run": str(directory), "exit_code": code, "summary": audit})
         if code:
             summary["failures"].append({"stage": "audit", "run": str(directory), "exit_code": code})
+    from campaign_report import consolidated_scores, write_scores_markdown
+
+    summary["scores"] = consolidated_scores(summary)
+    write_scores_markdown(summary, Path("runs/campaign/scores.md"))
     write_json(Path("runs/campaign/summary.json"), summary)
     compact = {"purpose": summary["purpose"], "models": models, "failures": summary["failures"],
                "run_only": summary["run_only"], "run_systems": summary["run_systems"],
                "excluded_datasets": summary["excluded_datasets"],
                "not_executable_here": summary["not_executable_here"],
                "remote_skipped": summary["remote_skipped"], "parity": summary["parity"],
+               "parity_quasileak": summary.get("parity_quasileak"), "scores": summary["scores"],
+               "reference_results": [{k: v for k, v in r.items() if k != "official"}
+                                     | {"scores_0_100": (r.get("official") or {}).get("scores_0_100")}
+                                     for r in summary["reference_results"]],
                "results": [{k: r.get(k) for k in ("dataset", "split", "system", "stages",
                    "prediction_counts", "replay_identical", "publishable", "status", "error")}
                    for r in summary["results"]]}

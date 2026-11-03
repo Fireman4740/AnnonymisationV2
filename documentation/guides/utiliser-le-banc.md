@@ -46,7 +46,7 @@ Limites connues, toutes documentées dans les modules concernés :
 | Cache des corpus | `ANONV2_V1_DATASETS` (défaut du contrat : `~/.cache/anonymisation-v2/datasets`) |
 | Cache LLM | `ANONV2_LLM_CACHE_DIR` (défaut du contrat : `~/.cache/anonymisation-v2/llm`) |
 | Modèle local | Qwen3.8-27B via vLLM, `http://127.0.0.1:18020/v1`, backend `qwen_local_box` (`configs/llm/backends.yaml`) |
-| API distante | **interdite** sauf corpus synthétiques et SPIA (OpenRouter) ; la garde est dans la campagne et les profils |
+| API distante | **interdite** sauf corpus synthétiques et SPIA (OpenRouter autorisé) ; la garde est dans la campagne et les profils. La campagne actuelle n'en utilise aucune : anonymiseur **et** attaquants (RAT-Bench, SPIA) = `qwen_local_box`. Le rôle `attacker_spia` (Ling via OpenRouter) de `backends.yaml` n'est pas utilisé par la campagne |
 
 Rien sous `data/` n'est versionné. Les licences restrictives (MIMIC, MEDDOCAN,
 corpus internes) ne doivent jamais être commitées.
@@ -180,14 +180,29 @@ Une nouvelle sélection disjointe se crée avec
 
 ## 7. Suites figées (contrat fixe des expériences)
 
+### QuasiLeak dans la campagne
+
+La cohorte `banc-fiable-200-v2` lie la liste `datasets` à son manifeste : un
+corpus dont la sélection officielle est figée ailleurs entre par
+`external_datasets` (`scripts/campaign_external.py`). Pour QuasiLeak, chaque
+entrée déclare explicitement split, sélection et manifeste pivot (empreintes),
+protocole, politique de divulgation, sélections de développement exclues
+(`test-50`), `llm_grouping` et `native_detector`. La taille doit égaler
+`evaluation_subset.documents_per_dataset`. En plus de la boucle commune, la
+campagne produit, **à part** (ces références reçoivent le profil) : le
+regroupement LLM D.8 par système, le détecteur natif zéro-shot par dataset,
+puis la parité : le scorer officiel exécuté seul (`python -I`) doit redonner
+exactement les scores de chaque scorecard, sinon la campagne échoue.
+
+
 Les expériences lancent toujours `bash scripts/run_evaluation_smoke.sh` :
 installation verrouillée, attente de capacité Qwen, préflight, puis la suite
 nommée dans **`configs/evaluation/active_suite.json`** :
 
 | `suite` | Configuration | Contenu |
 |---|---|---|
-| `quasileak` | `configs/evaluation/quasileak_suite.json` | anonymiseurs (+ politiques), regroupement LLM, détecteur natif ; règle de choix de table sur validation |
-| `campaign` | `configs/evaluation/campaign.json` | campagne multi-corpus : predict, attaques, score, rejeu bit à bit, cohorte figée |
+| `quasileak` | `configs/evaluation/quasileak_suite.json` | QuasiLeak seul ; sert au choix de table d'attributs sur validation |
+| `campaign` | `configs/evaluation/campaign.json` | **tout le banc** : 9 corpus de la cohorte figée + QuasiLeak (`external_datasets`) ; predict, attaques, juges locaux, score, rejeu bit à bit, audit, parités RAT-Bench et QuasiLeak, tableau `runs/campaign/scores.md` |
 | `smoke` | — | sanité 2 documents RAT-Bench (ancres passthrough / redact-all) |
 
 Le choix n'est jamais déduit de la présence d'un fichier. Changer de suite =
