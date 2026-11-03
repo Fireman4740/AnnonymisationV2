@@ -1,8 +1,8 @@
 {
-  "purpose": "quasileak_test_holdout50_final_d8_v1",
+  "purpose": "full_bench_real_quasileak10_v1",
   "split": "test",
-  "selection": "configs/evaluation/frozen/quasileak-test-holdout-50-v1.ids.json",
-  "pivot_selection": "configs/evaluation/frozen/quasileak-test-holdout-50-v1.lock.json",
+  "selection": "configs/evaluation/frozen/quasileak-test-holdout-10-full.ids.json",
+  "pivot_selection": "configs/evaluation/frozen/quasileak-test-holdout-10-full.lock.json",
   "detector_backend": "qwen_local_box",
   "detector_max_tokens": 8192,
   "grouping_backend": "qwen_local_box",
@@ -52,5 +52,5 @@
       "llm_grouping": true
     }
   ],
-  "holdout_note": "Profils test disjoints de test-50 (utilisé pendant le développement). Systèmes, paramètres et table identiques au run 5109c517 ; aucun changement après lecture de ce holdout."
+  "holdout_note": "Test fonctionnel du banc complet : 10 premiers documents du holdout, sans réglage."
 }

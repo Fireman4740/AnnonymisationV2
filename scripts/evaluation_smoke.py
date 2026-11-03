@@ -90,7 +90,7 @@ def run() -> int:
     return 1 if summary["failures"] else 0
 
 
-SUITES = ("quasileak", "campaign", "smoke")
+SUITES = ("quasileak", "campaign", "full", "smoke")
 ACTIVE_SUITE = Path("configs/evaluation/active_suite.json")
 
 
@@ -121,4 +121,12 @@ if __name__ == "__main__":
         from evaluation_campaign import run_campaign
 
         raise SystemExit(run_campaign())
+    if selected == "full":
+        from evaluation_campaign import run_campaign
+        from quasileak_suite import run_suite
+
+        # Les deux suites tournent toujours : l'échec de l'une ne masque pas l'autre.
+        codes = {"campaign": run_campaign(), "quasileak": run_suite()}
+        print("FULL_SUITE_CODES", json.dumps(codes, sort_keys=True), flush=True)
+        raise SystemExit(max(codes.values()))
     raise SystemExit(run())

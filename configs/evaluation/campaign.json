@@ -1,5 +1,5 @@
 {
-  "purpose": "qwen_anchored_local_quality_pilot5_v1",
+  "purpose": "full_bench_real_10_per_dataset_v1",
   "conditional_evaluations": {
     "supporttickets": {
       "task": "ticket_routing",
@@ -134,32 +134,39 @@
   "attack_workers": 2,
   "spia_attack_max_output_tokens": 32768,
   "evaluation_subset": {
-    "documents_per_dataset": 5,
-    "manifest": "configs/evaluation/frozen/banc-fiable-200-v2-subset5-quality.lock.json",
-    "sha256": "0955d07110bae0de2e88744f07fc78c16863ecbfa50050608206badffff8a732"
+    "documents_per_dataset": 10,
+    "manifest": "configs/evaluation/frozen/banc-fiable-200-v2-subset10-full.lock.json",
+    "sha256": "74a3b8ac42f0e449043e01167f97fabeb03297ce961c4bbe5b472804a5afa318"
   },
-  "run_systems": [
-    "llm-windowed",
-    "llm-anchored"
-  ],
-  "run_only": [
-    "ratbench",
-    "tab",
-    "supporttickets"
-  ],
   "local_quality": {
     "backend": "qwen_local_box",
     "workers": 2,
     "datasets": [
+      "supporttickets",
+      "bitextsupport",
       "ratbench",
+      "quasifr",
       "tab",
-      "supporttickets"
+      "conll2003",
+      "dbbio",
+      "spia",
+      "openpii"
     ]
   },
   "detailed_quality": {
     "backend": "qwen_local_box",
     "workers": 2,
-    "datasets": ["ratbench", "tab", "supporttickets"]
+    "datasets": [
+      "supporttickets",
+      "bitextsupport",
+      "ratbench",
+      "quasifr",
+      "tab",
+      "conll2003",
+      "dbbio",
+      "spia",
+      "openpii"
+    ]
   },
   "qwen_admission": {
     "max_wait_s": 86400,

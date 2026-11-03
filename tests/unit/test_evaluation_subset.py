@@ -19,17 +19,17 @@ def row(doc_id, text):
     return {"doc_id": doc_id, "text_sha256": hashlib.sha256(text.encode()).hexdigest()}
 
 
-def test_committed_5_subset_is_balanced_and_inside_the_50():
+def test_committed_10_subset_is_balanced_and_inside_the_50():
     cfg = json.loads((ROOT / "configs/evaluation/campaign.json").read_text())
     limits = cohort.evaluation_subset_limits(cfg)
-    assert all(sum(v.values()) == 5 for v in limits.values())
-    assert sum(map(lambda v: sum(v.values()), limits.values())) == 45
+    assert all(sum(v.values()) == 10 for v in limits.values())
+    assert sum(map(lambda v: sum(v.values()), limits.values())) == 90
     subset = json.loads(Path(cfg["evaluation_subset"]["manifest"]).read_text())
     rat = subset["datasets"]["ratbench"]["eval"]
-    assert [sum(r["doc_id"].startswith(f"ratbench:L{i}:") for r in rat) for i in (1, 2, 3)] == [2, 2, 1]
+    assert [sum(r["doc_id"].startswith(f"ratbench:L{i}:") for r in rat) for i in (1, 2, 3)] == [4, 3, 3]
     spia = subset["datasets"]["spia"]["test"]
-    assert sum(r["doc_id"].startswith("spia:TAB-") for r in spia) == 3
-    assert sum(r["doc_id"].startswith("spia:PANORAMA-") for r in spia) == 2
+    assert sum(r["doc_id"].startswith("spia:TAB-") for r in spia) == 5
+    assert sum(r["doc_id"].startswith("spia:PANORAMA-") for r in spia) == 5
     parent = json.loads((ROOT / "configs/evaluation/frozen/banc-fiable-200-v2-subset50.lock.json").read_text())
     for dataset, splits in subset["datasets"].items():
         for split, rows in splits.items():
